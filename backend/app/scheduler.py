@@ -75,7 +75,8 @@ async def record_result(monitor_id: int, result: CheckResult) -> None:
         open_incident = db.scalar(
             select(Incident).where(Incident.monitor_id == m.id, Incident.resolved_at.is_(None))
         )
-        if status == "down" and open_incident is None:
+        # A child that is down because its parent is down is covered by the parent's incident
+        if status == "down" and open_incident is None and not parent_down:
             db.add(Incident(monitor_id=m.id, cause=result.message[:300], started_at=now))
         elif status in ("up", "degraded") and open_incident is not None:
             open_incident.resolved_at = now

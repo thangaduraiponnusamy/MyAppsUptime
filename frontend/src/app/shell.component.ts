@@ -40,7 +40,7 @@ import { LogoComponent } from './shared/logo.component';
             <span class="label">{{ theme.theme() === 'light' ? 'Dark mode' : 'Light mode' }}</span>
           </button>
           <button class="btn collapse-btn" (click)="toggleCollapsed()" [title]="collapsed() ? 'Expand menu' : 'Collapse menu'">
-            <app-icon [name]="collapsed() ? 'arrow' : 'back'" />
+            <app-icon [name]="collapsed() ? 'panel-open' : 'panel-close'" />
             <span class="label">Collapse menu</span>
           </button>
         </div>

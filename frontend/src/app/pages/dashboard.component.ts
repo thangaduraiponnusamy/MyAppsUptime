@@ -140,6 +140,7 @@ type View = 'grid' | 'list';
               <div class="title">{{ m.name }}</div>
               <div class="meta">{{ m.last_message || m.target }}</div>
             </div>
+            @if (blockedChildren(m); as n) { <span class="dep-chip" title="Dependent monitors affected"><app-icon name="network" [size]="12" /> +{{ n }}</span> }
             <span [class]="'pill ' + m.status">{{ m.status }}</span>
           </a>
         } @empty {
@@ -205,14 +206,15 @@ type View = 'grid' | 'list';
       @if (view() === 'grid') {
         <div class="mon-grid">
           @for (m of filtered(); track m.id) {
-            <a [class]="'mon-card ' + m.status" [routerLink]="['/monitors', m.id]">
+            <a [class]="'mon-card ' + m.status" [class.is-child]="!!parentOf(m)" [class.blocked]="isBlocked(m)" [routerLink]="['/monitors', m.id]">
               <div class="mc-top">
                 <span class="avatar" [style.--h]="hue(m.name)">{{ m.name.charAt(0) }}</span>
                 <div class="grow">
                   <div class="title">{{ m.name }}</div>
                   <div class="target">{{ m.type === 'push' ? 'Push heartbeat' : m.target }}</div>
                 </div>
-                <span [class]="'pill ' + m.status">{{ m.status }}</span>
+                @if (isBlocked(m)) { <span class="pill paused" title="Down because the parent is down">blocked</span> }
+                @else { <span [class]="'pill ' + m.status">{{ m.status }}</span> }
               </div>
               <div class="mc-stats">
                 <div><span>Uptime 24h</span><b>{{ m.uptime_24h === null ? '--' : (m.uptime_24h | number: '1.0-2') + '%' }}</b></div>
@@ -222,6 +224,8 @@ type View = 'grid' | 'list';
               <app-heartbeat-bar [statuses]="m.recent" [max]="30" size="sm" />
               <div class="mc-foot">
                 <span class="type-badge">{{ m.type }}</span>
+                @if (parentOf(m); as p) { <span class="dep-chip" [title]="'Depends on ' + p.name"><app-icon name="child" [size]="12" /> {{ p.name }}</span> }
+                @if (childrenOf(m).length; as n) { <span class="dep-chip" title="Monitors that depend on this one"><app-icon name="network" [size]="12" /> {{ n }}</span> }
                 @for (t of m.tags.slice(0, 2); track t) { <span class="tag">#{{ t }}</span> }
                 <span class="spacer"></span>
                 <span>every {{ m.interval_sec }}s</span>
@@ -240,6 +244,7 @@ type View = 'grid' | 'list';
                 <tr [routerLink]="['/monitors', m.id]">
                   <td>
                     <div class="row" style="flex-wrap: nowrap; gap: 10px">
+                      @if (parentOf(m)) { <app-icon class="child-ico" name="child" [size]="14" /> }
                       <span class="avatar sm" [style.--h]="hue(m.name)">{{ m.name.charAt(0) }}</span>
                       <div style="min-width: 0"><div class="title">{{ m.name }}</div>
                         <div class="meta ellipsis">{{ m.type === 'push' ? 'Push heartbeat' : m.target }}</div></div>
@@ -359,7 +364,7 @@ export class DashboardComponent {
     const rank: Record<string, number> = { down: 0, degraded: 1 };
     return this.store
       .monitors()
-      .filter((m) => m.active && (m.status === 'down' || m.status === 'degraded' || this.sslSoon(m)))
+      .filter((m) => m.active && !this.isBlocked(m) && (m.status === 'down' || m.status === 'degraded' || this.sslSoon(m)))
       .sort((a, b) => (rank[a.status] ?? 2) - (rank[b.status] ?? 2))
       .slice(0, 6);
   });
@@ -371,16 +376,48 @@ export class DashboardComponent {
     const t = this.tag();
     const s = this.status();
     const rank: Record<string, number> = { down: 0, degraded: 1, maintenance: 2, pending: 3, up: 4, paused: 5 };
-    return this.store
+    const list = this.store
       .monitors()
       .filter(
         (m) =>
           (!q || m.name.toLowerCase().includes(q) || m.target.toLowerCase().includes(q)) &&
           (!t || m.tags.includes(t)) &&
           (s === 'all' || m.status === s),
-      )
-      .sort((a, b) => rank[a.status] - rank[b.status] || a.name.localeCompare(b.name));
+      );
+    // Keep each child right after its parent when both are visible
+    const shown = new Map(list.map((m) => [m.id, m]));
+    const root = (m: Monitor) => (m.parent_id !== null && shown.has(m.parent_id) ? shown.get(m.parent_id)! : m);
+    return list.sort((a, b) => {
+      const ra = root(a), rb = root(b);
+      if (ra !== rb) return rank[ra.status] - rank[rb.status] || ra.name.localeCompare(rb.name);
+      return (a === ra ? 0 : 1) - (b === rb ? 0 : 1) || a.name.localeCompare(b.name);
+    });
   });
+
+  private byId = computed(() => new Map(this.store.monitors().map((m) => [m.id, m])));
+  private children = computed(() => {
+    const map = new Map<number, Monitor[]>();
+    for (const m of this.store.monitors()) {
+      if (m.parent_id !== null) map.set(m.parent_id, [...(map.get(m.parent_id) ?? []), m]);
+    }
+    return map;
+  });
+
+  parentOf(m: Monitor): Monitor | null {
+    return m.parent_id === null ? null : this.byId().get(m.parent_id) ?? null;
+  }
+
+  childrenOf(m: Monitor): Monitor[] {
+    return this.children().get(m.id) ?? [];
+  }
+
+  isBlocked(m: Monitor): boolean {
+    return m.status === 'down' && this.parentOf(m)?.status === 'down';
+  }
+
+  blockedChildren(m: Monitor): number {
+    return this.childrenOf(m).filter((c) => this.isBlocked(c)).length;
+  }
 
   constructor() {
     combineLatest([toObservable(this.rangeParams), timer(0, 30_000)])
