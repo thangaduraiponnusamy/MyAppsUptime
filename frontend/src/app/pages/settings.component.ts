@@ -3,6 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { ApiService, errorText } from '../core/api.service';
 import { ExportData } from '../core/models';
 import { MonitorStore } from '../core/monitor-store.service';
+import { LIMITS, PrefsService } from '../core/prefs.service';
 import { ThemeService } from '../core/theme.service';
 
 @Component({
@@ -10,7 +11,7 @@ import { ThemeService } from '../core/theme.service';
   standalone: true,
   imports: [FormsModule],
   template: `
-    <div class="page-head"><div><h1>Settings</h1><div class="sub">Appearance, access and backups.</div></div></div>
+    <div class="page-head"><div><h1>Settings</h1><div class="sub">Appearance, limits, access and backups.</div></div></div>
 
     <section class="card">
       <h2>Appearance</h2>
@@ -18,6 +19,21 @@ import { ThemeService } from '../core/theme.service';
         <button class="chip" [class.active]="theme.theme() === 'light'" (click)="theme.theme.set('light')">Light</button>
         <button class="chip" [class.active]="theme.theme() === 'dark'" (click)="theme.theme.set('dark')">Dark</button>
       </div>
+    </section>
+
+    <section class="card">
+      <h2>Activity limits</h2>
+      <p class="muted">How many activity rows to show. Stored in this browser.</p>
+      <div class="limit-grid">
+        @for (l of limitList; track l.key) {
+          <label>{{ l.label }}
+            <input type="number" [min]="l.min" [max]="l.max" [value]="prefs.limits()[l.key]"
+                   (change)="prefs.set(l, $any($event.target).value); $any($event.target).value = prefs.limits()[l.key]" />
+            <small class="muted">{{ l.hint }} ({{ l.min }}&ndash;{{ l.max }}, default {{ l.def }})</small>
+          </label>
+        }
+      </div>
+      <div class="row" style="margin-top: 12px"><button class="btn" (click)="prefs.reset()">Reset to defaults</button></div>
     </section>
 
     <section class="card">
@@ -54,6 +70,8 @@ export class SettingsComponent {
   private api = inject(ApiService);
   private store = inject(MonitorStore);
   theme = inject(ThemeService);
+  prefs = inject(PrefsService);
+  readonly limitList = LIMITS;
   readonly origin = location.origin;
   token = localStorage.getItem('apiToken') ?? '';
   notice = signal('');

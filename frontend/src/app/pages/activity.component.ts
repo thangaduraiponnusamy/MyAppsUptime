@@ -1,36 +1,38 @@
 import { DatePipe } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { RouterLink } from '@angular/router';
-import { EMPTY, catchError, switchMap, timer } from 'rxjs';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { EMPTY, catchError, combineLatest, switchMap, timer } from 'rxjs';
 import { ApiService } from '../core/api.service';
 import { Incident } from '../core/models';
+import { PrefsService } from '../core/prefs.service';
 import { toEvents } from '../shared/activity';
 import { IconComponent } from '../shared/icon.component';
-
-const PAGE = 50;
+import { DAY, DayRange, RANGES, RangePickerComponent, rangeLabel, rangeQuery } from '../shared/range-picker.component';
 
 @Component({
   selector: 'app-activity',
   standalone: true,
-  imports: [DatePipe, RouterLink, IconComponent],
+  imports: [DatePipe, RouterLink, IconComponent, RangePickerComponent],
   template: `
     <div class="page-head">
       <div>
         <h1>Activity</h1>
-        <div class="sub">Every time a service went down or came back up</div>
+        <div class="sub">Every time a service went down or came back up &middot; {{ rangeText() }}</div>
       </div>
+      <span class="spacer"></span>
+      <app-range-picker [hours]="hours()" [custom]="custom()" (pick)="pickHours($event)" (range)="applyCustom($event)" />
     </div>
 
     <section class="card panel">
       <div class="toolbar">
         <h2>All activity <span class="count-badge">{{ filtered().length }}</span></h2>
         <input class="search" placeholder="Search service..." [value]="query()"
-               (input)="query.set($any($event.target).value); limit.set(page)" />
+               (input)="query.set($any($event.target).value); limit.set(page())" />
         <span class="spacer"></span>
         <div class="segmented">
           @for (k of kinds; track k.value) {
-            <button class="chip" [class.active]="kind() === k.value" (click)="kind.set(k.value); limit.set(page)">{{ k.label }}</button>
+            <button class="chip" [class.active]="kind() === k.value" (click)="kind.set(k.value); limit.set(page())">{{ k.label }}</button>
           }
         </div>
       </div>
@@ -54,12 +56,12 @@ const PAGE = 50;
           }
         </div>
         @if (filtered().length > limit()) {
-          <button class="btn show-more" (click)="limit.set(limit() + page)">Show more ({{ filtered().length - limit() }} remaining)</button>
+          <button class="btn show-more" (click)="limit.set(limit() + page())">Show more ({{ filtered().length - limit() }} remaining)</button>
         }
       } @else {
         <div class="empty-state tint-up">
           <span class="empty-ico"><app-icon name="check" [size]="20" /></span>
-          <div><b>No activity</b><div class="muted">No service changed state yet.</div></div>
+          <div><b>No activity</b><div class="muted">No service changed state {{ rangeText() }}.</div></div>
         </div>
       }
     </section>
@@ -67,19 +69,41 @@ const PAGE = 50;
 })
 export class ActivityComponent {
   private api = inject(ApiService);
-  readonly page = PAGE;
+  private route = inject(ActivatedRoute);
+  private router = inject(Router);
+  private prefs = inject(PrefsService);
   readonly kinds = [
     { value: 'all', label: 'All' },
     { value: 'down', label: 'Down' },
     { value: 'up', label: 'Up' },
   ] as const;
 
+  page = computed(() => this.prefs.limits().page);
+  hours = signal(24);
+  custom = signal<DayRange | null>(null);
   incidents = signal<Incident[]>([]);
   query = signal('');
   kind = signal<'all' | 'up' | 'down'>('all');
-  limit = signal(PAGE);
+  limit = signal(this.page());
 
-  private events = computed(() => toEvents(this.incidents()));
+  rangeText = computed(() => {
+    const l = rangeLabel(this.hours(), this.custom());
+    return this.custom() ? l : `last ${l}`;
+  });
+  private window = computed(() => {
+    const c = this.custom();
+    return c
+      ? { from: Date.parse(`${c.from}T00:00:00`), to: Date.parse(`${c.to}T23:59:59`) }
+      : { from: Date.now() - this.hours() * 3_600_000, to: Infinity };
+  });
+  // Only events whose time falls inside the picked range
+  private events = computed(() => {
+    const w = this.window();
+    return toEvents(this.incidents()).filter((e) => {
+      const t = Date.parse(e.at);
+      return t >= w.from && t <= w.to;
+    });
+  });
   filtered = computed(() => {
     const q = this.query().toLowerCase();
     const k = this.kind();
@@ -88,8 +112,28 @@ export class ActivityComponent {
   shown = computed(() => this.filtered().slice(0, this.limit()));
 
   constructor() {
-    timer(0, 30_000)
-      .pipe(switchMap(() => this.api.incidents(false, 500).pipe(catchError(() => EMPTY))), takeUntilDestroyed())
+    this.route.queryParamMap.pipe(takeUntilDestroyed()).subscribe((p) => {
+      const from = p.get('from'), to = p.get('to');
+      this.custom.set(from && to && DAY.test(from) && DAY.test(to) && from <= to ? { from, to } : null);
+      this.hours.set(RANGES.find((r) => r.label === p.get('range'))?.hours ?? 24);
+      this.limit.set(this.page());
+    });
+    const range = computed(() => rangeQuery(this.hours(), this.custom()));
+    const max = computed(() => this.prefs.limits().max);
+    combineLatest([toObservable(range), toObservable(max), timer(0, 30_000)])
+      .pipe(switchMap(([r, m]) => this.api.incidents(false, m, r).pipe(catchError(() => EMPTY))), takeUntilDestroyed())
       .subscribe((list) => this.incidents.set(list));
+  }
+
+  pickHours(hours: number): void {
+    this.setParams({ range: hours === 24 ? null : RANGES.find((r) => r.hours === hours)?.label, from: null, to: null });
+  }
+
+  applyCustom(r: DayRange): void {
+    this.setParams({ range: null, from: r.from, to: r.to });
+  }
+
+  private setParams(params: Record<string, string | null | undefined>): void {
+    this.router.navigate([], { relativeTo: this.route, queryParams: params, queryParamsHandling: 'merge', replaceUrl: true });
   }
 }

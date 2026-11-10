@@ -238,6 +238,10 @@ h2 { font-size: 16px; }
 @media (max-width: 560px) { .sb-body { grid-template-columns: minmax(0, 1fr); justify-items: center; } .sb-tiles { width: 100%; } }
 
 /* Recent activity */
+.limit-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-top: 12px; }
+.limit-grid label { display: flex; flex-direction: column; gap: 6px; font-weight: 600; font-size: 13px; }
+.limit-grid input { max-width: 140px; }
+.limit-grid small { font-weight: 400; font-size: 12px; }
 .head-link { color: var(--text); border-radius: 10px; margin: -6px -6px 8px; padding: 6px; transition: background .15s; }
 .head-link:hover { background: var(--surface-2); }
 .view-all { display: inline-flex; align-items: center; gap: 2px; font-size: 12.5px; font-weight: 600; color: var(--primary); }

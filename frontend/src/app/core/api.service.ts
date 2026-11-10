@@ -29,10 +29,10 @@ export class ApiService {
   }
   stats(id: number) { return this.http.get<Stats>(`${this.base}/monitors/${id}/stats`); }
 
-  incidents(openOnly = false, limit = 100) {
-    return this.http.get<Incident[]>(`${this.base}/incidents`, {
-      params: new HttpParams().set('open_only', openOnly).set('limit', limit),
-    });
+  incidents(openOnly = false, limit = 100, range: { hours?: number; start?: string; end?: string } = {}) {
+    let params = new HttpParams().set('open_only', openOnly).set('limit', limit);
+    for (const [k, v] of Object.entries(range)) if (v !== undefined) params = params.set(k, v);
+    return this.http.get<Incident[]>(`${this.base}/incidents`, { params });
   }
   acknowledge(id: number, by: string, note: string | null) {
     return this.http.post<Incident>(`${this.base}/incidents/${id}/ack`, { by, note });

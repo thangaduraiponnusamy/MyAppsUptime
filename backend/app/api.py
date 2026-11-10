@@ -255,6 +255,21 @@ def stats(monitor_id: int, db: Session = Depends(get_db)):
     )
 
 
+def _window(hours: int, start: datetime | None, end: datetime | None) -> tuple[datetime, datetime]:
+    now = utcnow()
+    if not (start or end):
+        return now - timedelta(hours=hours), now
+    if not (start and end):
+        raise HTTPException(400, "Both start and end are required")
+    since = aware(start).astimezone(timezone.utc)
+    until = min(aware(end).astimezone(timezone.utc), now)
+    if until <= since:
+        raise HTTPException(400, "End must be after start")
+    if until - since > timedelta(days=90):
+        raise HTTPException(400, "Range can be at most 90 days")
+    return since, until
+
+
 @router.get("/dashboard", response_model=DashboardOut)
 def dashboard(
     hours: int = Query(24, ge=1, le=24 * 90),
@@ -262,18 +277,7 @@ def dashboard(
     end: datetime | None = None,
     db: Session = Depends(get_db),
 ):
-    now = utcnow()
-    if start or end:
-        if not (start and end):
-            raise HTTPException(400, "Both start and end are required")
-        since = aware(start).astimezone(timezone.utc)
-        until = min(aware(end).astimezone(timezone.utc), now)
-        if until <= since:
-            raise HTTPException(400, "End must be after start")
-        if until - since > timedelta(days=90):
-            raise HTTPException(400, "Range can be at most 90 days")
-    else:
-        since, until = now - timedelta(hours=hours), now
+    since, until = _window(hours, start, end)
 
     span_sec = (until - since).total_seconds()
     bucket_sec = next(size for limit, size in (
@@ -308,7 +312,7 @@ def dashboard(
     recent = []
     in_range = (Incident.started_at <= until) & (Incident.resolved_at.is_(None) | (Incident.resolved_at >= since))
     for incident, name in db.execute(
-        select(Incident, Monitor.name).join(Monitor).where(in_range).order_by(Incident.started_at.desc()).limit(12)
+        select(Incident, Monitor.name).join(Monitor).where(in_range).order_by(Incident.started_at.desc()).limit(20)
     ):
         out = IncidentOut.model_validate(incident)
         out.monitor_name = name
@@ -328,8 +332,18 @@ def dashboard(
 # ---------- incidents ----------
 
 @router.get("/incidents", response_model=list[IncidentOut])
-def incidents(open_only: bool = False, limit: int = Query(100, le=500), db: Session = Depends(get_db)):
+def incidents(
+    open_only: bool = False,
+    limit: int = Query(100, ge=1, le=5000),
+    hours: int | None = Query(None, ge=1, le=24 * 90),
+    start: datetime | None = None,
+    end: datetime | None = None,
+    db: Session = Depends(get_db),
+):
     query = select(Incident, Monitor.name).join(Monitor).order_by(Incident.started_at.desc()).limit(limit)
+    if hours or start or end:
+        since, until = _window(hours or 24, start, end)
+        query = query.where(Incident.started_at <= until, Incident.resolved_at.is_(None) | (Incident.resolved_at >= since))
     if open_only:
         query = query.where(Incident.resolved_at.is_(None))
     result = []

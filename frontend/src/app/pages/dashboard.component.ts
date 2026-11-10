@@ -9,13 +9,14 @@ import { MonitorStore } from '../core/monitor-store.service';
 import { toEvents } from '../shared/activity';
 import { HeartbeatBarComponent } from '../shared/heartbeat-bar.component';
 import { IconComponent } from '../shared/icon.component';
+import { DAY, DayRange, RANGES, RangePickerComponent, rangeLabel, rangeQuery } from '../shared/range-picker.component';
 import { StatusMapComponent } from '../shared/status-map.component';
+import { PrefsService } from '../core/prefs.service';
 import { daysUntil, short } from '../shared/time';
 
 interface Group { root: Monitor; children: Monitor[]; issues: number; }
 export type Filter = MonitorStatus | 'all' | 'blocked';
 const FILTERS: Filter[] = ['up', 'down', 'blocked', 'degraded', 'maintenance', 'paused'];
-const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 const RANK: Record<string, number> = { down: 0, degraded: 1, maintenance: 2, pending: 3, up: 4, paused: 5 };
 const PAGE = 25;
@@ -23,7 +24,7 @@ const PAGE = 25;
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [DatePipe, DecimalPipe, NgTemplateOutlet, RouterLink, HeartbeatBarComponent, IconComponent, StatusMapComponent],
+  imports: [DatePipe, DecimalPipe, NgTemplateOutlet, RouterLink, HeartbeatBarComponent, IconComponent, RangePickerComponent, StatusMapComponent],
   template: `
     <div class="page-head">
       <div>
@@ -31,29 +32,7 @@ const PAGE = 25;
         <div class="sub">{{ greeting }} &middot; {{ todayText }}</div>
       </div>
       <span class="spacer"></span>
-      <div class="range-picker">
-        <div class="segmented">
-          @for (r of ranges; track r.hours) {
-            <button class="chip" [class.active]="!custom() && hours() === r.hours" (click)="pickHours(r.hours)">{{ r.label }}</button>
-          }
-          <button class="chip" [class.active]="!!custom()" (click)="customOpen.set(!customOpen())">
-            <app-icon name="calendar" [size]="14" /> {{ custom() ? rangeLabel() : 'Custom' }}
-          </button>
-        </div>
-        @if (customOpen()) {
-          <div class="range-pop card">
-            <div class="range-fields">
-              <label>From <input type="date" [value]="draftFrom()" [max]="draftTo()" (input)="draftFrom.set($any($event.target).value)" /></label>
-              <label>To <input type="date" [value]="draftTo()" [min]="draftFrom()" [max]="todayIso" (input)="draftTo.set($any($event.target).value)" /></label>
-            </div>
-            @if (rangeError(); as err) { <div class="range-error">{{ err }}</div> }
-            <div class="range-actions">
-              <button class="btn sm" (click)="customOpen.set(false)">Cancel</button>
-              <button class="btn sm primary" [disabled]="!!rangeError()" (click)="applyCustom()">Apply</button>
-            </div>
-          </div>
-        }
-      </div>
+      <app-range-picker [hours]="hours()" [custom]="custom()" (pick)="pickHours($event)" (range)="applyCustom($event)" />
     </div>
 
     <section class="card panel status-board">
@@ -132,9 +111,9 @@ const PAGE = 25;
 
     <div class="dash-row">
       <section class="card panel">
-        <a class="card-head head-link" routerLink="/activity" title="Open all activity">
+        <a class="card-head head-link" routerLink="/activity" queryParamsHandling="preserve" title="Open all activity">
           <span class="head-ico tone-indigo"><app-icon name="history" [size]="16" /></span>
-          <div class="grow"><h2>Recent activity</h2><div class="sub">Last 5 changes &middot; {{ rangeText() }}</div></div>
+          <div class="grow"><h2>Recent activity</h2><div class="sub">Last {{ prefs.limits().recent }} changes &middot; {{ rangeText() }}</div></div>
           <span class="view-all">View all <app-icon name="arrow" [size]="14" /></span>
         </a>
         @if (events().length) {
@@ -264,19 +243,15 @@ export class DashboardComponent {
   private api = inject(ApiService);
   private route = inject(ActivatedRoute);
   private router = inject(Router);
+  prefs = inject(PrefsService);
 
   readonly page = PAGE;
   readonly today = new Date();
   readonly todayText = formatDate(this.today, 'EEEE, MMM d', 'en-US');
-  readonly todayIso = formatDate(this.today, 'yyyy-MM-dd', 'en-US');
   readonly greeting = this.today.getHours() < 12 ? 'Good morning' : this.today.getHours() < 18 ? 'Good afternoon' : 'Good evening';
-  readonly ranges = [{ hours: 24, label: '24h' }, { hours: 168, label: '7d' }, { hours: 720, label: '30d' }];
 
   hours = signal(24);
-  custom = signal<{ from: string; to: string } | null>(null);
-  customOpen = signal(false);
-  draftFrom = signal(formatDate(Date.now() - 6 * 86_400_000, 'yyyy-MM-dd', 'en-US'));
-  draftTo = signal(this.todayIso);
+  custom = signal<DayRange | null>(null);
   data = signal<DashboardData | null>(null);
   query = signal('');
   tag = signal<string | null>(null);
@@ -284,27 +259,11 @@ export class DashboardComponent {
   limit = signal(PAGE);
   private openState = signal(new Map<number, boolean>());
 
-  rangeLabel = computed(() => {
-    const c = this.custom();
-    if (!c) return this.ranges.find((r) => r.hours === this.hours())?.label ?? '';
-    const f = (d: string) => formatDate(d, 'MMM d', 'en-US');
-    return c.from === c.to ? f(c.from) : `${f(c.from)} – ${f(c.to)}`;
-  });
+  private rangeLabel = computed(() => rangeLabel(this.hours(), this.custom()));
   rangeText = computed(() => (this.custom() ? this.rangeLabel() : `last ${this.rangeLabel()}`));
   uptime = computed(() => this.data()?.uptime ?? null);
   avgLatency = computed(() => this.data()?.avg_latency_ms ?? null);
-  rangeError = computed(() => {
-    const from = this.draftFrom(), to = this.draftTo();
-    if (!from || !to) return 'Pick both dates';
-    if (from > to) return 'From must be before To';
-    if ((Date.parse(to) - Date.parse(from)) / 86_400_000 >= 90) return 'Range can be at most 90 days';
-    return null;
-  });
-  private rangeParams = computed<{ hours?: number; start?: string; end?: string }>(() => {
-    const c = this.custom();
-    if (!c) return { hours: this.hours() };
-    return { start: new Date(`${c.from}T00:00:00`).toISOString(), end: new Date(`${c.to}T23:59:59`).toISOString() };
-  });
+  private rangeParams = computed(() => rangeQuery(this.hours(), this.custom()));
 
   private latencyValues = computed(() =>
     (this.data()?.series ?? []).map((p) => p.avg_latency_ms).filter((v): v is number => v !== null));
@@ -341,7 +300,7 @@ export class DashboardComponent {
   });
   statusLabel = computed(() => this.statusTiles().find((t) => t.key === this.status())?.label ?? this.status());
 
-  events = computed(() => toEvents(this.data()?.incidents ?? []).slice(0, 5));
+  events = computed(() => toEvents(this.data()?.incidents ?? []).slice(0, this.prefs.limits().recent));
 
   private byId = computed(() => new Map(this.store.monitors().map((m) => [m.id, m])));
   private children = computed(() => {
@@ -413,14 +372,9 @@ export class DashboardComponent {
       const from = p.get('from'), to = p.get('to');
       const custom = from && to && DAY.test(from) && DAY.test(to) && from <= to ? { from, to } : null;
       this.custom.set(custom);
-      if (custom) {
-        this.draftFrom.set(custom.from);
-        this.draftTo.set(custom.to);
-      }
-      this.hours.set(this.ranges.find((r) => r.label === p.get('range'))?.hours ?? 24);
+      this.hours.set(RANGES.find((r) => r.label === p.get('range'))?.hours ?? 24);
       const s = p.get('status') as Filter | null;
       this.status.set(s && FILTERS.includes(s) ? s : 'all');
-      this.customOpen.set(false);
       this.limit.set(PAGE);
       if (!p.keys.length) {
         this.query.set('');
@@ -470,13 +424,11 @@ export class DashboardComponent {
   }
 
   pickHours(hours: number): void {
-    this.customOpen.set(false);
-    this.setParams({ range: hours === 24 ? null : this.ranges.find((r) => r.hours === hours)?.label, from: null, to: null });
+    this.setParams({ range: hours === 24 ? null : RANGES.find((r) => r.hours === hours)?.label, from: null, to: null });
   }
 
-  applyCustom(): void {
-    if (this.rangeError()) return;
-    this.setParams({ range: null, from: this.draftFrom(), to: this.draftTo() });
+  applyCustom(r: DayRange): void {
+    this.setParams({ range: null, from: r.from, to: r.to });
   }
 
   private setParams(params: Record<string, string | null | undefined>): void {
