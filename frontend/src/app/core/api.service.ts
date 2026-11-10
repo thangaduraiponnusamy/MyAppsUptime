@@ -29,8 +29,10 @@ export class ApiService {
   }
   stats(id: number) { return this.http.get<Stats>(`${this.base}/monitors/${id}/stats`); }
 
-  incidents(openOnly = false) {
-    return this.http.get<Incident[]>(`${this.base}/incidents`, { params: new HttpParams().set('open_only', openOnly) });
+  incidents(openOnly = false, limit = 100) {
+    return this.http.get<Incident[]>(`${this.base}/incidents`, {
+      params: new HttpParams().set('open_only', openOnly).set('limit', limit),
+    });
   }
   acknowledge(id: number, by: string, note: string | null) {
     return this.http.post<Incident>(`${this.base}/incidents/${id}/ack`, { by, note });

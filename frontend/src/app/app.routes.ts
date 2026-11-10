@@ -1,6 +1,7 @@
 import { Routes } from '@angular/router';
 import { ShellComponent } from './shell.component';
 import { DashboardComponent } from './pages/dashboard.component';
+import { ActivityComponent } from './pages/activity.component';
 import { MonitorDetailComponent } from './pages/monitor-detail.component';
 import { MonitorFormComponent } from './pages/monitor-form.component';
 import { IncidentsComponent } from './pages/incidents.component';
@@ -17,6 +18,7 @@ export const routes: Routes = [
     component: ShellComponent,
     children: [
       { path: '', component: DashboardComponent },
+      { path: 'activity', component: ActivityComponent },
       { path: 'monitors/new', component: MonitorFormComponent },
       { path: 'monitors/:id', component: MonitorDetailComponent },
       { path: 'monitors/:id/edit', component: MonitorFormComponent },

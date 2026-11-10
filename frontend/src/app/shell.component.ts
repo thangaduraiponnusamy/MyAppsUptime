@@ -1,6 +1,6 @@
 import { Component, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { IsActiveMatchOptions, NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { filter } from 'rxjs';
 import { MonitorStore } from './core/monitor-store.service';
 import { ThemeService } from './core/theme.service';
@@ -31,7 +31,7 @@ import { LogoComponent } from './shared/logo.component';
         <div class="nav-caption">Monitoring</div>
         @for (item of nav; track item.path) {
           <a class="nav-link" [routerLink]="item.path" routerLinkActive="active" [title]="item.label"
-             [routerLinkActiveOptions]="{ exact: item.path === '/' }">
+             [routerLinkActiveOptions]="item.path === '/' ? homeMatch : subMatch">
             <app-icon [name]="item.icon" /> <span class="label">{{ item.label }}</span>
             @if (item.path === '/incidents' && (store.summary()?.unacknowledged ?? 0) > 0) {
               <span class="count">{{ store.summary()?.unacknowledged }}</span>
@@ -59,8 +59,13 @@ export class ShellComponent {
     (localStorage.getItem('navCollapsed') ?? (window.innerWidth <= 1100 ? '1' : '0')) === '1',
   );
 
+  // Dashboard filters live in the URL, so match on path only
+  readonly homeMatch: IsActiveMatchOptions = { paths: 'exact', queryParams: 'ignored', fragment: 'ignored', matrixParams: 'ignored' };
+  readonly subMatch: IsActiveMatchOptions = { paths: 'subset', queryParams: 'ignored', fragment: 'ignored', matrixParams: 'ignored' };
+
   readonly nav = [
     { path: '/', label: 'Dashboard', icon: 'grid' },
+    { path: '/activity', label: 'Activity', icon: 'history' },
     { path: '/incidents', label: 'Incidents', icon: 'alert' },
     { path: '/maintenance', label: 'Maintenance', icon: 'wrench' },
     { path: '/notifications', label: 'Alerting', icon: 'bell' },

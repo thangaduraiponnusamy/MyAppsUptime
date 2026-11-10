@@ -1,19 +1,21 @@
 import { DatePipe, DecimalPipe, NgTemplateOutlet, formatDate } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { EMPTY, catchError, combineLatest, switchMap, timer } from 'rxjs';
 import { ApiService } from '../core/api.service';
 import { DashboardData, Monitor, MonitorStatus } from '../core/models';
 import { MonitorStore } from '../core/monitor-store.service';
+import { toEvents } from '../shared/activity';
 import { HeartbeatBarComponent } from '../shared/heartbeat-bar.component';
 import { IconComponent } from '../shared/icon.component';
 import { StatusMapComponent } from '../shared/status-map.component';
 import { daysUntil, short } from '../shared/time';
 
 interface Group { root: Monitor; children: Monitor[]; issues: number; }
-type Filter = MonitorStatus | 'all' | 'blocked';
-interface ActivityEvent { key: string; monitorId: number; name: string; kind: 'up' | 'down'; at: string; detail: string; }
+export type Filter = MonitorStatus | 'all' | 'blocked';
+const FILTERS: Filter[] = ['up', 'down', 'blocked', 'degraded', 'maintenance', 'paused'];
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 const RANK: Record<string, number> = { down: 0, degraded: 1, maintenance: 2, pending: 3, up: 4, paused: 5 };
 const PAGE = 25;
@@ -56,22 +58,29 @@ const PAGE = 25;
 
     <section class="card panel status-board">
       <div class="card-head">
-        <div class="grow"><h2>Service status</h2><div class="sub">{{ store.monitors().length }} monitors &middot; click a tile to filter the list</div></div>
-        @if (status() !== 'all') { <button class="btn sm" (click)="status.set('all')">Show all</button> }
+        <span class="head-ico tone-ocean"><app-icon name="map" [size]="16" /></span>
+        <div class="grow"><h2>Service status</h2>
+          <div class="sub">{{ store.monitors().length }} monitors &middot; pick a status to filter the map and the list</div></div>
+        @if (status() !== 'all') {
+          <button class="chip active" (click)="filterBy('all')" title="Clear status filter">{{ statusLabel() }} <app-icon name="x" [size]="12" /></button>
+        }
       </div>
-      <div class="sb-grid">
+      <div class="sb-strip">
         @for (t of statusTiles(); track t.key) {
-          <button class="sb-tile" [class]="'sb-tile ' + t.key" [class.active]="status() === t.key" [class.zero]="!t.count"
-                  (click)="filterBy(t.key)">
-            <span class="sb-ico"><app-icon [name]="t.icon" [size]="22" /></span>
+          <button [class]="'sb-seg ' + t.key" [class.active]="status() === t.key" [class.zero]="!t.count" (click)="filterBy(t.key)">
+            <span class="sb-ico"><app-icon [name]="t.icon" [size]="18" /></span>
             <span class="sb-body">
               <span class="sb-count">{{ t.count }}</span>
               <span class="sb-label">{{ t.label }}</span>
-              <span class="sb-sub">{{ t.sub }}</span>
             </span>
           </button>
         }
       </div>
+      @if (store.monitors().length) {
+        <app-status-map [monitors]="store.monitors()" [filter]="status()" title="All monitors" />
+      } @else {
+        <div class="empty-state">No monitors yet. <a routerLink="/monitors/new" class="kpi-link">Create one</a></div>
+      }
     </section>
 
     @if (store.summary(); as s) {
@@ -99,10 +108,11 @@ const PAGE = 25;
 
     <div class="dash-row">
       <section class="card panel">
-        <div class="card-head">
+        <a class="card-head head-link" routerLink="/activity" title="Open all activity">
           <span class="head-ico tone-indigo"><app-icon name="history" [size]="16" /></span>
-          <div class="grow"><h2>Recent activity</h2><div class="sub">Which service went down and came back &middot; {{ rangeText() }}</div></div>
-        </div>
+          <div class="grow"><h2>Recent activity</h2><div class="sub">Last 5 changes &middot; {{ rangeText() }}</div></div>
+          <span class="view-all">View all <app-icon name="arrow" [size]="14" /></span>
+        </a>
         @if (events().length) {
           <div class="evt-list">
             <div class="evt evt-head"><span>Service</span><span>Status</span><span>Date &amp; time</span><span class="hide-sm">Duration</span></div>
@@ -152,22 +162,6 @@ const PAGE = 25;
     </div>
 
     <section class="card panel">
-      <div class="card-head">
-        <span class="head-ico tone-ocean"><app-icon name="map" [size]="16" /></span>
-        <div class="grow"><h2>Status map</h2><div class="sub">How services depend on each other &middot; click a node to open it</div></div>
-        <div class="map-legend hide-sm">
-          <span><i class="up"></i>Up</span><span><i class="down"></i>Down</span><span><i class="blocked"></i>Blocked</span>
-          <span><i class="degraded"></i>Degraded</span><span><i class="paused"></i>Paused</span>
-        </div>
-      </div>
-      @if (store.monitors().length) {
-        <app-status-map [monitors]="store.monitors()" title="All monitors" />
-      } @else {
-        <div class="empty-state">No monitors yet. <a routerLink="/monitors/new" class="kpi-link">Create one</a></div>
-      }
-    </section>
-
-    <section class="card panel">
       <div class="toolbar">
         <h2>Monitors <span class="count-badge">{{ visibleCount() }}</span></h2>
         <input class="search" placeholder="Search name or target..." [value]="query()"
@@ -180,7 +174,7 @@ const PAGE = 25;
         }
         <span class="spacer"></span>
         @if (status() !== 'all') {
-          <button class="chip active" (click)="status.set('all')" title="Clear status filter">
+          <button class="chip active" (click)="filterBy('all')" title="Clear status filter">
             {{ statusLabel() }} <app-icon name="x" [size]="12" />
           </button>
         }
@@ -244,6 +238,8 @@ const PAGE = 25;
 export class DashboardComponent {
   store = inject(MonitorStore);
   private api = inject(ApiService);
+  private route = inject(ActivatedRoute);
+  private router = inject(Router);
 
   readonly page = PAGE;
   readonly today = new Date();
@@ -310,28 +306,7 @@ export class DashboardComponent {
   });
   statusLabel = computed(() => this.statusTiles().find((t) => t.key === this.status())?.label ?? this.status());
 
-  // Each incident = a "down" event, plus an "up" event when it was resolved
-  events = computed<ActivityEvent[]>(() => {
-    const incidents = this.data()?.incidents ?? [];
-    const list: ActivityEvent[] = [];
-    for (const i of incidents) {
-      const name = i.monitor_name ?? `#${i.monitor_id}`;
-      list.push({
-        key: `d${i.id}`, monitorId: i.monitor_id, name, kind: 'down', at: i.started_at,
-        detail: i.resolved_at ? `Down for ${short(i.started_at, i.resolved_at)}` : `Still down · ${short(i.started_at)}`,
-      });
-      if (i.resolved_at) {
-        const next = incidents
-          .filter((o) => o.monitor_id === i.monitor_id && o.started_at > i.resolved_at!)
-          .sort((a, b) => a.started_at.localeCompare(b.started_at))[0];
-        list.push({
-          key: `u${i.id}`, monitorId: i.monitor_id, name, kind: 'up', at: i.resolved_at,
-          detail: next ? `Up for ${short(i.resolved_at, next.started_at)}` : `Up for ${short(i.resolved_at)} · running`,
-        });
-      }
-    }
-    return list.sort((a, b) => b.at.localeCompare(a.at)).slice(0, 8);
-  });
+  events = computed(() => toEvents(this.data()?.incidents ?? []).slice(0, 5));
 
   private byId = computed(() => new Map(this.store.monitors().map((m) => [m.id, m])));
   private children = computed(() => {
@@ -398,6 +373,26 @@ export class DashboardComponent {
   shownGroups = computed(() => this.groups().slice(0, this.limit()));
 
   constructor() {
+    // Range and status filter live in the URL, so the logo / Dashboard link (plain "/") resets them
+    this.route.queryParamMap.pipe(takeUntilDestroyed()).subscribe((p) => {
+      const from = p.get('from'), to = p.get('to');
+      const custom = from && to && DAY.test(from) && DAY.test(to) && from <= to ? { from, to } : null;
+      this.custom.set(custom);
+      if (custom) {
+        this.draftFrom.set(custom.from);
+        this.draftTo.set(custom.to);
+      }
+      this.hours.set(this.ranges.find((r) => r.label === p.get('range'))?.hours ?? 24);
+      const s = p.get('status') as Filter | null;
+      this.status.set(s && FILTERS.includes(s) ? s : 'all');
+      this.customOpen.set(false);
+      this.limit.set(PAGE);
+      if (!p.keys.length) {
+        this.query.set('');
+        this.tag.set(null);
+        this.openState.set(new Map());
+      }
+    });
     combineLatest([toObservable(this.rangeParams), timer(0, 30_000)])
       .pipe(
         switchMap(([range]) => this.api.dashboard(range).pipe(catchError(() => EMPTY))),
@@ -432,8 +427,7 @@ export class DashboardComponent {
   }
 
   filterBy(key: Filter): void {
-    this.status.set(this.status() === key ? 'all' : key);
-    this.limit.set(PAGE);
+    this.setParams({ status: key === 'all' || this.status() === key ? null : key });
   }
 
   shortSince(iso: string): string {
@@ -441,15 +435,17 @@ export class DashboardComponent {
   }
 
   pickHours(hours: number): void {
-    this.custom.set(null);
     this.customOpen.set(false);
-    this.hours.set(hours);
+    this.setParams({ range: hours === 24 ? null : this.ranges.find((r) => r.hours === hours)?.label, from: null, to: null });
   }
 
   applyCustom(): void {
     if (this.rangeError()) return;
-    this.custom.set({ from: this.draftFrom(), to: this.draftTo() });
-    this.customOpen.set(false);
+    this.setParams({ range: null, from: this.draftFrom(), to: this.draftTo() });
+  }
+
+  private setParams(params: Record<string, string | null | undefined>): void {
+    this.router.navigate([], { relativeTo: this.route, queryParams: params, queryParamsHandling: 'merge', replaceUrl: true });
   }
 
   private sslSoon(m: Monitor): boolean {
