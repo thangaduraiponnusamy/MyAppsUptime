@@ -11,7 +11,6 @@ import { IconComponent } from './icon.component';
     @if (store.projects().length) {
       <label class="project-pick" [class.active]="project() !== null" title="Show one project">
         <app-icon name="folder" [size]="16" />
-        <span class="pp-label">Project</span>
         <select (change)="onChange($any($event.target).value)">
           <option value="" [selected]="project() === null">All projects</option>
           @for (p of store.projects(); track p.id) { <option [value]="p.id" [selected]="project() === p.id">{{ p.name }}</option> }

@@ -53,12 +53,17 @@ const PAGE = 25;
             <button class="sb-donut" (click)="filterBy('all')" title="Show all monitors">
               <svg viewBox="0 0 120 120">
                 <circle cx="60" cy="60" r="50" class="sb-track" />
+                <circle cx="60" cy="60" r="40" class="sb-disc" />
                 @for (a of arcs(); track a.key) {
-                  <circle cx="60" cy="60" r="50" [class]="'sb-arc ' + a.key"
+                  <circle cx="60" cy="60" r="50" [class]="'sb-arc ' + a.key" [class.solo]="arcs().length === 1"
                           [attr.stroke-dasharray]="a.len + ' ' + (circ - a.len)" [attr.stroke-dashoffset]="-a.start" />
                 }
               </svg>
-              <span class="sb-center"><b>{{ upPct() }}%</b><small>Operational</small></span>
+              <span class="sb-center">
+                <b>{{ upPct() }}<i>%</i></b>
+                <small>Operational</small>
+                <em>{{ statusTiles()[0].count }} of {{ scoped().length }} up</em>
+              </span>
             </button>
             <div class="sb-tiles">
               @for (t of statusTiles(); track t.key) {
@@ -314,12 +319,15 @@ export class DashboardComponent {
   readonly circ = 2 * Math.PI * 50;
   upPct = computed(() => this.statusTiles()[0].pct);
   arcs = computed(() => {
-    const total = this.statusTiles().reduce((s, t) => s + t.count, 0);
+    const parts = this.statusTiles().filter((t) => t.count);
+    const total = parts.reduce((s, t) => s + t.count, 0);
+    // Round caps eat into the gap, so it must be wider than the stroke
+    const gap = parts.length > 1 ? 15 : 0;
     let start = 0;
-    return this.statusTiles().filter((t) => t.count).map((t) => {
-      const len = (t.count / total) * this.circ;
-      const a = { key: t.key, start, len };
-      start += len;
+    return parts.map((t) => {
+      const full = (t.count / total) * this.circ;
+      const a = { key: t.key, start: start + gap / 2, len: Math.max(full - gap, 0.01) };
+      start += full;
       return a;
     });
   });
