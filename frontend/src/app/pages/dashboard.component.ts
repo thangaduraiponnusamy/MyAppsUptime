@@ -106,11 +106,11 @@ type View = 'grid' | 'list';
             }
           </div>
           @if (latencyStats()) {
-            <app-area-chart [values]="latencySeries()" [axis]="axis()" />
+            <app-area-chart [values]="chartValues()" [axis]="axis()" />
           } @else {
             <div class="empty-state tint-indigo">
               <span class="empty-ico"><app-icon name="activity" [size]="20" /></span>
-              <div><b>Collecting data</b><div class="muted">The chart fills in after a few hours of checks.</div></div>
+              <div><b>Collecting data</b><div class="muted">The chart appears after a few successful checks.</div></div>
             </div>
           }
         </section>
@@ -341,9 +341,12 @@ export class DashboardComponent {
     const change = Math.round(((avg(vals.slice(-q)) - first) / first) * 100);
     return change === 0 ? null : change;
   });
+  // Chart starts at the first bucket with data, so new installs don't show a mostly empty chart
+  private chartStart = computed(() => Math.max(0, this.latencySeries().findIndex((v) => v !== null)));
+  chartValues = computed(() => this.latencySeries().slice(this.chartStart()));
   axis = computed(() => {
     const fmt = this.spanHours() <= 48 ? 'HH:mm' : 'MMM d';
-    return (this.data()?.series ?? []).map((p) => formatDate(p.at, fmt, 'en-US'));
+    return (this.data()?.series ?? []).slice(this.chartStart()).map((p) => formatDate(p.at, fmt, 'en-US'));
   });
 
   slices = computed<DonutSlice[]>(() => {

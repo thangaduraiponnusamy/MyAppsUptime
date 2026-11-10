@@ -259,7 +259,9 @@ def dashboard(
         since, until = now - timedelta(hours=hours), now
 
     span_sec = (until - since).total_seconds()
-    bucket_sec = 3600 if span_sec <= 48 * 3600 else 6 * 3600 if span_sec <= 7 * 86400 else 86400
+    bucket_sec = next(size for limit, size in (
+        (6 * 3600, 300), (48 * 3600, 900), (8 * 86400, 3600), (31 * 86400, 6 * 3600), (math.inf, 86400),
+    ) if span_sec <= limit)
     count = max(1, math.ceil(span_sec / bucket_sec))
     latencies: list[list[float]] = [[] for _ in range(count)]
     good, bad = [0] * count, [0] * count
