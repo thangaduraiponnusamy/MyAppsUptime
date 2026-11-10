@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>MyAppsUptime - Brand</title>
+  <link rel="stylesheet" href="../frontend/src/styles.css" />
+  <style>
+    .brand-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; max-width: 980px; margin: 32px auto; padding: 0 20px; }
+    .tile { display: grid; place-items: center; min-height: 170px; }
+    .tile.dark { background: #0a0f1e; border-color: #233050; }
+    .sizes { display: flex; gap: 22px; align-items: end; }
+    .sw { display: flex; align-items: center; gap: 10px; font-size: 12px; }
+    .sw i { width: 34px; height: 34px; border-radius: 10px; display: block; }
+  </style>
+</head>
+<body>
+  <div class="brand-grid">
+    <section class="card tile" style="grid-column: 1 / -1">
+      <img src="logo-full.svg" width="520" alt="MyAppsUptime logo" />
+    </section>
+    <section class="card tile dark"><img src="logo-full-dark.svg" width="400" alt="MyAppsUptime logo dark" /></section>
+    <section class="card tile">
+      <div class="sizes">
+        <img src="logo-mark.svg" width="96" alt="" /><img src="logo-mark.svg" width="64" alt="" />
+        <img src="logo-mark.svg" width="40" alt="" /><img src="logo-mark.svg" width="24" alt="" /><img src="logo-mark.svg" width="16" alt="" />
+      </div>
+    </section>
+    <section class="card" style="grid-column: 1 / -1">
+      <div class="row" style="gap: 28px">
+        <div class="sw"><i style="background:#4f46e5"></i>Indigo #4F46E5</div>
+        <div class="sw"><i style="background:#06b6d4"></i>Cyan #06B6D4</div>
+        <div class="sw"><i style="background:linear-gradient(135deg,#4f46e5,#06b6d4)"></i>Brand gradient</div>
+        <div class="sw"><i style="background:#0f172a"></i>Ink #0F172A</div>
+        <div class="sw"><i style="background:#64748b"></i>Slate #64748B</div>
+        <span class="spacer"></span>
+        <span class="muted">Font: Inter / Segoe UI &middot; My 500 &middot; Apps 700 &middot; Uptime 800 gradient</span>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

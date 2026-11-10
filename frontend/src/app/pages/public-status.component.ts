@@ -1,0 +1,123 @@
+import { DatePipe, DecimalPipe } from '@angular/common';
+import { Component, computed, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { ActivatedRoute } from '@angular/router';
+import { EMPTY, catchError, switchMap, tap, timer } from 'rxjs';
+import { ApiService } from '../core/api.service';
+import { MonitorStatus, PublicStatus } from '../core/models';
+import { IconComponent } from '../shared/icon.component';
+import { LogoComponent } from '../shared/logo.component';
+
+const BARS = 50;
+
+const STATE_LABEL: Record<string, string> = {
+  up: 'Operational',
+  degraded: 'Degraded',
+  down: 'Outage',
+  maintenance: 'Maintenance',
+  pending: 'Checking',
+  paused: 'Paused',
+};
+
+@Component({
+  selector: 'app-public-status',
+  standalone: true,
+  imports: [DatePipe, DecimalPipe, IconComponent, LogoComponent],
+  template: `
+    <div class="sp">
+      <div class="sp-wrap">
+        <div class="sp-top">
+          <app-logo [size]="32" [tagline]="false" />
+          <span class="sp-updated"><span class="live-dot"></span> Updated {{ updatedAt() | date: 'HH:mm:ss' }}</span>
+        </div>
+
+        @if (page(); as p) {
+          <div class="sp-title">
+            <h1>{{ p.title }}</h1>
+            @if (p.description) { <p>{{ p.description }}</p> }
+          </div>
+
+          <div [class]="'sp-banner ' + p.overall">
+            <span class="badge"><app-icon [name]="p.overall === 'up' ? 'check' : p.overall === 'down' ? 'x' : 'alert'" [size]="18" /></span>
+            <b>{{ headline() }}</b>
+            <span class="count">{{ operational() }} / {{ p.monitors.length }} operational</span>
+          </div>
+
+          <section class="sp-card">
+            @for (m of p.monitors; track m.id) {
+              <div class="sp-row">
+                <div>
+                  <div class="name">{{ m.name }}</div>
+                  <span [class]="'sp-state ' + m.status">{{ label(m.status) }}</span>
+                </div>
+                <div class="sp-bars">
+                  @for (s of pad(m.bars); track $index) { <span [class]="s" [title]="label(s)"></span> }
+                </div>
+                <div class="sp-uptime">{{ m.uptime_30d === null ? '--' : (m.uptime_30d | number: '1.0-2') + '%' }}</div>
+              </div>
+            }
+          </section>
+
+          <div class="sp-foot">
+            <div class="sp-legend">
+              <span><i style="background: var(--up)"></i>Operational</span>
+              <span><i style="background: var(--degraded)"></i>Degraded</span>
+              <span><i style="background: var(--down)"></i>Outage</span>
+              <span><i style="background: var(--maintenance)"></i>Maintenance</span>
+            </div>
+            <span class="spacer"></span>
+            <span>Uptime = last 30 days &middot; refreshes every 30s</span>
+          </div>
+        } @else if (notFound()) {
+          <div class="sp-banner down"><b>Status page not found</b></div>
+        }
+      </div>
+    </div>
+  `,
+})
+export class PublicStatusComponent {
+  private api = inject(ApiService);
+  page = signal<PublicStatus | null>(null);
+  notFound = signal(false);
+  updatedAt = signal(new Date());
+
+  operational = computed(() => this.page()?.monitors.filter((m) => m.status === 'up').length ?? 0);
+
+  headline = computed(() => {
+    const p = this.page();
+    if (!p) return '';
+    const down = p.monitors.filter((m) => m.status === 'down').length;
+    if (down && down === p.monitors.length) return 'Major outage';
+    if (down) return 'Partial outage';
+    if (p.monitors.some((m) => m.status === 'maintenance')) return 'Maintenance in progress';
+    if (p.overall === 'degraded') return 'Some systems are degraded';
+    return 'All systems operational';
+  });
+
+  constructor() {
+    const slug = inject(ActivatedRoute).snapshot.paramMap.get('slug') ?? '';
+    timer(0, 30_000)
+      .pipe(
+        switchMap(() =>
+          this.api.publicStatus(slug).pipe(
+            tap(() => this.updatedAt.set(new Date())),
+            catchError(() => {
+              this.notFound.set(true);
+              return EMPTY;
+            }),
+          ),
+        ),
+        takeUntilDestroyed(),
+      )
+      .subscribe((p) => this.page.set(p));
+  }
+
+  label(status: string): string {
+    return STATE_LABEL[status] ?? 'No data';
+  }
+
+  pad(bars: MonitorStatus[]): string[] {
+    const recent = bars.slice(-BARS);
+    return [...Array(BARS - recent.length).fill('empty'), ...recent];
+  }
+}

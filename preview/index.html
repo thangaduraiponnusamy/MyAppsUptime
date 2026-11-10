@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>MyAppsUptime - Sample UI</title>
+  <link rel="stylesheet" href="../frontend/src/styles.css" />
+</head>
+<body>
+  <div class="app">
+    <aside class="side">
+      <a class="logo">
+        <img class="logo-mark" src="../branding/logo-mark.svg" width="40" height="40" alt="" />
+        <span class="wordmark">
+          <span class="name"><span class="my">My</span><span class="apps">Apps</span><span class="uptime">Uptime</span></span>
+          <span class="tagline">Uptime &middot; SLA &middot; Insights</span>
+        </span>
+      </a>
+      <a class="nav-link active">Overview</a>
+      <a class="nav-link">Incidents <span class="count">1</span></a>
+      <a class="nav-link">Maintenance</a>
+      <a class="nav-link">Alerting</a>
+      <a class="nav-link">Status pages</a>
+      <a class="nav-link">Settings</a>
+      <div class="bottom">
+        <a class="btn primary">+ New monitor</a>
+        <button class="btn" onclick="toggleTheme()">Dark / Light</button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="page-head">
+        <div>
+          <h1>Overview</h1>
+          <div class="sub">Live health of 9 monitors. Refreshes every 10 seconds.</div>
+        </div>
+        <span class="spacer"></span>
+        <input class="search" placeholder="Search name or target..." />
+      </div>
+
+      <div class="two-col">
+        <div class="grid-cards">
+          <div class="card kpi"><span class="ico up">&#10003;</span><div><div class="val">6</div><div class="lbl">Up</div></div></div>
+          <div class="card kpi"><span class="ico down">&#10005;</span><div><div class="val">1</div><div class="lbl">Down</div></div></div>
+          <div class="card kpi"><span class="ico degraded">&#9889;</span><div><div class="val">1</div><div class="lbl">Degraded</div></div></div>
+          <div class="card kpi"><span class="ico maintenance">&#9874;</span><div><div class="val">1</div><div class="lbl">Maintenance</div></div></div>
+          <div class="card kpi"><span class="ico down">!</span><div><div class="val">1</div><div class="lbl">Unacked incidents</div></div></div>
+          <div class="card kpi"><span class="ico degraded">&#128274;</span><div><div class="val">1</div><div class="lbl">SSL &lt; 14 days</div></div></div>
+        </div>
+        <div class="card row" style="justify-content: space-around">
+          <div class="ring" style="--p: 99.4"><div><span><b>99.41%</b><span class="muted">fleet uptime</span></span></div></div>
+          <div>
+            <div class="muted">Avg response</div><div style="font-size:24px;font-weight:750">184 ms</div>
+            <div class="muted" style="margin-top:8px">Paused</div><div style="font-size:24px;font-weight:750">1</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="segmented">
+          <button class="chip active">All</button><button class="chip">Up</button><button class="chip">Down</button>
+          <button class="chip">Degraded</button><button class="chip">Maintenance</button><button class="chip">Paused</button>
+        </div>
+        <span class="spacer"></span>
+        <div class="chips"><button class="chip">#prod</button><button class="chip">#api</button><button class="chip">#cron</button><button class="chip">#eu-west-1</button></div>
+      </div>
+
+      <div class="mon-grid" id="grid"></div>
+    </main>
+  </div>
+
+  <script>
+    // Sample data only - the real app loads everything from the API.
+    let seed = 11;
+    const rand = () => ((seed = (seed * 9301 + 49297) % 233280) / 233280);
+    function toggleTheme() {
+      const r = document.documentElement;
+      r.dataset.theme = r.dataset.theme === 'dark' ? 'light' : 'dark';
+    }
+    if (location.hash === '#dark') document.documentElement.dataset.theme = 'dark';
+
+    const monitors = [
+      ['Payments API', 'down', 'json', 'https://pay.example.com/health', '96.42%', '--', ['prod', 'api'], 0.3],
+      ['Customer Login', 'degraded', 'http', 'https://login.example.com', '99.10%', '842', ['prod'], 0.05],
+      ['MQTT Broker', 'maintenance', 'tcp', 'mqtt.example.com:8883', '99.80%', '31', ['eu-west-1'], 0.02],
+      ['Customer Portal', 'up', 'keyword', 'https://portal.example.com', '100%', '142', ['prod'], 0],
+      ['Nightly Backup Job', 'up', 'push', 'Push heartbeat', '100%', '--', ['cron'], 0],
+      ['Metrics Dashboard', 'up', 'http', 'https://metrics.example.com', '99.98%', '96', ['prod'], 0.01],
+      ['api.example.com SSL', 'up', 'ssl', 'api.example.com', '100%', '58', ['api'], 0],
+      ['Core Router', 'up', 'ping', '10.0.0.1', '100%', '2', ['eu-west-1'], 0],
+      ['Legacy Reports', 'paused', 'http', 'https://old.example.com', '--', '--', [], 0],
+    ];
+
+    const beats = (fail, last) => Array.from({ length: 30 }, (_, i) => {
+      if (last === 'paused') return 'paused';
+      if (i >= 27 && last !== 'up') return last;
+      const r = rand();
+      return r < fail ? 'down' : r < fail * 1.5 ? 'degraded' : 'up';
+    });
+    const spark = () => {
+      const v = Array.from({ length: 30 }, (_, i) => 40 + Math.sin(i / 3) * 10 + rand() * 18);
+      const max = Math.max(...v), min = Math.min(...v);
+      return v.map((x, i) => `${i ? 'L' : 'M'}${(i / 29 * 100).toFixed(1)},${(28 - (x - min) / (max - min) * 26).toFixed(1)}`).join(' ');
+    };
+
+    document.getElementById('grid').innerHTML = monitors.map(([name, status, type, target, uptime, ms, tags, fail]) => `
+      <a class="mon-card ${status}">
+        <div class="row" style="flex-wrap:nowrap">
+          <span class="dot ${status}"></span>
+          <div style="min-width:0;flex:1"><div class="title">${name}</div><div class="target">${target}</div></div>
+          <span class="type-badge">${type}</span>
+        </div>
+        <div class="metrics">
+          <div><b>${uptime}</b><span>uptime 24h</span></div>
+          <div><b>${ms}</b><span>ms</span></div>
+          <div style="flex:1"><svg viewBox="0 0 100 30" preserveAspectRatio="none" class="spark"><path d="${status === 'paused' ? '' : spark()}"/></svg></div>
+        </div>
+        <div class="hb-bar sm">${beats(fail, status).map((s) => `<span class="beat ${s}"></span>`).join('')}</div>
+        <div>${tags.map((t) => `<span class="tag">#${t}</span>`).join('')}</div>
+      </a>`).join('');
+  </script>
+</body>
+</html>

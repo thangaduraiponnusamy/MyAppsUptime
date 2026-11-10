@@ -1,0 +1,16 @@
+services:
+  myappsuptime:
+    build: .
+    image: myappsuptime:latest
+    container_name: myappsuptime
+    ports:
+      - "8000:8000"
+    environment:
+      API_TOKEN: ${API_TOKEN:-}
+      HEARTBEAT_RETENTION_DAYS: "90"
+    volumes:
+      - myappsuptime-data:/data
+    restart: unless-stopped
+
+volumes:
+  myappsuptime-data:

@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>MyAppsUptime - Monitor details sample</title>
+  <link rel="stylesheet" href="../frontend/src/styles.css" />
+</head>
+<body>
+  <div class="app">
+    <aside class="side">
+      <a class="logo">
+        <img class="logo-mark" src="../branding/logo-mark.svg" width="40" height="40" alt="" />
+        <span class="wordmark">
+          <span class="name"><span class="my">My</span><span class="apps">Apps</span><span class="uptime">Uptime</span></span>
+          <span class="tagline">Uptime &middot; SLA &middot; Insights</span>
+        </span>
+      </a>
+      <a class="nav-link active">Overview</a>
+      <a class="nav-link">Incidents <span class="count">1</span></a>
+      <a class="nav-link">Maintenance</a>
+      <a class="nav-link">Alerting</a>
+      <a class="nav-link">Status pages</a>
+      <a class="nav-link">Settings</a>
+      <div class="bottom"><a class="btn primary">+ New monitor</a></div>
+    </aside>
+
+    <main class="main">
+      <div class="page-head">
+        <span class="dot up"></span>
+        <div>
+          <h1>Customer Portal</h1>
+          <div class="sub"><span class="type-badge">keyword</span> https://portal.example.com &middot; every 60s &middot; depends on <a style="color:var(--primary)">Core Router</a></div>
+        </div>
+        <span class="spacer"></span>
+        <button class="btn">Check now</button><button class="btn">Pause</button><a class="btn">Edit</a><button class="btn danger">Delete</button>
+      </div>
+
+      <section class="card">
+        <div class="row">
+          <span class="pill up">up</span><span class="muted">HTTP 200</span><span class="spacer"></span>
+          <span class="muted">Last check 10:42:18</span><span class="tag">#prod</span>
+        </div>
+        <div style="margin-top:14px" class="hb-bar" id="bar"></div>
+      </section>
+
+      <div class="two-col">
+        <section class="card grid-cards">
+          <div class="stat"><div class="label">Response</div><div class="value">142 ms</div></div>
+          <div class="stat"><div class="label">Avg 24h</div><div class="value">156 ms</div></div>
+          <div class="stat"><div class="label">P95 24h</div><div class="value">298 ms</div></div>
+          <div class="stat"><div class="label">Uptime 24h</div><div class="value up">99.93%</div></div>
+          <div class="stat"><div class="label">Uptime 7d</div><div class="value up">99.87%</div></div>
+          <div class="stat"><div class="label">Uptime 30d</div><div class="value up">99.95%</div></div>
+          <div class="stat"><div class="label">Incidents 30d</div><div class="value down">2</div></div>
+          <div class="stat"><div class="label">MTTR</div><div class="value">4.5 min</div></div>
+          <div class="stat"><div class="label">SSL expires</div><div class="value">74 d</div></div>
+        </section>
+        <section class="card">
+          <h2>SLA &amp; error budget</h2>
+          <p class="muted">Target 99.9% over 30 days</p>
+          <div class="progress"><div style="width:79%"></div></div>
+          <div class="row" style="margin-top:10px"><div><b>79.2%</b> <span class="muted">budget left</span></div><span class="spacer"></span><span class="muted">9 / 43.2 min used</span></div>
+        </section>
+      </div>
+
+      <section class="card">
+        <div class="row"><h2>Response time</h2><span class="spacer"></span>
+          <button class="chip">1h</button><button class="chip active">24h</button><button class="chip">7d</button><button class="chip">30d</button></div>
+        <svg viewBox="0 0 800 200" preserveAspectRatio="none" class="chart" id="chart">
+          <line x1="0" x2="800" y1="50" y2="50" class="grid" /><line x1="0" x2="800" y1="100" y2="100" class="grid" /><line x1="0" x2="800" y1="150" y2="150" class="grid" />
+        </svg>
+        <div class="chart-legend"><span>0 ms</span><span>max 400 ms</span></div>
+      </section>
+
+      <div class="two-col">
+        <section class="card">
+          <h2>Status changes</h2>
+          <table>
+            <thead><tr><th>Status</th><th>Time</th><th>Message</th></tr></thead>
+            <tbody>
+              <tr><td><span class="pill up">up</span></td><td>Nov 10, 08:14:02</td><td class="muted">HTTP 200</td></tr>
+              <tr><td><span class="pill down">down</span></td><td>Nov 10, 08:09:01</td><td class="muted">Keyword 'Welcome' not found</td></tr>
+              <tr><td><span class="pill degraded">degraded</span></td><td>Nov 9, 22:12:44</td><td class="muted">HTTP 200 (latency anomaly, baseline 151 ms)</td></tr>
+            </tbody>
+          </table>
+        </section>
+        <section class="card" style="display:flex;flex-direction:column;gap:14px">
+          <h2>Integrations</h2>
+          <div><div class="muted">Badges</div><div class="code-box mono">https://uptime.example.com/api/public/badge/4/uptime.svg</div></div>
+          <div><div class="muted">Prometheus</div><div class="code-box mono">https://uptime.example.com/api/metrics</div></div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    // Sample data only.
+    let seed = 5;
+    const rand = () => ((seed = (seed * 9301 + 49297) % 233280) / 233280);
+    if (location.hash === '#dark') document.documentElement.dataset.theme = 'dark';
+    const bar = Array.from({ length: 72 }, () => 'up');
+    bar[50] = bar[51] = 'down'; bar[30] = 'degraded';
+    document.getElementById('bar').innerHTML = bar.map((s) => `<span class="beat ${s}"></span>`).join('');
+    const pts = Array.from({ length: 120 }, (_, i) => Math.max(60, 140 + Math.sin(i / 9) * 40 + rand() * 60 + (i > 70 && i < 76 ? 160 : 0)));
+    const xy = (v, i) => `${(i / 119 * 800).toFixed(1)},${(200 - v / 400 * 190).toFixed(1)}`;
+    const line = pts.map((v, i) => `${i ? 'L' : 'M'}${xy(v, i)}`).join(' ');
+    document.getElementById('chart').insertAdjacentHTML('beforeend',
+      `<path class="area" d="${line} L800,200 L0,200 Z"/><path class="line" d="${line}"/>
+       <rect class="down-mark" x="566" y="0" width="3" height="200"/><rect class="down-mark" x="573" y="0" width="3" height="200"/>`);
+  </script>
+</body>
+</html>

@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Platform Status - MyAppsUptime sample</title>
+  <link rel="stylesheet" href="../frontend/src/styles.css" />
+</head>
+<body>
+  <div class="sp">
+    <div class="sp-wrap">
+      <div class="sp-top">
+        <img src="../branding/logo-mark.svg" width="32" height="32" alt="" />
+        <span class="wordmark"><span class="name"><span class="my">My</span><span class="apps">Apps</span><span class="uptime">Uptime</span></span></span>
+        <span class="sp-updated"><span class="live-dot"></span> Updated 10:42:18</span>
+      </div>
+
+      <div class="sp-title">
+        <h1>Platform Status</h1>
+        <p>Live status of customer-facing services.</p>
+      </div>
+
+      <div class="sp-banner degraded">
+        <span class="badge"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l9 16H3L12 3zM12 10v4M12 17v.5"/></svg></span>
+        <b>Some systems are degraded</b>
+        <span class="count">4 / 5 operational</span>
+      </div>
+
+      <section class="sp-card" id="services"></section>
+
+      <div class="sp-foot">
+        <div class="sp-legend">
+          <span><i style="background: var(--up)"></i>Operational</span>
+          <span><i style="background: var(--degraded)"></i>Degraded</span>
+          <span><i style="background: var(--down)"></i>Outage</span>
+          <span><i style="background: var(--maintenance)"></i>Maintenance</span>
+        </div>
+        <span class="spacer"></span>
+        <span>Uptime = last 30 days &middot; refreshes every 30s</span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Sample data only.
+    let seed = 3;
+    const rand = () => ((seed = (seed * 9301 + 49297) % 233280) / 233280);
+    if (location.hash === '#dark') document.documentElement.dataset.theme = 'dark';
+    const label = { up: 'Operational', degraded: 'Degraded', down: 'Outage', maintenance: 'Maintenance' };
+    const rows = [
+      ['Web Portal', 'up', '99.98%', 0.01],
+      ['Public API', 'up', '99.95%', 0.02],
+      ['Device Ingestion', 'degraded', '99.4%', 0.05],
+      ['Login (SSO)', 'up', '100%', 0],
+      ['Notifications', 'up', '99.9%', 0.01],
+    ];
+    document.getElementById('services').innerHTML = rows.map(([name, status, uptime, fail]) => {
+      const bars = Array.from({ length: 50 }, (_, i) => {
+        if (i === 49) return status;
+        const r = rand();
+        return r < fail ? 'down' : r < fail * 2 ? 'degraded' : 'up';
+      }).map((s) => `<span class="${s}" title="${label[s]}"></span>`).join('');
+      return `<div class="sp-row">
+        <div><div class="name">${name}</div><span class="sp-state ${status}">${label[status]}</span></div>
+        <div class="sp-bars">${bars}</div>
+        <div class="sp-uptime">${uptime}</div>
+      </div>`;
+    }).join('');
+  </script>
+</body>
+</html>
