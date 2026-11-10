@@ -1,6 +1,6 @@
 export type MonitorStatus = 'up' | 'down' | 'degraded' | 'maintenance' | 'paused' | 'pending';
 export type MonitorType = 'http' | 'keyword' | 'json' | 'tcp' | 'ping' | 'dns' | 'ssl' | 'push';
-export type ChannelType = 'webhook' | 'slack' | 'teams';
+export type ChannelType = 'webhook' | 'slack' | 'teams' | 'email';
 
 export const MONITOR_TYPES: { value: MonitorType; label: string }[] = [
   { value: 'http', label: 'HTTP(s)' },
@@ -32,6 +32,7 @@ export interface MonitorInput {
   anomaly_detection: boolean;
   notify_repeat_min: number | null;
   parent_id: number | null;
+  project_id: number | null;
   tags: string[];
 }
 
@@ -90,8 +91,59 @@ export interface Channel {
   name: string;
   type: ChannelType;
   url: string;
+  recipients: string[];
   tags: string[];
+  project_ids: number[];
   active: boolean;
+}
+
+export type Role = 'admin' | 'member';
+
+export interface Me {
+  id: number;
+  username: string;
+  name: string;
+  email: string | null;
+  role: Role;
+  must_change_password: boolean;
+  refresh_sec: number;
+}
+
+export interface User {
+  id?: number;
+  username: string;
+  name: string;
+  email: string | null;
+  role: Role;
+  active: boolean;
+  password?: string | null;
+  must_change_password?: boolean;
+  created_at?: string;
+}
+
+export interface Project {
+  id?: number;
+  name: string;
+  description: string | null;
+  member_ids: number[];
+  email_members: boolean;
+  monitor_count?: number;
+  down_count?: number;
+}
+
+export interface GeneralSettings {
+  app_url: string;
+  refresh_sec: number;
+}
+
+export interface SmtpSettings {
+  host: string;
+  port: number;
+  security: 'starttls' | 'ssl' | 'none';
+  username: string;
+  password?: string | null;
+  from_addr: string;
+  has_password?: boolean;
 }
 
 export interface Maintenance {
@@ -146,4 +198,5 @@ export interface ExportData {
   version: number;
   monitors: (MonitorInput & { id: number })[];
   channels: Channel[];
+  projects?: (Project & { id: number })[];
 }

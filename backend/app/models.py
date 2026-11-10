@@ -39,6 +39,7 @@ class Monitor(Base):
     anomaly_detection: Mapped[bool] = mapped_column(default=True)
     notify_repeat_min: Mapped[int | None]
     parent_id: Mapped[int | None] = mapped_column(ForeignKey("monitors.id", ondelete="SET NULL"))
+    project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id", ondelete="SET NULL"), index=True)
     tags: Mapped[list] = mapped_column(JSON, default=list)
     push_token: Mapped[str | None] = mapped_column(String(64), unique=True)
 
@@ -89,9 +90,11 @@ class NotificationChannel(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(120))
-    type: Mapped[str] = mapped_column(String(20))  # webhook | slack | teams
-    url: Mapped[str] = mapped_column(String(500))
+    type: Mapped[str] = mapped_column(String(20))  # webhook | slack | teams | email
+    url: Mapped[str] = mapped_column(String(500), default="")
+    recipients: Mapped[list] = mapped_column(JSON, default=list)  # email addresses for email channels
     tags: Mapped[list] = mapped_column(JSON, default=list)  # empty = all monitors
+    project_ids: Mapped[list] = mapped_column(JSON, default=list)  # empty = all projects
     active: Mapped[bool] = mapped_column(default=True)
 
 
@@ -113,3 +116,43 @@ class StatusPage(Base):
     title: Mapped[str] = mapped_column(String(120))
     description: Mapped[str | None] = mapped_column(String(500))
     monitor_ids: Mapped[list] = mapped_column(JSON, default=list)
+
+
+class Project(Base):
+    __tablename__ = "projects"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), unique=True)
+    description: Mapped[str | None] = mapped_column(String(500))
+    member_ids: Mapped[list] = mapped_column(JSON, default=list)  # user ids: see the project and get its alerts
+    email_members: Mapped[bool] = mapped_column(default=True)
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    username: Mapped[str] = mapped_column(String(60), unique=True)
+    name: Mapped[str] = mapped_column(String(120), default="")
+    email: Mapped[str | None] = mapped_column(String(200))
+    role: Mapped[str] = mapped_column(String(10), default="member")  # admin | member
+    password_hash: Mapped[str] = mapped_column(String(200))
+    must_change_password: Mapped[bool] = mapped_column(default=False)
+    active: Mapped[bool] = mapped_column(default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class AuthToken(Base):
+    __tablename__ = "auth_tokens"
+
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(10), default="session")  # session | reset
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class AppSetting(Base):
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String(60), primary_key=True)
+    value: Mapped[dict] = mapped_column(JSON, default=dict)

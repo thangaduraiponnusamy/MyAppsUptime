@@ -1,18 +1,31 @@
-import { Injectable, inject, signal } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { Injectable, computed, inject, signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { EMPTY, catchError, forkJoin, switchMap, timer } from 'rxjs';
 import { ApiService } from './api.service';
-import { Monitor, Summary } from './models';
+import { AuthService } from './auth.service';
+import { Monitor, Project, Summary } from './models';
 
 @Injectable({ providedIn: 'root' })
 export class MonitorStore {
   private api = inject(ApiService);
+  private auth = inject(AuthService);
   readonly monitors = signal<Monitor[]>([]);
   readonly summary = signal<Summary | null>(null);
+  readonly projects = signal<Project[]>([]);
+
+  /** Poll only while signed in, at the interval set in Settings > General. */
+  private readonly pollMs = computed(() => {
+    const u = this.auth.user();
+    return u && !u.must_change_password ? this.auth.refreshMs() : 0;
+  });
 
   constructor() {
-    timer(0, 10_000)
-      .pipe(switchMap(() => this.load().pipe(catchError(() => EMPTY))), takeUntilDestroyed())
+    toObservable(this.pollMs)
+      .pipe(
+        switchMap((ms) => (ms ? timer(0, ms) : EMPTY)),
+        switchMap(() => this.load().pipe(catchError(() => EMPTY))),
+        takeUntilDestroyed(),
+      )
       .subscribe((r) => this.apply(r));
   }
 
@@ -20,12 +33,17 @@ export class MonitorStore {
     this.load().subscribe((r) => this.apply(r));
   }
 
-  private load() {
-    return forkJoin({ monitors: this.api.monitors(), summary: this.api.summary() });
+  projectName(id: number | null | undefined): string {
+    return id ? (this.projects().find((p) => p.id === id)?.name ?? '') : '';
   }
 
-  private apply(r: { monitors: Monitor[]; summary: Summary }): void {
+  private load() {
+    return forkJoin({ monitors: this.api.monitors(), summary: this.api.summary(), projects: this.api.projects() });
+  }
+
+  private apply(r: { monitors: Monitor[]; summary: Summary; projects: Project[] }): void {
     this.monitors.set(r.monitors);
     this.summary.set(r.summary);
+    this.projects.set(r.projects);
   }
 }

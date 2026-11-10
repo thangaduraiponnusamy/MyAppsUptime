@@ -1,38 +1,31 @@
 import html
 import math
-import os
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.responses import PlainTextResponse
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from . import notifier
+from .auth import Principal, require_admin, require_user, visible_monitor_ids
 from .checks import CheckResult
+from .config import get_setting
 from .database import get_db
-from .models import (Heartbeat, Incident, MaintenanceWindow, Monitor, NotificationChannel, StatusPage,
+from .models import (Heartbeat, Incident, MaintenanceWindow, Monitor, NotificationChannel, Project, StatusPage,
                      aware, utcnow)
 from .scheduler import record_result, scheduler
 from .schemas import (AckIn, ChannelIn, ChannelOut, DashboardOut, DashboardPoint, ExportData, HeartbeatOut,
                       IncidentOut, MaintenanceIn, MaintenanceOut, MonitorCreate, MonitorExport, MonitorOut,
-                      PublicIncident, PublicMonitor, PublicStatusOut,
+                      ProjectExport, PublicIncident, PublicMonitor, PublicStatusOut,
                       StatsOut, StatusPageIn, StatusPageOut, SummaryOut)
 
-API_TOKEN = os.getenv("API_TOKEN")
 MONTH_MIN = 30 * 24 * 60
 
-
-def require_token(authorization: str | None = Header(default=None)) -> None:
-    if not API_TOKEN:
-        return
-    if not authorization or not secrets.compare_digest(authorization, f"Bearer {API_TOKEN}"):
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or missing token")
-
-
-router = APIRouter(prefix="/api", dependencies=[Depends(require_token)])
+router = APIRouter(prefix="/api", dependencies=[Depends(require_user)])
 public = APIRouter(prefix="/api/public")
 
 
@@ -110,6 +103,28 @@ def _check_parent(db: Session, parent_id: int | None, self_id: int | None) -> No
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Invalid parent monitor")
 
 
+def _check_project(db: Session, project_id: int | None) -> None:
+    if project_id is not None and db.get(Project, project_id) is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Invalid project")
+
+
+def _scope(db: Session, user: Principal, project_id: int | None = None) -> list[int] | None:
+    """Monitor ids the user may see (None = all), optionally narrowed to one project (0 = no project)."""
+    ids = visible_monitor_ids(db, user)
+    if project_id is None:
+        return None if ids is None else sorted(ids)
+    column = Monitor.project_id.is_(None) if project_id == 0 else Monitor.project_id == project_id
+    in_project = set(db.scalars(select(Monitor.id).where(column)).all())
+    return sorted(in_project if ids is None else ids & in_project)
+
+
+def _get_monitor(db: Session, user: Principal, monitor_id: int) -> Monitor:
+    ids = visible_monitor_ids(db, user)
+    if ids is not None and monitor_id not in ids:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Monitor {monitor_id} not found")
+    return _get(db, Monitor, monitor_id)
+
+
 def _monitor_is_public(db: Session, monitor_id: int) -> bool:
     return any(monitor_id in (p.monitor_ids or []) for p in db.scalars(select(StatusPage)).all())
 
@@ -117,13 +132,19 @@ def _monitor_is_public(db: Session, monitor_id: int) -> bool:
 # ---------- summary & monitors ----------
 
 @router.get("/summary", response_model=SummaryOut)
-def summary(db: Session = Depends(get_db)):
-    monitors = db.scalars(select(Monitor)).all()
+def summary(project_id: int | None = None, db: Session = Depends(get_db), user: Principal = Depends(require_user)):
+    ids = _scope(db, user, project_id)
+    query = select(Monitor)
+    open_query = select(Incident).where(Incident.resolved_at.is_(None))
+    if ids is not None:
+        query = query.where(Monitor.id.in_(ids))
+        open_query = open_query.where(Incident.monitor_id.in_(ids))
+    monitors = db.scalars(query).all()
     soon = utcnow() + timedelta(days=14)
     active = [m for m in monitors if m.active]
-    uptimes = [u for u in _uptime_by_monitor(db, utcnow() - timedelta(hours=24)).values() if u is not None]
+    uptimes = [u for u in _uptime_by_monitor(db, utcnow() - timedelta(hours=24), ids).values() if u is not None]
     latencies = [m.last_latency_ms for m in active if m.last_latency_ms is not None]
-    open_incidents = db.scalars(select(Incident).where(Incident.resolved_at.is_(None))).all()
+    open_incidents = db.scalars(open_query).all()
     return SummaryOut(
         total=len(monitors),
         up=sum(1 for m in active if m.status == "up"),
@@ -140,17 +161,47 @@ def summary(db: Session = Depends(get_db)):
 
 
 @router.get("/monitors", response_model=list[MonitorOut])
-def list_monitors(tag: str | None = None, db: Session = Depends(get_db)):
-    monitors = db.scalars(select(Monitor).order_by(Monitor.name)).all()
+def list_monitors(tag: str | None = None, project_id: int | None = None, db: Session = Depends(get_db),
+                  user: Principal = Depends(require_user)):
+    ids = _scope(db, user, project_id)
+    query = select(Monitor).order_by(Monitor.name)
+    if ids is not None:
+        query = query.where(Monitor.id.in_(ids))
+    monitors = db.scalars(query).all()
     if tag:
         monitors = [m for m in monitors if tag in (m.tags or [])]
-    uptimes = _uptime_by_monitor(db, utcnow() - timedelta(hours=24))
+    uptimes = _uptime_by_monitor(db, utcnow() - timedelta(hours=24), ids)
     return [_monitor_out(db, m, uptimes.get(m.id)) for m in monitors]
+
+
+class BulkIn(BaseModel):
+    ids: list[int] = Field(min_length=1, max_length=1000)
+    action: Literal["pause", "resume", "delete", "project"]
+    project_id: int | None = None
+
+
+@router.post("/monitors/bulk")
+def bulk_monitors(body: BulkIn, db: Session = Depends(get_db)):
+    if body.action == "project":
+        _check_project(db, body.project_id)
+    monitors = db.scalars(select(Monitor).where(Monitor.id.in_(body.ids))).all()
+    for m in monitors:
+        if body.action == "pause":
+            m.active, m.status = False, "paused"
+        elif body.action == "resume" and not m.active:
+            m.active, m.status, m.last_checked = True, "pending", None
+        elif body.action == "project":
+            m.project_id = body.project_id
+        elif body.action == "delete":
+            db.delete(m)
+    db.commit()
+    return {"updated": len(monitors)}
 
 
 @router.post("/monitors", response_model=MonitorOut, status_code=status.HTTP_201_CREATED)
 def create_monitor(body: MonitorCreate, db: Session = Depends(get_db)):
     _check_parent(db, body.parent_id, None)
+    _check_project(db, body.project_id)
     m = Monitor(**body.model_dump())
     if m.type == "push":
         m.push_token = secrets.token_urlsafe(16)
@@ -160,8 +211,8 @@ def create_monitor(body: MonitorCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/monitors/{monitor_id}", response_model=MonitorOut)
-def get_monitor(monitor_id: int, db: Session = Depends(get_db)):
-    m = _get(db, Monitor, monitor_id)
+def get_monitor(monitor_id: int, db: Session = Depends(get_db), user: Principal = Depends(require_user)):
+    m = _get_monitor(db, user, monitor_id)
     return _monitor_out(db, m, _uptime_by_monitor(db, utcnow() - timedelta(hours=24), [m.id]).get(m.id))
 
 
@@ -169,6 +220,7 @@ def get_monitor(monitor_id: int, db: Session = Depends(get_db)):
 def update_monitor(monitor_id: int, body: MonitorCreate, db: Session = Depends(get_db)):
     m = _get(db, Monitor, monitor_id)
     _check_parent(db, body.parent_id, m.id)
+    _check_project(db, body.project_id)
     for key, value in body.model_dump().items():
         setattr(m, key, value)
     if m.type == "push" and not m.push_token:
@@ -201,16 +253,17 @@ def resume_monitor(monitor_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/monitors/{monitor_id}/check", status_code=status.HTTP_202_ACCEPTED)
-def check_now(monitor_id: int, db: Session = Depends(get_db)):
-    m = _get(db, Monitor, monitor_id)
+async def check_now(monitor_id: int, db: Session = Depends(get_db), user: Principal = Depends(require_user)):
+    m = _get_monitor(db, user, monitor_id)
     if not m.active:
         raise HTTPException(status.HTTP_409_CONFLICT, "Monitor is paused")
     return {"queued": scheduler.trigger(m)}
 
 
 @router.get("/monitors/{monitor_id}/heartbeats", response_model=list[HeartbeatOut])
-def heartbeats(monitor_id: int, hours: int = Query(24, ge=1, le=24 * 90), db: Session = Depends(get_db)):
-    _get(db, Monitor, monitor_id)
+def heartbeats(monitor_id: int, hours: int = Query(24, ge=1, le=24 * 90), db: Session = Depends(get_db),
+               user: Principal = Depends(require_user)):
+    _get_monitor(db, user, monitor_id)
     return db.scalars(
         select(Heartbeat)
         .where(Heartbeat.monitor_id == monitor_id, Heartbeat.created_at >= utcnow() - timedelta(hours=hours))
@@ -219,8 +272,8 @@ def heartbeats(monitor_id: int, hours: int = Query(24, ge=1, le=24 * 90), db: Se
 
 
 @router.get("/monitors/{monitor_id}/stats", response_model=StatsOut)
-def stats(monitor_id: int, db: Session = Depends(get_db)):
-    m = _get(db, Monitor, monitor_id)
+def stats(monitor_id: int, db: Session = Depends(get_db), user: Principal = Depends(require_user)):
+    m = _get_monitor(db, user, monitor_id)
     now = utcnow()
     latencies = sorted(db.scalars(
         select(Heartbeat.latency_ms).where(
@@ -275,9 +328,12 @@ def dashboard(
     hours: int = Query(24, ge=1, le=24 * 90),
     start: datetime | None = None,
     end: datetime | None = None,
+    project_id: int | None = None,
     db: Session = Depends(get_db),
+    user: Principal = Depends(require_user),
 ):
     since, until = _window(hours, start, end)
+    ids = _scope(db, user, project_id)
 
     span_sec = (until - since).total_seconds()
     bucket_sec = next(size for limit, size in (
@@ -287,10 +343,11 @@ def dashboard(
     latencies: list[list[float]] = [[] for _ in range(count)]
     good, bad = [0] * count, [0] * count
 
-    rows = db.execute(
-        select(Heartbeat.created_at, Heartbeat.status, Heartbeat.latency_ms)
-        .where(Heartbeat.created_at >= since, Heartbeat.created_at <= until)
-    )
+    beats = (select(Heartbeat.created_at, Heartbeat.status, Heartbeat.latency_ms)
+             .where(Heartbeat.created_at >= since, Heartbeat.created_at <= until))
+    if ids is not None:
+        beats = beats.where(Heartbeat.monitor_id.in_(ids))
+    rows = db.execute(beats)
     for created_at, hb_status, latency in rows:
         idx = min(count - 1, max(0, int((aware(created_at) - since).total_seconds() // bucket_sec)))
         if latency is not None:
@@ -311,6 +368,8 @@ def dashboard(
     ]
     recent = []
     in_range = (Incident.started_at <= until) & (Incident.resolved_at.is_(None) | (Incident.resolved_at >= since))
+    if ids is not None:
+        in_range = in_range & Incident.monitor_id.in_(ids)
     for incident, name in db.execute(
         select(Incident, Monitor.name).join(Monitor).where(in_range).order_by(Incident.started_at.desc()).limit(20)
     ):
@@ -338,9 +397,14 @@ def incidents(
     hours: int | None = Query(None, ge=1, le=24 * 90),
     start: datetime | None = None,
     end: datetime | None = None,
+    project_id: int | None = None,
     db: Session = Depends(get_db),
+    user: Principal = Depends(require_user),
 ):
     query = select(Incident, Monitor.name).join(Monitor).order_by(Incident.started_at.desc()).limit(limit)
+    ids = _scope(db, user, project_id)
+    if ids is not None:
+        query = query.where(Incident.monitor_id.in_(ids))
     if hours or start or end:
         since, until = _window(hours or 24, start, end)
         query = query.where(Incident.started_at <= until, Incident.resolved_at.is_(None) | (Incident.resolved_at >= since))
@@ -355,8 +419,9 @@ def incidents(
 
 
 @router.post("/incidents/{incident_id}/ack", response_model=IncidentOut)
-def acknowledge(incident_id: int, body: AckIn, db: Session = Depends(get_db)):
+def acknowledge(incident_id: int, body: AckIn, db: Session = Depends(get_db), user: Principal = Depends(require_user)):
     incident = _get(db, Incident, incident_id)
+    _get_monitor(db, user, incident.monitor_id)
     incident.acknowledged_at = incident.acknowledged_at or utcnow()
     incident.acknowledged_by = body.by
     incident.note = body.note
@@ -368,15 +433,31 @@ def acknowledge(incident_id: int, body: AckIn, db: Session = Depends(get_db)):
 
 # ---------- notification channels ----------
 
-@router.get("/notifications", response_model=list[ChannelOut])
+def _check_projects(db: Session, project_ids: list[int]) -> None:
+    for project_id in project_ids:
+        _check_project(db, project_id)
+
+
+@router.get("/notifications", response_model=list[ChannelOut], dependencies=[Depends(require_admin)])
 def list_channels(db: Session = Depends(get_db)):
     return db.scalars(select(NotificationChannel)).all()
 
 
 @router.post("/notifications", response_model=ChannelOut, status_code=status.HTTP_201_CREATED)
 def create_channel(body: ChannelIn, db: Session = Depends(get_db)):
+    _check_projects(db, body.project_ids)
     channel = NotificationChannel(**body.model_dump())
     db.add(channel)
+    db.commit()
+    return channel
+
+
+@router.put("/notifications/{channel_id}", response_model=ChannelOut)
+def update_channel(channel_id: int, body: ChannelIn, db: Session = Depends(get_db)):
+    channel = _get(db, NotificationChannel, channel_id)
+    _check_projects(db, body.project_ids)
+    for key, value in body.model_dump().items():
+        setattr(channel, key, value)
     db.commit()
     return channel
 
@@ -390,7 +471,12 @@ def delete_channel(channel_id: int, db: Session = Depends(get_db)):
 @router.post("/notifications/{channel_id}/test")
 async def test_channel(channel_id: int, db: Session = Depends(get_db)):
     channel = _get(db, NotificationChannel, channel_id)
-    await notifier.send([channel], "Test monitor", "up", "This is a test notification")
+    app_url = get_setting(db, "general")["app_url"]
+    alert = notifier.Alert(monitor="Test monitor", status="up", message="This is a test alert from MyAppsUptime",
+                           project="Test", link=app_url or None)
+    errors = await notifier.send([channel], alert, smtp=get_setting(db, "smtp"))
+    if errors:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "; ".join(errors))
     return {"sent": True}
 
 
@@ -445,9 +531,11 @@ def _label(value: str) -> str:
 
 
 @router.get("/metrics", response_class=PlainTextResponse)
-def metrics(db: Session = Depends(get_db)):
-    monitors = db.scalars(select(Monitor)).all()
-    uptimes = _uptime_by_monitor(db, utcnow() - timedelta(hours=24))
+def metrics(db: Session = Depends(get_db), user: Principal = Depends(require_user)):
+    ids = _scope(db, user)
+    query = select(Monitor) if ids is None else select(Monitor).where(Monitor.id.in_(ids))
+    monitors = db.scalars(query).all()
+    uptimes = _uptime_by_monitor(db, utcnow() - timedelta(hours=24), ids)
     lines = [
         "# TYPE myappsuptime_monitor_up gauge",
         "# TYPE myappsuptime_monitor_latency_ms gauge",
@@ -466,22 +554,35 @@ def metrics(db: Session = Depends(get_db)):
     return "\n".join(lines) + "\n"
 
 
-@router.get("/export", response_model=ExportData)
+@router.get("/export", response_model=ExportData, dependencies=[Depends(require_admin)])
 def export_config(db: Session = Depends(get_db)):
     monitors = db.scalars(select(Monitor)).all()
     channels = db.scalars(select(NotificationChannel)).all()
+    projects = db.scalars(select(Project)).all()
     return ExportData(
         monitors=[MonitorExport.model_validate(m, from_attributes=True) for m in monitors],
         channels=[ChannelIn.model_validate(c, from_attributes=True) for c in channels],
+        # Members are user accounts of this server, so they are not exported
+        projects=[ProjectExport(id=p.id, name=p.name, description=p.description, email_members=p.email_members)
+                  for p in projects],
     )
 
 
 @router.post("/import")
 def import_config(body: ExportData, db: Session = Depends(get_db)):
+    project_map: dict[int, int] = {}
+    for item in body.projects:
+        project = db.scalar(select(Project).where(Project.name == item.name))
+        if project is None:
+            project = Project(name=item.name, description=item.description, email_members=item.email_members)
+            db.add(project)
+            db.flush()
+        project_map[item.id] = project.id
     id_map: dict[int, Monitor] = {}
     for item in body.monitors:
-        data = item.model_dump(exclude={"id", "parent_id"})
-        m = Monitor(**data, push_token=secrets.token_urlsafe(16) if item.type == "push" else None)
+        data = item.model_dump(exclude={"id", "parent_id", "project_id"})
+        m = Monitor(**data, project_id=project_map.get(item.project_id),
+                    push_token=secrets.token_urlsafe(16) if item.type == "push" else None)
         db.add(m)
         id_map[item.id] = m
     db.flush()
@@ -489,9 +590,11 @@ def import_config(body: ExportData, db: Session = Depends(get_db)):
         if item.parent_id in id_map:
             id_map[item.id].parent_id = id_map[item.parent_id].id
     for channel in body.channels:
-        db.add(NotificationChannel(**channel.model_dump()))
+        data = channel.model_dump()
+        data["project_ids"] = [project_map[p] for p in channel.project_ids if p in project_map]
+        db.add(NotificationChannel(**data))
     db.commit()
-    return {"monitors": len(body.monitors), "channels": len(body.channels)}
+    return {"monitors": len(body.monitors), "channels": len(body.channels), "projects": len(body.projects)}
 
 
 # ---------- public endpoints (no token) ----------

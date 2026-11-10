@@ -1,9 +1,11 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import {
-  Channel, DashboardData, ExportData, Heartbeat, Incident, Maintenance, Monitor, MonitorInput, PublicStatus, Stats, StatusPage,
-  Summary,
+  Channel, DashboardData, ExportData, GeneralSettings, Heartbeat, Incident, Maintenance, Monitor, MonitorInput, Project,
+  PublicStatus, SmtpSettings, Stats, StatusPage, Summary, User,
 } from './models';
+
+type Range = { hours?: number; start?: string; end?: string; project_id?: number };
 
 @Injectable({ providedIn: 'root' })
 export class ApiService {
@@ -11,7 +13,7 @@ export class ApiService {
   private base = '/api';
 
   summary() { return this.http.get<Summary>(`${this.base}/summary`); }
-  dashboard(range: { hours?: number; start?: string; end?: string }) {
+  dashboard(range: Range) {
     const params = Object.fromEntries(Object.entries(range).filter(([, v]) => v !== undefined)) as Record<string, string | number>;
     return this.http.get<DashboardData>(`${this.base}/dashboard`, { params });
   }
@@ -29,7 +31,7 @@ export class ApiService {
   }
   stats(id: number) { return this.http.get<Stats>(`${this.base}/monitors/${id}/stats`); }
 
-  incidents(openOnly = false, limit = 100, range: { hours?: number; start?: string; end?: string } = {}) {
+  incidents(openOnly = false, limit = 100, range: Range = {}) {
     let params = new HttpParams().set('open_only', openOnly).set('limit', limit);
     for (const [k, v] of Object.entries(range)) if (v !== undefined) params = params.set(k, v);
     return this.http.get<Incident[]>(`${this.base}/incidents`, { params });
@@ -40,8 +42,28 @@ export class ApiService {
 
   channels() { return this.http.get<Channel[]>(`${this.base}/notifications`); }
   createChannel(body: Channel) { return this.http.post<Channel>(`${this.base}/notifications`, body); }
+  updateChannel(id: number, body: Channel) { return this.http.put<Channel>(`${this.base}/notifications/${id}`, body); }
   deleteChannel(id: number) { return this.http.delete<void>(`${this.base}/notifications/${id}`); }
   testChannel(id: number) { return this.http.post<{ sent: boolean }>(`${this.base}/notifications/${id}/test`, {}); }
+
+  projects() { return this.http.get<Project[]>(`${this.base}/projects`); }
+  createProject(body: Project) { return this.http.post<Project>(`${this.base}/projects`, body); }
+  updateProject(id: number, body: Project) { return this.http.put<Project>(`${this.base}/projects/${id}`, body); }
+  deleteProject(id: number) { return this.http.delete<void>(`${this.base}/projects/${id}`); }
+  bulk(ids: number[], action: 'pause' | 'resume' | 'delete' | 'project', projectId: number | null = null) {
+    return this.http.post<{ updated: number }>(`${this.base}/monitors/bulk`, { ids, action, project_id: projectId });
+  }
+
+  users() { return this.http.get<User[]>(`${this.base}/users`); }
+  createUser(body: User) { return this.http.post<User>(`${this.base}/users`, body); }
+  updateUser(id: number, body: User) { return this.http.put<User>(`${this.base}/users/${id}`, body); }
+  deleteUser(id: number) { return this.http.delete<void>(`${this.base}/users/${id}`); }
+
+  general() { return this.http.get<GeneralSettings>(`${this.base}/settings/general`); }
+  saveGeneral(body: GeneralSettings) { return this.http.put<GeneralSettings>(`${this.base}/settings/general`, body); }
+  smtp() { return this.http.get<SmtpSettings>(`${this.base}/settings/smtp`); }
+  saveSmtp(body: SmtpSettings) { return this.http.put<SmtpSettings>(`${this.base}/settings/smtp`, body); }
+  testSmtp(to: string) { return this.http.post<{ sent: boolean }>(`${this.base}/settings/smtp/test`, { to }); }
 
   maintenance() { return this.http.get<Maintenance[]>(`${this.base}/maintenance`); }
   createMaintenance(body: Maintenance) { return this.http.post<Maintenance>(`${this.base}/maintenance`, body); }
@@ -52,7 +74,9 @@ export class ApiService {
   deleteStatusPage(id: number) { return this.http.delete<void>(`${this.base}/status-pages/${id}`); }
 
   exportConfig() { return this.http.get<ExportData>(`${this.base}/export`); }
-  importConfig(body: ExportData) { return this.http.post<{ monitors: number; channels: number }>(`${this.base}/import`, body); }
+  importConfig(body: ExportData) {
+    return this.http.post<{ monitors: number; channels: number; projects: number }>(`${this.base}/import`, body);
+  }
 
   publicStatus(slug: string) { return this.http.get<PublicStatus>(`${this.base}/public/status/${encodeURIComponent(slug)}`); }
 }

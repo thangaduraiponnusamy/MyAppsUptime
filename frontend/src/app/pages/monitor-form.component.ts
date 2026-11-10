@@ -75,9 +75,15 @@ const URL_TYPES: MonitorType[] = ['http', 'keyword', 'json'];
           Smart latency anomaly detection (flags DEGRADED when response time jumps far above the normal baseline)</label>
 
         <div class="section-title">Alerting</div>
+        <label>Project
+          <select formControlName="project_id">
+            <option [ngValue]="null">No project</option>
+            @for (p of store.projects(); track p.id) { <option [ngValue]="p.id">{{ p.name }}</option> }
+          </select>
+        </label>
         <label>Repeat alert while down (minutes, optional) <input type="number" formControlName="notify_repeat_min" placeholder="30" /></label>
         <label>Tags (comma separated) <input formControlName="tags" placeholder="prod, api, team-payments" /></label>
-        <p class="hint full">Tags also route alerts: a channel with tags only receives alerts for monitors with a matching tag.
+        <p class="hint full">Project members and the project's channels get the alerts. Tags can narrow a channel further.
           Alerts are suppressed while the parent monitor is down.</p>
 
         @if (error()) { <p class="error full">{{ error() }}</p> }
@@ -93,10 +99,11 @@ export class MonitorFormComponent {
   private fb = inject(FormBuilder);
   private api = inject(ApiService);
   private router = inject(Router);
-  private store = inject(MonitorStore);
+  store = inject(MonitorStore);
 
   readonly types = MONITOR_TYPES;
-  id = Number(inject(ActivatedRoute).snapshot.paramMap.get('id')) || null;
+  private route = inject(ActivatedRoute);
+  id = Number(this.route.snapshot.paramMap.get('id')) || null;
   error = signal('');
   saving = signal(false);
 
@@ -119,6 +126,7 @@ export class MonitorFormComponent {
     anomaly_detection: [true],
     notify_repeat_min: [null as number | null, [Validators.min(5)]],
     parent_id: [null as number | null],
+    project_id: [(Number(this.route.snapshot.queryParamMap.get('project')) || null) as number | null],
     tags: [''],
   });
 

@@ -20,6 +20,9 @@ Python (FastAPI) backend + Angular frontend, shipped as **one Docker image**.
 | **Monitor dependencies** (no alert storm when parent is down) | No | Yes |
 | **Incident acknowledge + owner + note** | No | Yes |
 | **Alert routing by tag** (team channels) | No | Yes |
+| **Projects** (group monitors, members get their project's alerts) | No | Yes |
+| **Users and roles** (admin / member) | Single user | Yes |
+| Microsoft Teams and email alerts | Yes | Yes |
 | **MTTR and P95 response time** | No | Yes |
 | Repeat alert while down | Yes | Yes |
 | Prometheus `/metrics` | Yes | Yes |
@@ -38,6 +41,49 @@ Open http://localhost:8000
 
 Data is stored in the `myappsuptime-data` Docker volume.
 
+## First sign-in
+
+- User name `admin`, password `admin`. You must change the password right away.
+- Then open **Settings** to set everything up. All configuration lives there.
+
+| Settings page | What you set |
+|---|---|
+| General | Auto refresh (default 5 seconds), app URL for links in alerts |
+| Notifications | Teams, email, Slack or webhook channels, and the email (SMTP) server |
+| Projects | Projects, their members and their monitors |
+| Users | Add users, set role (admin or member), reset a password |
+| Security | Your account and password |
+| Backup | Export and import as JSON |
+| About | Version and GitHub link |
+
+**Roles**
+
+| Role | Can do |
+|---|---|
+| Admin | Everything |
+| Member | Sees only their projects, can acknowledge incidents and run a check |
+
+**How alerts reach the right people**
+
+1. Put monitors in a project (Settings > Projects, or the Project field on the monitor).
+2. Add users as project members. With "Email members" on, they get an email when a monitor goes down or recovers.
+3. Optional: add a Teams channel and tick the project, so the alert also goes to that team's Teams channel.
+
+**Forgot password**
+
+- With email set up (SMTP + app URL), use "Forgot password?" on the sign-in page. The link works once, for 30 minutes.
+- An admin can set a new password in Settings > Users.
+- If no admin can sign in, run on the server:
+
+```bash
+cd backend
+python -m app.reset_password admin 'NewPassword123'
+```
+
+In Docker: `docker exec -it myappsuptime python -m app.reset_password admin 'NewPassword123'`
+
+**Upgrading** keeps your data. New tables and columns are added on start.
+
 ### Without compose
 
 ```bash
@@ -45,11 +91,12 @@ docker build -t myappsuptime:latest .
 docker run -d --name myappsuptime -p 8000:8000 -v myappsuptime-data:/data myappsuptime:latest
 ```
 
-## Settings
+## Environment variables
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `API_TOKEN` | empty (no auth) | If set, the API needs `Authorization: Bearer <token>` |
+| `API_TOKEN` | empty | Optional token for scripts: `Authorization: Bearer <token>` (acts as admin) |
+| `SESSION_DAYS` | `7` | How long a sign-in lasts |
 | `DATABASE_URL` | `sqlite:////data/myappsuptime.db` | SQLAlchemy database URL |
 | `HEARTBEAT_RETENTION_DAYS` | `90` | Older check results are deleted |
 | `CORS_ORIGINS` | `http://localhost:4200` | Only for local dev |
@@ -61,7 +108,7 @@ Runs the API and the built UI together on one port. Commands are for Git Bash on
 **First time only** (install backend and frontend dependencies, build the UI):
 
 ```bash
-cd "MyAppsUptime/backend"
+cd MyAppsUptime/backend
 python -m venv .venv
 .venv/Scripts/python.exe -m pip install -r requirements.txt
 
@@ -73,7 +120,7 @@ NG_CLI_ANALYTICS=false npx ng build
 **Start the app:**
 
 ```bash
-cd "MyAppsUptime/backend"
+cd MyAppsUptime/backend
 STATIC_DIR=../frontend/dist/myappsuptime-ui/browser .venv/Scripts/python.exe -m uvicorn app.main:app --port 8000
 ```
 
@@ -129,3 +176,7 @@ Screenshots: [ui-overview.png](preview/ui-overview.png), [ui-overview-dark.png](
 | `Dockerfile` | Builds UI + API into one image |
 
 How to use it: [docs/USAGE.md](docs/USAGE.md)
+
+## License
+
+MIT. See [LICENSE](LICENSE).

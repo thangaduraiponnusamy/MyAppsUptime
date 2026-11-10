@@ -4,6 +4,7 @@ import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { EMPTY, catchError, combineLatest, switchMap, timer } from 'rxjs';
 import { ApiService } from '../core/api.service';
+import { AuthService } from '../core/auth.service';
 import { Incident } from '../core/models';
 import { PrefsService } from '../core/prefs.service';
 import { toEvents } from '../shared/activity';
@@ -72,6 +73,7 @@ export class ActivityComponent {
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   private prefs = inject(PrefsService);
+  private auth = inject(AuthService);
   readonly kinds = [
     { value: 'all', label: 'All' },
     { value: 'down', label: 'Down' },
@@ -120,7 +122,8 @@ export class ActivityComponent {
     });
     const range = computed(() => rangeQuery(this.hours(), this.custom()));
     const max = computed(() => this.prefs.limits().max);
-    combineLatest([toObservable(range), toObservable(max), timer(0, 30_000)])
+    const tick = toObservable(this.auth.refreshMs).pipe(switchMap((ms) => timer(0, ms)));
+    combineLatest([toObservable(range), toObservable(max), tick])
       .pipe(switchMap(([r, m]) => this.api.incidents(false, m, r).pipe(catchError(() => EMPTY))), takeUntilDestroyed())
       .subscribe((list) => this.incidents.set(list));
   }

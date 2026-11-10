@@ -7,8 +7,10 @@ from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
-from . import api
-from .database import Base, engine
+from . import admin_api, api
+from .auth import ensure_default_admin
+from .config import APP_VERSION
+from .database import SessionLocal, upgrade_schema
 from .scheduler import scheduler
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -16,13 +18,15 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    Base.metadata.create_all(engine)
+    upgrade_schema()
+    with SessionLocal() as db:
+        ensure_default_admin(db)
     await scheduler.start()
     yield
     await scheduler.stop()
 
 
-app = FastAPI(title="MyAppsUptime", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="MyAppsUptime", version=APP_VERSION, lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -31,6 +35,8 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type"],
 )
 
+app.include_router(admin_api.auth)
+app.include_router(admin_api.admin)
 app.include_router(api.router)
 app.include_router(api.public)
 

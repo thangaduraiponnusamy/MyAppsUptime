@@ -2,8 +2,9 @@ import { DatePipe, DecimalPipe } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute } from '@angular/router';
-import { EMPTY, catchError, switchMap, tap, timer } from 'rxjs';
+import { EMPTY, catchError, map, of, switchMap, tap, timer } from 'rxjs';
 import { ApiService } from '../core/api.service';
+import { AuthService } from '../core/auth.service';
 import { MonitorStatus, PublicStatus } from '../core/models';
 import { IconComponent } from '../shared/icon.component';
 import { LogoComponent } from '../shared/logo.component';
@@ -66,7 +67,7 @@ const STATE_LABEL: Record<string, string> = {
               <span><i style="background: var(--maintenance)"></i>Maintenance</span>
             </div>
             <span class="spacer"></span>
-            <span>Uptime = last 30 days &middot; refreshes every 30s</span>
+            <span>Uptime = last 30 days &middot; refreshes every {{ refreshSec() }}s</span>
           </div>
         } @else if (notFound()) {
           <div class="sp-banner down"><b>Status page not found</b></div>
@@ -80,6 +81,7 @@ export class PublicStatusComponent {
   page = signal<PublicStatus | null>(null);
   notFound = signal(false);
   updatedAt = signal(new Date());
+  refreshSec = signal(5);
 
   operational = computed(() => this.page()?.monitors.filter((m) => m.status === 'up').length ?? 0);
 
@@ -96,8 +98,14 @@ export class PublicStatusComponent {
 
   constructor() {
     const slug = inject(ActivatedRoute).snapshot.paramMap.get('slug') ?? '';
-    timer(0, 30_000)
+    // Same refresh interval as the app (Settings > General)
+    inject(AuthService)
+      .options()
       .pipe(
+        map((o) => Math.max(5, o.refresh_sec)),
+        catchError(() => of(5)),
+        tap((sec) => this.refreshSec.set(sec)),
+        switchMap((sec) => timer(0, sec * 1000)),
         switchMap(() =>
           this.api.publicStatus(slug).pipe(
             tap(() => this.updatedAt.set(new Date())),

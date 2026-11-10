@@ -4,6 +4,7 @@ import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { EMPTY, catchError, combineLatest, forkJoin, switchMap, timer } from 'rxjs';
 import { ApiService, errorText } from '../core/api.service';
+import { AuthService } from '../core/auth.service';
 import { Heartbeat, Monitor, Stats } from '../core/models';
 import { MonitorStore } from '../core/monitor-store.service';
 import { HeartbeatBarComponent } from '../shared/heartbeat-bar.component';
@@ -26,13 +27,16 @@ import { daysUntil } from '../shared/time';
             {{ m.type === 'push' ? 'Waiting for pushes' : m.target }}{{ m.port ? ':' + m.port : '' }}
             &middot; every {{ m.interval_sec }}s
             @if (parent(); as p) { &middot; depends on <a [routerLink]="['/monitors', p.id]" style="color: var(--primary)">{{ p.name }}</a> }
+            @if (store.projectName(m.project_id); as pn) { &middot; <a [routerLink]="['/']" [queryParams]="{ project: m.project_id }" style="color: var(--primary)">{{ pn }}</a> }
           </div>
         </div>
         <span class="spacer"></span>
         <button class="btn" (click)="checkNow(m)" [disabled]="!m.active || m.type === 'push'"><app-icon name="bolt" /> Check now</button>
-        <button class="btn" (click)="togglePause(m)">{{ m.active ? 'Pause' : 'Resume' }}</button>
-        <a class="btn" [routerLink]="['/monitors', m.id, 'edit']">Edit</a>
-        <button class="btn danger" (click)="remove(m)">Delete</button>
+        @if (auth.isAdmin()) {
+          <button class="btn" (click)="togglePause(m)">{{ m.active ? 'Pause' : 'Resume' }}</button>
+          <a class="btn" [routerLink]="['/monitors', m.id, 'edit']">Edit</a>
+          <button class="btn danger" (click)="remove(m)">Delete</button>
+        }
       </div>
 
       <section class="card">
@@ -136,7 +140,8 @@ export class MonitorDetailComponent {
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   private api = inject(ApiService);
-  private store = inject(MonitorStore);
+  store = inject(MonitorStore);
+  auth = inject(AuthService);
 
   readonly origin = location.origin;
   monitor = signal<Monitor | null>(null);
@@ -159,7 +164,8 @@ export class MonitorDetailComponent {
   );
 
   constructor() {
-    combineLatest([this.route.paramMap, toObservable(this.hours), timer(0, 15_000)])
+    const tick = toObservable(this.auth.refreshMs).pipe(switchMap((ms) => timer(0, ms)));
+    combineLatest([this.route.paramMap, toObservable(this.hours), tick])
       .pipe(
         switchMap(([params, hours]) => {
           const id = Number(params.get('id'));

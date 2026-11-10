@@ -4,6 +4,7 @@ import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { EMPTY, catchError, combineLatest, switchMap, timer } from 'rxjs';
 import { ApiService } from '../core/api.service';
+import { AuthService } from '../core/auth.service';
 import { DashboardData, Monitor, MonitorStatus } from '../core/models';
 import { MonitorStore } from '../core/monitor-store.service';
 import { toEvents } from '../shared/activity';
@@ -31,6 +32,17 @@ const PAGE = 25;
         <h1>Dashboard</h1>
         <div class="sub">{{ greeting }} &middot; {{ todayText }}</div>
       </div>
+      <span class="spacer"></span>
+      @if (store.projects().length) {
+        <label class="project-pick" title="Show one project">
+          <app-icon name="folder" [size]="16" />
+          <select (change)="pickProject($any($event.target).value)">
+            <option value="" [selected]="project() === null">All projects</option>
+            @for (p of store.projects(); track p.id) { <option [value]="p.id" [selected]="project() === p.id">{{ p.name }}</option> }
+            <option value="0" [selected]="project() === 0">No project</option>
+          </select>
+        </label>
+      }
     </div>
 
     <section class="card panel status-board">
@@ -38,7 +50,7 @@ const PAGE = 25;
         <div class="sb-side">
           <div class="card-head">
             <span class="head-ico tone-ocean"><app-icon name="server" [size]="16" /></span>
-            <div class="grow"><h2>Status</h2><div class="sub">{{ store.monitors().length }} monitors &middot; current state</div></div>
+            <div class="grow"><h2>Status</h2><div class="sub">{{ scoped().length }} monitors &middot; current state</div></div>
             @if (attention().length) {
               <span class="sb-badge bad">{{ attention().length }} need attention</span>
             } @else {
@@ -75,10 +87,10 @@ const PAGE = 25;
               <button class="chip active" (click)="filterBy('all')" title="Clear status filter">{{ statusLabel() }} <app-icon name="x" [size]="12" /></button>
             }
           </div>
-          @if (store.monitors().length) {
-            <app-status-map [monitors]="store.monitors()" [filter]="status()" title="All monitors" />
+          @if (scoped().length) {
+            <app-status-map [monitors]="scoped()" [filter]="status()" [title]="projectTitle()" />
           } @else {
-            <div class="empty-state">No monitors yet. <a routerLink="/monitors/new" class="kpi-link">Create one</a></div>
+            <div class="empty-state">No monitors yet. @if (auth.isAdmin()) { <a routerLink="/monitors/new" class="kpi-link">Create one</a> }</div>
           }
         </div>
       </div>
@@ -127,11 +139,11 @@ const PAGE = 25;
             @if (latencyRange(); as lr) { {{ lr.min }}&ndash;{{ lr.max }} ms range } @else { {{ rangeText() }} }
           </div>
         </div>
-        <a class="stat-tile link" routerLink="/incidents" [class.bad]="s.open_incidents > 0">
+        <a class="stat-tile link" routerLink="/incidents" [class.bad]="openNow() > 0">
           <div class="st-label"><span class="st-ico rose"><app-icon name="alert" [size]="15" /></span>Incidents
             <app-icon class="st-go" name="arrow" [size]="14" /></div>
           <div class="st-value">{{ data()?.incident_count ?? 0 }}</div>
-          <div class="st-sub">{{ rangeText() }} &middot; {{ s.open_incidents }} open now</div>
+          <div class="st-sub">{{ rangeText() }} &middot; {{ openNow() }} open now</div>
         </a>
       </div>
     }
@@ -199,7 +211,7 @@ const PAGE = 25;
             }
           </div>
         } @empty {
-          <div class="empty-state">No monitors match. <a routerLink="/monitors/new" class="kpi-link">Create one</a></div>
+          <div class="empty-state">No monitors match. @if (auth.isAdmin()) { <a routerLink="/monitors/new" class="kpi-link">Create one</a> }</div>
         }
       </div>
       @if (groups().length > limit()) {
@@ -223,7 +235,8 @@ const PAGE = 25;
             <b>{{ m.name }}
               @if (g?.children.length) { <span class="dep-chip" title="Dependent monitors"><app-icon name="network" [size]="11" /> {{ g.children.length }}</span> }
             </b>
-            <small><span class="m-type">{{ m.type }}</span>&middot; {{ m.type === 'push' ? 'Push heartbeat' : m.target }}</small>
+            <small><span class="m-type">{{ m.type }}</span>&middot; {{ m.type === 'push' ? 'Push heartbeat' : m.target }}
+              @if (project() === null && store.projectName(m.project_id); as pn) { <span class="m-project">{{ pn }}</span> }</small>
           </span>
         </span>
         <span>
@@ -245,7 +258,7 @@ export class DashboardComponent {
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   prefs = inject(PrefsService);
-
+  auth = inject(AuthService);
   readonly page = PAGE;
   readonly today = new Date();
   readonly todayText = formatDate(this.today, 'EEEE, MMM d', 'en-US');
@@ -257,6 +270,8 @@ export class DashboardComponent {
   query = signal('');
   tag = signal<string | null>(null);
   status = signal<Filter>('all');
+  /** null = all projects, 0 = monitors without a project */
+  project = signal<number | null>(null);
   limit = signal(PAGE);
   private openState = signal(new Map<number, boolean>());
 
@@ -264,7 +279,24 @@ export class DashboardComponent {
   rangeText = computed(() => (this.custom() ? this.rangeLabel() : `last ${this.rangeLabel()}`));
   uptime = computed(() => this.data()?.uptime ?? null);
   avgLatency = computed(() => this.data()?.avg_latency_ms ?? null);
-  private rangeParams = computed(() => rangeQuery(this.hours(), this.custom()));
+  private rangeParams = computed(() => {
+    const p = this.project();
+    return p === null ? rangeQuery(this.hours(), this.custom()) : { ...rangeQuery(this.hours(), this.custom()), project_id: p };
+  });
+
+  scoped = computed(() => {
+    const p = this.project();
+    const all = this.store.monitors();
+    return p === null ? all : all.filter((m) => (m.project_id ?? 0) === p);
+  });
+  openNow = computed(() =>
+    this.project() === null
+      ? (this.store.summary()?.open_incidents ?? 0)
+      : this.scoped().filter((m) => m.status === 'down').length);
+  projectTitle = computed(() => {
+    const p = this.project();
+    return p === null ? 'All monitors' : p === 0 ? 'No project' : this.store.projectName(p) || 'Project';
+  });
 
   private latencyValues = computed(() =>
     (this.data()?.series ?? []).map((p) => p.avg_latency_ms).filter((v): v is number => v !== null));
@@ -274,7 +306,7 @@ export class DashboardComponent {
   });
 
   statusTiles = computed(() => {
-    const all = this.store.monitors();
+    const all = this.scoped();
     const total = all.length || 1;
     const blocked = all.filter((m) => this.isBlocked(m)).length;
     const n = (s: MonitorStatus) => all.filter((m) => m.status === s).length;
@@ -313,14 +345,13 @@ export class DashboardComponent {
   });
 
   attention = computed(() =>
-    this.store
-      .monitors()
+    this.scoped()
       .filter((m) => m.active && !this.isBlocked(m) && (m.status === 'down' || m.status === 'degraded' || this.sslSoon(m)))
       .sort((a, b) => (RANK[a.status] ?? 9) - (RANK[b.status] ?? 9))
       .slice(0, 6),
   );
 
-  tags = computed(() => [...new Set(this.store.monitors().flatMap((m) => m.tags))].sort());
+  tags = computed(() => [...new Set(this.scoped().flatMap((m) => m.tags))].sort());
 
   private matches = computed(() => {
     const q = this.query().toLowerCase();
@@ -329,7 +360,7 @@ export class DashboardComponent {
     const statusOk = (m: Monitor) =>
       s === 'all' ||
       (s === 'blocked' ? this.isBlocked(m) : s === 'down' ? m.status === 'down' && !this.isBlocked(m) : m.status === s);
-    return this.store.monitors().filter(
+    return this.scoped().filter(
       (m) =>
         (!q || m.name.toLowerCase().includes(q) || m.target.toLowerCase().includes(q)) &&
         (!t || m.tags.includes(t)) &&
@@ -376,6 +407,8 @@ export class DashboardComponent {
       this.hours.set(RANGES.find((r) => r.label === p.get('range'))?.hours ?? 24);
       const s = p.get('status') as Filter | null;
       this.status.set(s && FILTERS.includes(s) ? s : 'all');
+      const proj = p.get('project');
+      this.project.set(proj !== null && /^\d+$/.test(proj) ? Number(proj) : null);
       this.limit.set(PAGE);
       if (!p.keys.length) {
         this.query.set('');
@@ -383,7 +416,8 @@ export class DashboardComponent {
         this.openState.set(new Map());
       }
     });
-    combineLatest([toObservable(this.rangeParams), timer(0, 30_000)])
+    const tick = toObservable(this.auth.refreshMs).pipe(switchMap((ms) => timer(0, ms)));
+    combineLatest([toObservable(this.rangeParams), tick])
       .pipe(
         switchMap(([range]) => this.api.dashboard(range).pipe(catchError(() => EMPTY))),
         takeUntilDestroyed(),
@@ -418,6 +452,10 @@ export class DashboardComponent {
 
   filterBy(key: Filter): void {
     this.setParams({ status: key === 'all' || this.status() === key ? null : key });
+  }
+
+  pickProject(value: string): void {
+    this.setParams({ project: value === '' ? null : value });
   }
 
   shortSince(iso: string): string {

@@ -6,7 +6,8 @@ from urllib.parse import urlparse
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 MonitorType = Literal["http", "keyword", "json", "tcp", "ping", "dns", "ssl", "push"]
-ChannelType = Literal["webhook", "slack", "teams"]
+ChannelType = Literal["webhook", "slack", "teams", "email"]
+EMAIL_PATTERN = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
 
 # SQLite returns naive datetimes; mark them UTC so clients convert correctly
 Utc = Annotated[datetime, AfterValidator(lambda d: d.replace(tzinfo=timezone.utc) if d.tzinfo is None else d)]
@@ -46,6 +47,7 @@ class MonitorBase(BaseModel):
     anomaly_detection: bool = True
     notify_repeat_min: int | None = Field(default=None, ge=5, le=1440)
     parent_id: int | None = None
+    project_id: int | None = None
     tags: list[str] = Field(default_factory=list, max_length=20)
 
     @model_validator(mode="after")
@@ -133,14 +135,22 @@ class AckIn(BaseModel):
 class ChannelIn(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     type: ChannelType
-    url: str = Field(max_length=500)
+    url: str = Field(default="", max_length=500)
+    recipients: list[Annotated[str, Field(pattern=EMAIL_PATTERN, max_length=200)]] = Field(default_factory=list, max_length=50)
     tags: list[str] = Field(default_factory=list, max_length=20)
+    project_ids: list[int] = Field(default_factory=list)
     active: bool = True
 
-    @field_validator("url")
-    @classmethod
-    def check_url(cls, value: str) -> str:
-        return _require_http_url(value)
+    @model_validator(mode="after")
+    def check_target(self):
+        if self.type == "email":
+            if not self.recipients:
+                raise ValueError("add at least one email address")
+            self.url = ""
+        else:
+            _require_http_url(self.url)
+            self.recipients = []
+        return self
 
 
 class ChannelOut(ChannelIn):
@@ -239,8 +249,135 @@ class DashboardOut(BaseModel):
     incident_count: int = 0
 
 
+class ProjectIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    description: str | None = Field(default=None, max_length=500)
+    member_ids: list[int] = Field(default_factory=list)
+    email_members: bool = True
+
+
+class ProjectOut(ProjectIn):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    monitor_count: int = 0
+    down_count: int = 0
+
+
+class ProjectExport(ProjectIn):
+    id: int
+
+
+Role = Literal["admin", "member"]
+
+
+class UserBase(BaseModel):
+    username: str = Field(pattern=r"^[A-Za-z0-9._@-]{2,60}$")
+    name: str = Field(default="", max_length=120)
+    email: str | None = Field(default=None, pattern=EMAIL_PATTERN, max_length=200)
+    role: Role = "member"
+    active: bool = True
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def blank_email(cls, value):
+        return value or None
+
+
+class UserCreate(UserBase):
+    password: str = Field(min_length=8, max_length=200)
+
+
+class UserUpdate(UserBase):
+    password: str | None = Field(default=None, min_length=8, max_length=200)
+
+
+class UserOut(UserBase):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    must_change_password: bool
+    created_at: Utc
+
+
+class LoginIn(BaseModel):
+    username: str = Field(min_length=1, max_length=60)
+    password: str = Field(min_length=1, max_length=200)
+
+
+class PasswordIn(BaseModel):
+    current: str = Field(min_length=1, max_length=200)
+    new: str = Field(min_length=8, max_length=200)
+
+
+class ForgotIn(BaseModel):
+    username: str = Field(min_length=1, max_length=200)
+
+
+class ResetIn(BaseModel):
+    token: str = Field(min_length=10, max_length=200)
+    new: str = Field(min_length=8, max_length=200)
+
+
+class MeOut(BaseModel):
+    id: int
+    username: str
+    name: str = ""
+    email: str | None = None
+    role: Role
+    must_change_password: bool
+    refresh_sec: int
+
+
+class LoginOut(MeOut):
+    token: str
+
+
+class GeneralSettings(BaseModel):
+    app_url: str = Field(default="", max_length=300)
+    refresh_sec: int = Field(default=5, ge=5, le=3600)
+
+    @field_validator("app_url")
+    @classmethod
+    def check_url(cls, value: str) -> str:
+        return _require_http_url(value).rstrip("/") if value else ""
+
+
+class SmtpSettings(BaseModel):
+    host: str = Field(default="", max_length=200)
+    port: int = Field(default=587, ge=1, le=65535)
+    security: Literal["starttls", "ssl", "none"] = "starttls"
+    username: str = Field(default="", max_length=200)
+    password: str | None = Field(default=None, max_length=500)  # None keeps the saved password
+    from_addr: str = Field(default="", max_length=200)
+
+    @field_validator("host")
+    @classmethod
+    def check_host(cls, value: str) -> str:
+        return _require_host(value) if value else ""
+
+    @field_validator("from_addr")
+    @classmethod
+    def check_from(cls, value: str) -> str:
+        if value and not re.fullmatch(EMAIL_PATTERN, value):
+            raise ValueError("must be an email address")
+        return value
+
+
+class SmtpOut(BaseModel):
+    host: str
+    port: int
+    security: str
+    username: str
+    from_addr: str
+    has_password: bool
+
+
+class SmtpTestIn(BaseModel):
+    to: str = Field(pattern=EMAIL_PATTERN, max_length=200)
+
+
 class ExportData(BaseModel):
     app: str = "myappsuptime"
-    version: int = 1
+    version: int = 2
     monitors: list[MonitorExport]
     channels: list[ChannelIn]
+    projects: list[ProjectExport] = Field(default_factory=list)

@@ -1,6 +1,23 @@
-import { HttpInterceptorFn } from '@angular/common/http';
+import { HttpErrorResponse, HttpInterceptorFn } from '@angular/common/http';
+import { inject } from '@angular/core';
+import { Router } from '@angular/router';
+import { catchError, throwError } from 'rxjs';
+import { AuthService } from './auth.service';
 
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
-  const token = localStorage.getItem('apiToken');
-  return next(token ? req.clone({ setHeaders: { Authorization: `Bearer ${token}` } }) : req);
+  const auth = inject(AuthService);
+  const router = inject(Router);
+  const token = auth.token;
+  const isPublic = req.url.startsWith('/api/public') || req.url.startsWith('/api/auth/');
+  return next(token ? req.clone({ setHeaders: { Authorization: `Bearer ${token}` } }) : req).pipe(
+    catchError((err: HttpErrorResponse) => {
+      if (!isPublic && err.status === 401) {
+        auth.clear();
+        router.navigate(['/login'], { queryParams: { next: router.url === '/' ? null : router.url } });
+      } else if (!isPublic && err.status === 403 && err.error?.detail === 'Password change required') {
+        router.navigate(['/change-password']);
+      }
+      return throwError(() => err);
+    }),
+  );
 };

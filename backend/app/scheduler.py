@@ -8,8 +8,9 @@ from sqlalchemy import delete, select
 
 from . import notifier
 from .checks import CheckResult, run_check
+from .config import get_setting
 from .database import SessionLocal
-from .models import Heartbeat, Incident, MaintenanceWindow, Monitor, NotificationChannel, aware, utcnow
+from .models import Heartbeat, Incident, MaintenanceWindow, Monitor, NotificationChannel, Project, User, aware, utcnow
 
 log = logging.getLogger(__name__)
 
@@ -92,14 +93,26 @@ async def record_result(monitor_id: int, result: CheckResult) -> None:
             m.last_notified_at = now
         db.commit()
 
-        channels = []
-        if notify:
-            active = db.scalars(select(NotificationChannel).where(NotificationChannel.active.is_(True))).all()
-            channels = [c for c in active if notifier.channel_matches(c, m.tags)]
-        name = m.name
+        if not notify:
+            return
+        active = db.scalars(select(NotificationChannel).where(NotificationChannel.active.is_(True))).all()
+        channels = [c for c in active if notifier.channel_matches(c, m)]
+        project = db.get(Project, m.project_id) if m.project_id else None
+        emails: list[str] = []
+        if project and project.email_members and project.member_ids:
+            emails = [u.email for u in db.scalars(select(User).where(
+                User.id.in_(project.member_ids), User.active.is_(True))).all() if u.email]
+        general = get_setting(db, "general")
+        smtp = get_setting(db, "smtp")
+        app_url = (general.get("app_url") or "").rstrip("/")
+        alert = notifier.Alert(
+            monitor=m.name, status=status,
+            message=("Still down: " if repeat and not changed else "") + result.message,
+            project=project.name if project else None, target=m.target or None,
+            link=f"{app_url}/monitors/{m.id}" if app_url else None,
+        )
 
-    message = ("Still down: " if repeat and not changed else "") + result.message
-    await notifier.send(channels, name, status, message)
+    await notifier.send(channels, alert, emails, smtp)
 
 
 class Scheduler:
