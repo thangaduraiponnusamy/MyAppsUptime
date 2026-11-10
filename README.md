@@ -54,26 +54,58 @@ docker run -d --name myappsuptime -p 8000:8000 -v myappsuptime-data:/data myapps
 | `HEARTBEAT_RETENTION_DAYS` | `90` | Older check results are deleted |
 | `CORS_ORIGINS` | `http://localhost:4200` | Only for local dev |
 
-## Local development
+## Local testing (without Docker)
+
+Runs the API and the built UI together on one port. Commands are for Git Bash on Windows.
+
+**First time only** (install backend and frontend dependencies, build the UI):
+
+```bash
+cd "MyAppsUptime/backend"
+python -m venv .venv
+.venv/Scripts/python.exe -m pip install -r requirements.txt
+
+cd ../frontend
+npm install
+NG_CLI_ANALYTICS=false npx ng build
+```
+
+**Start the app:**
+
+```bash
+cd "MyAppsUptime/backend"
+STATIC_DIR=../frontend/dist/myappsuptime-ui/browser .venv/Scripts/python.exe -m uvicorn app.main:app --port 8000
+```
+
+Open http://127.0.0.1:8000. Stop with `Ctrl+C`.
+
+| Task | Command |
+|---|---|
+| Rebuild UI after frontend changes | `cd ../frontend && NG_CLI_ANALYTICS=false npx ng build` (then restart the app) |
+| API docs | http://127.0.0.1:8000/docs |
+| Local data file | `backend/myappsuptime.db` |
+| Start fresh | Stop the app, delete `backend/myappsuptime.db`, start again |
+| "Port 8000 already in use" | Another copy is running. Stop it, or use `--port 8001` |
+
+On Linux or macOS use `.venv/bin/python` instead of `.venv/Scripts/python.exe`.
+
+## Local development (live reload)
 
 Backend:
 
 ```bash
 cd backend
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
+.venv/Scripts/python.exe -m uvicorn app.main:app --reload --port 8000
 ```
 
 Frontend (second terminal):
 
 ```bash
 cd frontend
-npm install
 npm start
 ```
 
-Open http://localhost:4200. API docs: http://localhost:8000/docs
+Open http://localhost:4200. UI changes reload automatically.
 
 ## Sample UI (no backend needed)
 

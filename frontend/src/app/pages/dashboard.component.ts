@@ -36,32 +36,42 @@ type View = 'grid' | 'list';
 
     @if (store.summary(); as s) {
       <div class="kpi-grid">
-        <div class="card kpi-card">
-          <div class="kpi-head"><span>Fleet uptime</span><span class="ico up"><app-icon name="activity" /></span></div>
-          <div class="kpi-value">{{ s.avg_uptime_24h === null ? '--' : (s.avg_uptime_24h | number: '1.2-2') + '%' }}</div>
-          <div class="kpi-sub">Average of all monitors, last 24h</div>
-          <app-sparkline [values]="uptimeSeries()" />
+        <div class="kpi-card hero">
+          <div class="kpi-head"><span class="ico"><app-icon name="activity" [size]="16" /></span>Fleet uptime<span class="delta">24h</span></div>
+          <div class="kpi-value">{{ s.avg_uptime_24h === null ? '--' : (s.avg_uptime_24h | number: '1.2-2') }}<small>%</small></div>
+          <div class="kpi-sub">{{ s.avg_uptime_24h === null ? 'Waiting for first checks' : s.avg_uptime_24h >= 99.9 ? 'Healthy, above 99.9% SLA' : 'Below 99.9% SLA target' }}</div>
+          <app-sparkline class="kpi-spark" [values]="uptimeSeries()" />
         </div>
-        <div class="card kpi-card">
-          <div class="kpi-head"><span>Avg response</span><span class="ico primary"><app-icon name="bolt" /></span></div>
-          <div class="kpi-value">{{ s.avg_latency_ms === null ? '--' : (s.avg_latency_ms | number: '1.0-0') }}<small> ms</small></div>
-          <div class="kpi-sub">Latest check, active monitors</div>
-          <app-sparkline [values]="latencySeries()" />
+        <div class="kpi-card glow-primary">
+          <div class="kpi-head"><span class="ico primary"><app-icon name="bolt" [size]="16" /></span>Avg response
+            @if (latencyTrend(); as t) {
+              <span class="delta" [class.bad]="t > 0">{{ t > 0 ? '▲' : '▼' }} {{ t > 0 ? t : -t }}%</span>
+            }
+          </div>
+          <div class="kpi-value">{{ s.avg_latency_ms === null ? '--' : (s.avg_latency_ms | number: '1.0-0') }}<small>ms</small></div>
+          <div class="kpi-sub">Latest check across active monitors</div>
+          <app-sparkline class="kpi-spark" [values]="latencySeries()" />
         </div>
-        <div class="card kpi-card">
-          <div class="kpi-head"><span>Open incidents</span><span class="ico down"><app-icon name="alert" /></span></div>
-          <div class="kpi-value" [class.down]="s.open_incidents > 0">{{ s.open_incidents }}</div>
-          <div class="kpi-sub">{{ s.unacknowledged }} not acknowledged</div>
-          <a routerLink="/incidents" class="kpi-link">View incidents <app-icon name="arrow" [size]="14" /></a>
+        <div class="kpi-card" [class.glow-down]="s.open_incidents > 0" [class.glow-up]="s.open_incidents === 0">
+          <div class="kpi-head"><span class="ico" [class.down]="s.open_incidents > 0" [class.up]="s.open_incidents === 0">
+            <app-icon [name]="s.open_incidents ? 'alert' : 'check'" [size]="16" /></span>Open incidents</div>
+          <div class="kpi-value">{{ s.open_incidents }}</div>
+          <div class="kpi-sub">
+            @if (s.open_incidents) { <span class="tag-soft down">{{ s.unacknowledged }} not acknowledged</span> }
+            @else { <span class="tag-soft up">All clear</span> }
+            <a routerLink="/incidents" class="kpi-link">View <app-icon name="arrow" [size]="13" /></a>
+          </div>
         </div>
-        <div class="card kpi-card">
-          <div class="kpi-head"><span>Monitors</span><span class="ico maintenance"><app-icon name="server" /></span></div>
-          <div class="kpi-value">{{ s.total }}</div>
-          <div class="kpi-sub">{{ s.up }} up &middot; {{ s.degraded }} degraded &middot; {{ s.down }} down</div>
+        <div class="kpi-card glow-info">
+          <div class="kpi-head"><span class="ico maintenance"><app-icon name="server" [size]="16" /></span>Monitors</div>
+          <div class="kpi-value">{{ s.total }}<small>{{ s.paused ? s.paused + ' paused' : 'active' }}</small></div>
           <div class="stack">
             <i class="up" [style.flex]="s.up"></i><i class="degraded" [style.flex]="s.degraded"></i>
             <i class="down" [style.flex]="s.down"></i><i class="maintenance" [style.flex]="s.maintenance"></i>
             <i class="paused" [style.flex]="s.paused"></i>
+          </div>
+          <div class="kpi-sub mini-legend">
+            <span><i class="up"></i>{{ s.up }} up</span><span><i class="degraded"></i>{{ s.degraded }}</span><span><i class="down"></i>{{ s.down }}</span>
           </div>
         </div>
       </div>
@@ -70,8 +80,18 @@ type View = 'grid' | 'list';
         <section class="card">
           <div class="card-head">
             <div><h2>Response time</h2><div class="sub">Fleet average &middot; last {{ rangeLabel() }}</div></div>
+            @if (latencyStats(); as ls) {
+              <div class="mini-stats">
+                <span><small>Min</small>{{ ls.min }} ms</span><span><small>Avg</small>{{ ls.avg }} ms</span><span><small>Max</small>{{ ls.max }} ms</span>
+              </div>
+            }
           </div>
-          <app-area-chart [values]="latencySeries()" [axis]="axis()" />
+          @if (latencyStats()) {
+            <app-area-chart [values]="latencySeries()" [axis]="axis()" />
+          } @else {
+            <div class="chart-empty"><app-icon name="activity" [size]="22" /><div><b>Collecting data</b>
+              <div class="muted">The chart fills in after a few checks.</div></div></div>
+          }
         </section>
         <section class="card">
           <div class="card-head"><div><h2>Status</h2><div class="sub">Current state of all monitors</div></div></div>
@@ -219,6 +239,27 @@ export class DashboardComponent {
   rangeLabel = computed(() => this.ranges.find((r) => r.hours === this.hours())?.label ?? '');
   latencySeries = computed(() => (this.data()?.series ?? []).map((p) => p.avg_latency_ms));
   uptimeSeries = computed(() => (this.data()?.series ?? []).map((p) => p.uptime));
+
+  latencyStats = computed(() => {
+    const vals = this.latencySeries().filter((v): v is number => v !== null);
+    if (vals.length < 2) return null;
+    return {
+      min: Math.round(Math.min(...vals)),
+      avg: Math.round(vals.reduce((a, b) => a + b, 0) / vals.length),
+      max: Math.round(Math.max(...vals)),
+    };
+  });
+
+  // Percent change between the oldest and newest quarter of the range
+  latencyTrend = computed(() => {
+    const vals = this.latencySeries().filter((v): v is number => v !== null);
+    if (vals.length < 4) return null;
+    const q = Math.max(1, Math.floor(vals.length / 4));
+    const avg = (a: number[]) => a.reduce((x, y) => x + y, 0) / a.length;
+    const first = avg(vals.slice(0, q));
+    const change = Math.round(((avg(vals.slice(-q)) - first) / first) * 100);
+    return change === 0 ? null : change;
+  });
   axis = computed(() => {
     const fmt = this.hours() <= 48 ? 'HH:mm' : 'MMM d';
     return (this.data()?.series ?? []).map((p) => formatDate(p.at, fmt, 'en-US'));

@@ -13,10 +13,14 @@ const H = 180;
           <stop offset="0" stop-color="#6366f1" stop-opacity=".28" />
           <stop offset="1" stop-color="#6366f1" stop-opacity="0" />
         </linearGradient>
+        <linearGradient [attr.id]="gid + 's'" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stop-color="#6366f1" />
+          <stop offset="1" stop-color="#06b6d4" />
+        </linearGradient>
       </defs>
       @for (y of grid; track y) { <line x1="0" [attr.x2]="W" [attr.y1]="y" [attr.y2]="y" class="grid" /> }
       <path [attr.d]="area()" [attr.fill]="'url(#' + gid + ')'" />
-      <path [attr.d]="line()" class="line" />
+      <path [attr.d]="line()" class="line" [attr.stroke]="'url(#' + gid + 's)'" />
     </svg>
     <div class="chart-axis">
       @for (l of labels(); track $index) { <span>{{ l }}</span> }

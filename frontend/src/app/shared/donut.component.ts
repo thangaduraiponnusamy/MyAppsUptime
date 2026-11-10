@@ -13,11 +13,12 @@ const C = 2 * Math.PI * R;
   selector: 'app-donut',
   standalone: true,
   template: `
+    <div class="donut-wrap">
     <div class="donut">
       <svg viewBox="0 0 100 100">
         <circle cx="50" cy="50" [attr.r]="R" class="donut-track" />
         @for (s of arcs(); track s.label) {
-          <circle cx="50" cy="50" [attr.r]="R" fill="none" [attr.stroke]="s.color" stroke-width="11"
+          <circle cx="50" cy="50" [attr.r]="R" fill="none" [attr.stroke]="s.color" stroke-width="11" stroke-linecap="round"
                   [attr.stroke-dasharray]="s.len + ' ' + (C - s.len)" [attr.stroke-dashoffset]="-s.offset"
                   transform="rotate(-90 50 50)" />
         }
@@ -29,6 +30,7 @@ const C = 2 * Math.PI * R;
         <li><i [style.background]="s.color"></i>{{ s.label }}<b>{{ s.value }}</b></li>
       }
     </ul>
+    </div>
   `,
 })
 export class DonutComponent {
