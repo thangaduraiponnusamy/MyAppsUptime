@@ -11,7 +11,10 @@ export class ApiService {
   private base = '/api';
 
   summary() { return this.http.get<Summary>(`${this.base}/summary`); }
-  dashboard(hours: number) { return this.http.get<DashboardData>(`${this.base}/dashboard`, { params: { hours } }); }
+  dashboard(range: { hours?: number; start?: string; end?: string }) {
+    const params = Object.fromEntries(Object.entries(range).filter(([, v]) => v !== undefined)) as Record<string, string | number>;
+    return this.http.get<DashboardData>(`${this.base}/dashboard`, { params });
+  }
 
   monitors() { return this.http.get<Monitor[]>(`${this.base}/monitors`); }
   monitor(id: number) { return this.http.get<Monitor>(`${this.base}/monitors/${id}`); }

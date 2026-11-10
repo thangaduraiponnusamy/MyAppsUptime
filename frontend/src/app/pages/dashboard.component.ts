@@ -27,9 +27,27 @@ type View = 'grid' | 'list';
         <div class="sub">{{ greeting }} &middot; {{ today | date: 'EEEE, MMM d' }}</div>
       </div>
       <span class="spacer"></span>
-      <div class="segmented">
-        @for (r of ranges; track r.hours) {
-          <button class="chip" [class.active]="hours() === r.hours" (click)="hours.set(r.hours)">{{ r.label }}</button>
+      <div class="range-picker">
+        <div class="segmented">
+          @for (r of ranges; track r.hours) {
+            <button class="chip" [class.active]="!custom() && hours() === r.hours" (click)="pickHours(r.hours)">{{ r.label }}</button>
+          }
+          <button class="chip" [class.active]="!!custom()" (click)="customOpen.set(!customOpen())">
+            <app-icon name="calendar" [size]="14" /> {{ custom() ? rangeLabel() : 'Custom' }}
+          </button>
+        </div>
+        @if (customOpen()) {
+          <div class="range-pop card">
+            <div class="range-fields">
+              <label>From <input type="date" [value]="draftFrom()" [max]="draftTo()" (input)="draftFrom.set($any($event.target).value)" /></label>
+              <label>To <input type="date" [value]="draftTo()" [min]="draftFrom()" [max]="todayIso" (input)="draftTo.set($any($event.target).value)" /></label>
+            </div>
+            @if (rangeError(); as err) { <div class="range-error">{{ err }}</div> }
+            <div class="range-actions">
+              <button class="btn sm" (click)="customOpen.set(false)">Cancel</button>
+              <button class="btn sm primary" [disabled]="!!rangeError()" (click)="applyCustom()">Apply</button>
+            </div>
+          </div>
         }
       </div>
     </div>
@@ -255,14 +273,43 @@ export class DashboardComponent {
   ];
   duration = duration;
 
+  readonly todayIso = formatDate(this.today, 'yyyy-MM-dd', 'en-US');
   hours = signal(24);
+  custom = signal<{ from: string; to: string } | null>(null);
+  customOpen = signal(false);
+  draftFrom = signal(formatDate(Date.now() - 6 * 86_400_000, 'yyyy-MM-dd', 'en-US'));
+  draftTo = signal(this.todayIso);
   data = signal<DashboardData | null>(null);
   query = signal('');
   tag = signal<string | null>(null);
   status = signal<MonitorStatus | 'all'>('all');
   view = signal<View>((localStorage.getItem('dashView') as View) ?? 'grid');
 
-  rangeLabel = computed(() => this.ranges.find((r) => r.hours === this.hours())?.label ?? '');
+  rangeLabel = computed(() => {
+    const c = this.custom();
+    if (!c) return this.ranges.find((r) => r.hours === this.hours())?.label ?? '';
+    const f = (d: string) => formatDate(d, 'MMM d', 'en-US');
+    return c.from === c.to ? f(c.from) : `${f(c.from)} – ${f(c.to)}`;
+  });
+  rangeError = computed(() => {
+    const from = this.draftFrom(), to = this.draftTo();
+    if (!from || !to) return 'Pick both dates';
+    if (from > to) return 'From must be before To';
+    if ((Date.parse(to) - Date.parse(from)) / 86_400_000 >= 90) return 'Range can be at most 90 days';
+    return null;
+  });
+  private rangeParams = computed<{ hours?: number; start?: string; end?: string }>(() => {
+    const c = this.custom();
+    if (!c) return { hours: this.hours() };
+    return {
+      start: new Date(`${c.from}T00:00:00`).toISOString(),
+      end: new Date(`${c.to}T23:59:59`).toISOString(),
+    };
+  });
+  private spanHours = computed(() => {
+    const p = this.rangeParams();
+    return p.hours ?? (Date.parse(p.end!) - Date.parse(p.start!)) / 3_600_000;
+  });
   latencySeries = computed(() => (this.data()?.series ?? []).map((p) => p.avg_latency_ms));
   uptimeSeries = computed(() => (this.data()?.series ?? []).map((p) => p.uptime));
 
@@ -287,7 +334,7 @@ export class DashboardComponent {
     return change === 0 ? null : change;
   });
   axis = computed(() => {
-    const fmt = this.hours() <= 48 ? 'HH:mm' : 'MMM d';
+    const fmt = this.spanHours() <= 48 ? 'HH:mm' : 'MMM d';
     return (this.data()?.series ?? []).map((p) => formatDate(p.at, fmt, 'en-US'));
   });
 
@@ -333,12 +380,24 @@ export class DashboardComponent {
   });
 
   constructor() {
-    combineLatest([toObservable(this.hours), timer(0, 30_000)])
+    combineLatest([toObservable(this.rangeParams), timer(0, 30_000)])
       .pipe(
-        switchMap(([hours]) => this.api.dashboard(hours).pipe(catchError(() => EMPTY))),
+        switchMap(([range]) => this.api.dashboard(range).pipe(catchError(() => EMPTY))),
         takeUntilDestroyed(),
       )
       .subscribe((d) => this.data.set(d));
+  }
+
+  pickHours(hours: number): void {
+    this.custom.set(null);
+    this.customOpen.set(false);
+    this.hours.set(hours);
+  }
+
+  applyCustom(): void {
+    if (this.rangeError()) return;
+    this.custom.set({ from: this.draftFrom(), to: this.draftTo() });
+    this.customOpen.set(false);
   }
 
   setView(view: View): void {

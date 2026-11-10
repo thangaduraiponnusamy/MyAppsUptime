@@ -22,6 +22,9 @@ const PATHS: Record<string, string> = {
   activity: 'M3 12h4l3 8 4-16 3 8h4',
   server: 'M4 4h16v6H4zM4 14h16v6H4zM8 7h.01M8 17h.01',
   arrow: 'M9 6l6 6-6 6',
+  back: 'M15 6l-6 6 6 6',
+  calendar: 'M4 6h16v14H4zM4 10h16M8 3v4M16 3v4',
+  sidebar: 'M4 4h16v16H4zM9 4v16',
 };
 
 @Component({

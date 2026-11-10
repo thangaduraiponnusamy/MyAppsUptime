@@ -2,7 +2,7 @@ import html
 import math
 import os
 import secrets
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
@@ -239,16 +239,34 @@ def stats(monitor_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/dashboard", response_model=DashboardOut)
-def dashboard(hours: int = Query(24, ge=1, le=24 * 30), db: Session = Depends(get_db)):
+def dashboard(
+    hours: int = Query(24, ge=1, le=24 * 90),
+    start: datetime | None = None,
+    end: datetime | None = None,
+    db: Session = Depends(get_db),
+):
     now = utcnow()
-    since = now - timedelta(hours=hours)
-    bucket_sec = 3600 if hours <= 48 else 6 * 3600 if hours <= 24 * 7 else 24 * 3600
-    count = math.ceil(hours * 3600 / bucket_sec)
+    if start or end:
+        if not (start and end):
+            raise HTTPException(400, "Both start and end are required")
+        since = aware(start).astimezone(timezone.utc)
+        until = min(aware(end).astimezone(timezone.utc), now)
+        if until <= since:
+            raise HTTPException(400, "End must be after start")
+        if until - since > timedelta(days=90):
+            raise HTTPException(400, "Range can be at most 90 days")
+    else:
+        since, until = now - timedelta(hours=hours), now
+
+    span_sec = (until - since).total_seconds()
+    bucket_sec = 3600 if span_sec <= 48 * 3600 else 6 * 3600 if span_sec <= 7 * 86400 else 86400
+    count = max(1, math.ceil(span_sec / bucket_sec))
     latencies: list[list[float]] = [[] for _ in range(count)]
     good, bad = [0] * count, [0] * count
 
     rows = db.execute(
-        select(Heartbeat.created_at, Heartbeat.status, Heartbeat.latency_ms).where(Heartbeat.created_at >= since)
+        select(Heartbeat.created_at, Heartbeat.status, Heartbeat.latency_ms)
+        .where(Heartbeat.created_at >= since, Heartbeat.created_at <= until)
     )
     for created_at, hb_status, latency in rows:
         idx = min(count - 1, max(0, int((aware(created_at) - since).total_seconds() // bucket_sec)))

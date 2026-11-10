@@ -12,7 +12,7 @@ import { LogoComponent } from './shared/logo.component';
   standalone: true,
   imports: [RouterOutlet, RouterLink, RouterLinkActive, IconComponent, LogoComponent],
   template: `
-    <div class="app" [class.nav-open]="navOpen()">
+    <div class="app" [class.nav-open]="navOpen()" [class.collapsed]="collapsed()">
       <header class="mobile-bar">
         <button class="icon-btn" (click)="navOpen.set(true)" aria-label="Open menu"><app-icon name="menu" /></button>
         <a routerLink="/"><app-logo [size]="28" [tagline]="false" /></a>
@@ -39,6 +39,10 @@ import { LogoComponent } from './shared/logo.component';
             <app-icon [name]="theme.theme() === 'light' ? 'moon' : 'sun'" />
             <span class="label">{{ theme.theme() === 'light' ? 'Dark mode' : 'Light mode' }}</span>
           </button>
+          <button class="btn collapse-btn" (click)="toggleCollapsed()" [title]="collapsed() ? 'Expand menu' : 'Collapse menu'">
+            <app-icon [name]="collapsed() ? 'arrow' : 'back'" />
+            <span class="label">Collapse menu</span>
+          </button>
         </div>
       </aside>
       <main class="main"><router-outlet /></main>
@@ -49,6 +53,10 @@ export class ShellComponent {
   store = inject(MonitorStore);
   theme = inject(ThemeService);
   navOpen = signal(false);
+  // Tablets start with the compact menu unless the user chose otherwise
+  collapsed = signal(
+    (localStorage.getItem('navCollapsed') ?? (window.innerWidth <= 1100 ? '1' : '0')) === '1',
+  );
 
   readonly nav = [
     { path: '/', label: 'Dashboard', icon: 'grid' },
@@ -63,5 +71,10 @@ export class ShellComponent {
     inject(Router)
       .events.pipe(filter((e) => e instanceof NavigationEnd), takeUntilDestroyed())
       .subscribe(() => this.navOpen.set(false));
+  }
+
+  toggleCollapsed(): void {
+    this.collapsed.update((c) => !c);
+    localStorage.setItem('navCollapsed', this.collapsed() ? '1' : '0');
   }
 }
