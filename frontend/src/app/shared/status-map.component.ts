@@ -5,7 +5,7 @@ import { short } from './time';
 
 interface MapNode { key: number; m: Monitor | null; x: number; y: number; depth: number; dim: boolean; kids: MapNode[]; }
 
-const COL = 220;
+const COL = 170;
 const ROW = 46;
 const PAD = 34;
 const LABEL = 190;

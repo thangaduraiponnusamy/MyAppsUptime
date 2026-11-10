@@ -57,30 +57,54 @@ const PAGE = 25;
     </div>
 
     <section class="card panel status-board">
-      <div class="card-head">
-        <span class="head-ico tone-ocean"><app-icon name="map" [size]="16" /></span>
-        <div class="grow"><h2>Service status</h2>
-          <div class="sub">{{ store.monitors().length }} monitors &middot; pick a status to filter the map and the list</div></div>
-        @if (status() !== 'all') {
-          <button class="chip active" (click)="filterBy('all')" title="Clear status filter">{{ statusLabel() }} <app-icon name="x" [size]="12" /></button>
-        }
+      <div class="sb-layout">
+        <div class="sb-side">
+          <div class="card-head">
+            <span class="head-ico tone-ocean"><app-icon name="server" [size]="16" /></span>
+            <div class="grow"><h2>Status</h2><div class="sub">{{ store.monitors().length }} monitors &middot; current state</div></div>
+            @if (attention().length) {
+              <span class="sb-badge bad">{{ attention().length }} need attention</span>
+            } @else {
+              <span class="sb-badge ok">All healthy</span>
+            }
+          </div>
+          <div class="sb-body">
+            <button class="sb-donut" (click)="filterBy('all')" title="Show all monitors">
+              <svg viewBox="0 0 120 120">
+                <circle cx="60" cy="60" r="50" class="sb-track" />
+                @for (a of arcs(); track a.key) {
+                  <circle cx="60" cy="60" r="50" [class]="'sb-arc ' + a.key"
+                          [attr.stroke-dasharray]="a.len + ' ' + (circ - a.len)" [attr.stroke-dashoffset]="-a.start" />
+                }
+              </svg>
+              <span class="sb-center"><b>{{ upPct() }}%</b><small>Operational</small></span>
+            </button>
+            <div class="sb-tiles">
+              @for (t of statusTiles(); track t.key) {
+                <button [class]="'sb-tile ' + t.key" [class.active]="status() === t.key" [class.zero]="!t.count"
+                        (click)="filterBy(t.key)" [title]="'Show ' + t.label.toLowerCase() + ' monitors'">
+                  <span class="sb-name"><i></i>{{ t.label }}</span>
+                  <span class="sb-num"><b>{{ t.count }}</b><small>{{ t.pct }}%</small></span>
+                </button>
+              }
+            </div>
+          </div>
+        </div>
+        <div class="sb-map">
+          <div class="card-head">
+            <span class="head-ico tone-indigo"><app-icon name="map" [size]="16" /></span>
+            <div class="grow"><h2>Status map</h2><div class="sub">How monitors depend on each other</div></div>
+            @if (status() !== 'all') {
+              <button class="chip active" (click)="filterBy('all')" title="Clear status filter">{{ statusLabel() }} <app-icon name="x" [size]="12" /></button>
+            }
+          </div>
+          @if (store.monitors().length) {
+            <app-status-map [monitors]="store.monitors()" [filter]="status()" title="All monitors" />
+          } @else {
+            <div class="empty-state">No monitors yet. <a routerLink="/monitors/new" class="kpi-link">Create one</a></div>
+          }
+        </div>
       </div>
-      <div class="sb-strip">
-        @for (t of statusTiles(); track t.key) {
-          <button [class]="'sb-seg ' + t.key" [class.active]="status() === t.key" [class.zero]="!t.count" (click)="filterBy(t.key)">
-            <span class="sb-ico"><app-icon [name]="t.icon" [size]="18" /></span>
-            <span class="sb-body">
-              <span class="sb-count">{{ t.count }}</span>
-              <span class="sb-label">{{ t.label }}</span>
-            </span>
-          </button>
-        }
-      </div>
-      @if (store.monitors().length) {
-        <app-status-map [monitors]="store.monitors()" [filter]="status()" title="All monitors" />
-      } @else {
-        <div class="empty-state">No monitors yet. <a routerLink="/monitors/new" class="kpi-link">Create one</a></div>
-      }
     </section>
 
     @if (store.summary(); as s) {
@@ -294,15 +318,26 @@ export class DashboardComponent {
     const total = all.length || 1;
     const blocked = all.filter((m) => this.isBlocked(m)).length;
     const n = (s: MonitorStatus) => all.filter((m) => m.status === s).length;
-    const up = n('up');
-    return [
-      { key: 'up', label: 'Up', icon: 'check-circle', count: up, sub: `${Math.round((up / total) * 100)}% of monitors` },
-      { key: 'down', label: 'Down', icon: 'x-circle', count: n('down') - blocked, sub: 'Root cause failures' },
-      { key: 'blocked', label: 'Blocked', icon: 'link-off', count: blocked, sub: 'Parent is down' },
-      { key: 'degraded', label: 'Degraded', icon: 'alert', count: n('degraded'), sub: 'Slow or partial' },
-      { key: 'maintenance', label: 'Maintenance', icon: 'wrench', count: n('maintenance'), sub: 'Planned work' },
-      { key: 'paused', label: 'Paused', icon: 'pause-circle', count: n('paused'), sub: 'Not checked' },
-    ] as { key: Filter; label: string; icon: string; count: number; sub: string }[];
+    return ([
+      { key: 'up', label: 'Up', count: n('up') },
+      { key: 'down', label: 'Down', count: n('down') - blocked },
+      { key: 'degraded', label: 'Degraded', count: n('degraded') },
+      { key: 'blocked', label: 'Blocked', count: blocked },
+      { key: 'maintenance', label: 'Maintenance', count: n('maintenance') },
+      { key: 'paused', label: 'Paused', count: n('paused') },
+    ] as { key: Filter; label: string; count: number }[]).map((t) => ({ ...t, pct: Math.round((t.count / total) * 100) }));
+  });
+  readonly circ = 2 * Math.PI * 50;
+  upPct = computed(() => this.statusTiles()[0].pct);
+  arcs = computed(() => {
+    const total = this.statusTiles().reduce((s, t) => s + t.count, 0);
+    let start = 0;
+    return this.statusTiles().filter((t) => t.count).map((t) => {
+      const len = (t.count / total) * this.circ;
+      const a = { key: t.key, start, len };
+      start += len;
+      return a;
+    });
   });
   statusLabel = computed(() => this.statusTiles().find((t) => t.key === this.status())?.label ?? this.status());
 
