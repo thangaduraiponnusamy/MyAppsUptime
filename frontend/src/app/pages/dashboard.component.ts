@@ -31,8 +31,6 @@ const PAGE = 25;
         <h1>Dashboard</h1>
         <div class="sub">{{ greeting }} &middot; {{ todayText }}</div>
       </div>
-      <span class="spacer"></span>
-      <app-range-picker [hours]="hours()" [custom]="custom()" (pick)="pickHours($event)" (range)="applyCustom($event)" />
     </div>
 
     <section class="card panel status-board">
@@ -86,6 +84,35 @@ const PAGE = 25;
       </div>
     </section>
 
+    @if (attention().length) {
+      <section class="card panel">
+        <div class="card-head">
+          <span class="head-ico tone-rose"><app-icon name="alert" [size]="16" /></span>
+          <div class="grow"><h2>Needs attention</h2><div class="sub">Root causes only &middot; right now</div></div>
+          <span class="count-badge amber">{{ attention().length }}</span>
+        </div>
+        <div class="attn-list">
+          @for (m of attention(); track m.id) {
+            <a class="list-item" [routerLink]="['/monitors', m.id]">
+              <span [class]="'dot ' + m.status"></span>
+              <div class="grow">
+                <div class="title">{{ m.name }}
+                  @if (blockedChildren(m); as n) { <span class="dep-chip" title="Dependent monitors affected"><app-icon name="network" [size]="11" /> {{ n }}</span> }
+                </div>
+                <div class="meta">{{ m.last_message || m.target }}</div>
+              </div>
+            </a>
+          }
+        </div>
+      </section>
+    }
+
+    <div class="section-head">
+      <div><h2>History</h2><div class="sub">Uptime, response and activity for {{ rangeText() }}</div></div>
+      <span class="spacer"></span>
+      <app-range-picker [hours]="hours()" [custom]="custom()" (pick)="pickHours($event)" (range)="applyCustom($event)" />
+    </div>
+
     @if (store.summary(); as s) {
       <div class="stat-grid three">
         <div class="stat-tile" [class.warn]="uptime() !== null && uptime()! < 99.9">
@@ -101,16 +128,15 @@ const PAGE = 25;
           </div>
         </div>
         <a class="stat-tile link" routerLink="/incidents" [class.bad]="s.open_incidents > 0">
-          <div class="st-label"><span class="st-ico rose"><app-icon name="alert" [size]="15" /></span>Open incidents
+          <div class="st-label"><span class="st-ico rose"><app-icon name="alert" [size]="15" /></span>Incidents
             <app-icon class="st-go" name="arrow" [size]="14" /></div>
-          <div class="st-value">{{ s.open_incidents }}</div>
-          <div class="st-sub">{{ s.unacknowledged }} not acknowledged &middot; {{ data()?.incident_count ?? 0 }} in {{ rangeText() }}</div>
+          <div class="st-value">{{ data()?.incident_count ?? 0 }}</div>
+          <div class="st-sub">{{ rangeText() }} &middot; {{ s.open_incidents }} open now</div>
         </a>
       </div>
     }
 
-    <div class="dash-row">
-      <section class="card panel">
+    <section class="card panel">
         <a class="card-head head-link" routerLink="/activity" queryParamsHandling="preserve" title="Open all activity">
           <span class="head-ico tone-indigo"><app-icon name="history" [size]="16" /></span>
           <div class="grow"><h2>Recent activity</h2><div class="sub">Last {{ prefs.limits().recent }} changes &middot; {{ rangeText() }}</div></div>
@@ -137,32 +163,7 @@ const PAGE = 25;
             <div><b>No status changes</b><div class="muted">Every service stayed up {{ rangeText() }}.</div></div>
           </div>
         }
-      </section>
-      <section class="card panel">
-        <div class="card-head">
-          <div class="grow"><h2>Needs attention</h2><div class="sub">Root causes only</div></div>
-          @if (attention().length) { <span class="count-badge amber">{{ attention().length }}</span> }
-        </div>
-        <div class="attn-list">
-          @for (m of attention(); track m.id) {
-            <a class="list-item" [routerLink]="['/monitors', m.id]">
-              <span [class]="'dot ' + m.status"></span>
-              <div class="grow">
-                <div class="title">{{ m.name }}
-                  @if (blockedChildren(m); as n) { <span class="dep-chip" title="Dependent monitors affected"><app-icon name="network" [size]="11" /> {{ n }}</span> }
-                </div>
-                <div class="meta">{{ m.last_message || m.target }}</div>
-              </div>
-            </a>
-          } @empty {
-            <div class="empty-state tint-up">
-              <span class="empty-ico"><app-icon name="check" [size]="20" /></span>
-              <div><b>All systems healthy</b><div class="muted">Nothing needs your attention.</div></div>
-            </div>
-          }
-        </div>
-      </section>
-    </div>
+    </section>
 
     <section class="card panel">
       <div class="toolbar">

@@ -4,22 +4,13 @@ import { ApiService, errorText } from '../core/api.service';
 import { ExportData } from '../core/models';
 import { MonitorStore } from '../core/monitor-store.service';
 import { LIMITS, PrefsService } from '../core/prefs.service';
-import { ThemeService } from '../core/theme.service';
 
 @Component({
   selector: 'app-settings',
   standalone: true,
   imports: [FormsModule],
   template: `
-    <div class="page-head"><div><h1>Settings</h1><div class="sub">Appearance, limits, access and backups.</div></div></div>
-
-    <section class="card">
-      <h2>Appearance</h2>
-      <div class="row" style="margin-top: 12px">
-        <button class="chip" [class.active]="theme.theme() === 'light'" (click)="theme.theme.set('light')">Light</button>
-        <button class="chip" [class.active]="theme.theme() === 'dark'" (click)="theme.theme.set('dark')">Dark</button>
-      </div>
-    </section>
+    <div class="page-head"><div><h1>Settings</h1><div class="sub">Limits, access and backups.</div></div></div>
 
     <section class="card">
       <h2>Activity limits</h2>
@@ -69,7 +60,6 @@ import { ThemeService } from '../core/theme.service';
 export class SettingsComponent {
   private api = inject(ApiService);
   private store = inject(MonitorStore);
-  theme = inject(ThemeService);
   prefs = inject(PrefsService);
   readonly limitList = LIMITS;
   readonly origin = location.origin;
