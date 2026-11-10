@@ -52,8 +52,15 @@ const PAGE = 25;
           <div class="sb-body">
             <button class="sb-donut" (click)="filterBy('all')" title="Show all monitors">
               <svg viewBox="0 0 120 120">
+                <defs>
+                  <linearGradient id="sbg-up" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4ade80" /><stop offset="1" stop-color="#15803d" /></linearGradient>
+                  <linearGradient id="sbg-down" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fb8a7e" /><stop offset="1" stop-color="#dc2626" /></linearGradient>
+                  <linearGradient id="sbg-blocked" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fdba74" /><stop offset="1" stop-color="#ea580c" /></linearGradient>
+                  <linearGradient id="sbg-degraded" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fcd34d" /><stop offset="1" stop-color="#d97706" /></linearGradient>
+                  <linearGradient id="sbg-maintenance" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#93c5fd" /><stop offset="1" stop-color="#2563eb" /></linearGradient>
+                  <linearGradient id="sbg-paused" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#cbd5e1" /><stop offset="1" stop-color="#64748b" /></linearGradient>
+                </defs>
                 <circle cx="60" cy="60" r="50" class="sb-track" />
-                <circle cx="60" cy="60" r="40" class="sb-disc" />
                 @for (a of arcs(); track a.key) {
                   <circle cx="60" cy="60" r="50" [class]="'sb-arc ' + a.key" [class.solo]="arcs().length === 1"
                           [attr.stroke-dasharray]="a.len + ' ' + (circ - a.len)" [attr.stroke-dashoffset]="-a.start" />
