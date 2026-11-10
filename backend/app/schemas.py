@@ -232,6 +232,10 @@ class DashboardPoint(BaseModel):
 class DashboardOut(BaseModel):
     series: list[DashboardPoint]
     incidents: list[IncidentOut]
+    uptime: float | None = None
+    avg_latency_ms: float | None = None
+    checks: int = 0
+    incident_count: int = 0
 
 
 class ExportData(BaseModel):

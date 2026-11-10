@@ -287,13 +287,23 @@ def dashboard(
         for i in range(count)
     ]
     recent = []
+    in_range = (Incident.started_at <= until) & (Incident.resolved_at.is_(None) | (Incident.resolved_at >= since))
     for incident, name in db.execute(
-        select(Incident, Monitor.name).join(Monitor).order_by(Incident.started_at.desc()).limit(6)
+        select(Incident, Monitor.name).join(Monitor).where(in_range).order_by(Incident.started_at.desc()).limit(6)
     ):
         out = IncidentOut.model_validate(incident)
         out.monitor_name = name
         recent.append(out)
-    return DashboardOut(series=series, incidents=recent)
+    total_good, total_bad = sum(good), sum(bad)
+    all_latency = [v for bucket in latencies for v in bucket]
+    return DashboardOut(
+        series=series,
+        incidents=recent,
+        uptime=round(total_good / (total_good + total_bad) * 100, 2) if total_good + total_bad else None,
+        avg_latency_ms=round(sum(all_latency) / len(all_latency), 1) if all_latency else None,
+        checks=total_good + total_bad,
+        incident_count=db.scalar(select(func.count()).select_from(Incident).where(in_range)) or 0,
+    )
 
 
 # ---------- incidents ----------

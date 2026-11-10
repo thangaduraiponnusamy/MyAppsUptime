@@ -55,9 +55,9 @@ type View = 'grid' | 'list';
     @if (store.summary(); as s) {
       <div class="kpi-grid">
         <div class="kpi-card tone tone-emerald">
-          <div class="kpi-head"><span class="ico"><app-icon name="activity" [size]="16" /></span>Fleet uptime<span class="delta">24h</span></div>
-          <div class="kpi-value">{{ s.avg_uptime_24h === null ? '--' : (s.avg_uptime_24h | number: '1.2-2') }}<small>%</small></div>
-          <div class="kpi-sub">{{ s.avg_uptime_24h === null ? 'Waiting for first checks' : s.avg_uptime_24h >= 99.9 ? 'Healthy, above 99.9% SLA' : 'Below 99.9% SLA target' }}</div>
+          <div class="kpi-head"><span class="ico"><app-icon name="activity" [size]="16" /></span>Fleet uptime<span class="delta">{{ rangeLabel() }}</span></div>
+          <div class="kpi-value">{{ uptime() === null ? '--' : (uptime() | number: '1.2-2') }}<small>%</small></div>
+          <div class="kpi-sub">{{ uptime() === null ? 'No checks in this range' : uptime()! >= 99.9 ? 'Healthy, above 99.9% SLA' : 'Below 99.9% SLA target' }}</div>
           <app-sparkline class="kpi-spark" [values]="uptimeSeries()" />
         </div>
         <div class="kpi-card tone tone-indigo">
@@ -66,13 +66,13 @@ type View = 'grid' | 'list';
               <span class="delta" [class.bad]="t > 0">{{ t > 0 ? '▲' : '▼' }} {{ t > 0 ? t : -t }}%</span>
             }
           </div>
-          <div class="kpi-value">{{ s.avg_latency_ms === null ? '--' : (s.avg_latency_ms | number: '1.0-0') }}<small>ms</small></div>
-          <div class="kpi-sub">Latest check across active monitors</div>
+          <div class="kpi-value">{{ avgLatency() === null ? '--' : (avgLatency() | number: '1.0-0') }}<small>ms</small></div>
+          <div class="kpi-sub">Average over {{ rangeText() }}</div>
           <app-sparkline class="kpi-spark" [values]="latencySeries()" />
         </div>
         <div [class]="'kpi-card tone ' + (s.open_incidents > 0 ? 'tone-rose' : 'tone-amber')">
           <div class="kpi-head"><span class="ico">
-            <app-icon [name]="s.open_incidents ? 'alert' : 'check'" [size]="16" /></span>Open incidents</div>
+            <app-icon [name]="s.open_incidents ? 'alert' : 'check'" [size]="16" /></span>Open incidents<span class="delta">now</span></div>
           <div class="kpi-value">{{ s.open_incidents }}</div>
           <div class="kpi-sub">
             @if (s.open_incidents) { <span class="tag-soft down">{{ s.unacknowledged }} not acknowledged</span> }
@@ -98,7 +98,7 @@ type View = 'grid' | 'list';
         <section class="card panel">
           <div class="card-head">
             <span class="head-ico tone-indigo"><app-icon name="activity" [size]="16" /></span>
-            <div class="grow"><h2>Response time</h2><div class="sub">Fleet average &middot; last {{ rangeLabel() }}</div></div>
+            <div class="grow"><h2>Response time</h2><div class="sub">Fleet average &middot; {{ rangeText() }}</div></div>
             @if (latencyStats(); as ls) {
               <div class="mini-stats">
                 <span><small>Min</small>{{ ls.min }} ms</span><span><small>Avg</small>{{ ls.avg }} ms</span><span><small>Max</small>{{ ls.max }} ms</span>
@@ -152,7 +152,7 @@ type View = 'grid' | 'list';
       <section class="card panel">
         <div class="card-head">
           <span class="head-ico tone-rose"><app-icon name="alert" [size]="16" /></span>
-          <div class="grow"><h2>Recent incidents</h2><div class="sub">Latest outages across all monitors</div></div>
+          <div class="grow"><h2>Recent incidents</h2><div class="sub">{{ data()?.incident_count ?? 0 }} in {{ rangeText() }}</div></div>
           <a routerLink="/incidents" class="kpi-link">View all <app-icon name="arrow" [size]="14" /></a>
         </div>
         @for (i of data()?.incidents ?? []; track i.id) {
@@ -169,7 +169,7 @@ type View = 'grid' | 'list';
         } @empty {
           <div class="empty-state tint-up">
             <span class="empty-ico"><app-icon name="check" [size]="20" /></span>
-            <div><b>No incidents yet</b><div class="muted">Outages will be listed here with their duration.</div></div>
+            <div><b>No incidents in this range</b><div class="muted">Outages will be listed here with their duration.</div></div>
           </div>
         }
       </section>
@@ -291,6 +291,9 @@ export class DashboardComponent {
     const f = (d: string) => formatDate(d, 'MMM d', 'en-US');
     return c.from === c.to ? f(c.from) : `${f(c.from)} – ${f(c.to)}`;
   });
+  rangeText = computed(() => (this.custom() ? this.rangeLabel() : `last ${this.rangeLabel()}`));
+  uptime = computed(() => this.data()?.uptime ?? null);
+  avgLatency = computed(() => this.data()?.avg_latency_ms ?? null);
   rangeError = computed(() => {
     const from = this.draftFrom(), to = this.draftTo();
     if (!from || !to) return 'Pick both dates';

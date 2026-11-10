@@ -134,6 +134,10 @@ export interface Summary {
 export interface DashboardData {
   series: { at: string; avg_latency_ms: number | null; uptime: number | null; checks: number }[];
   incidents: Incident[];
+  uptime: number | null;
+  avg_latency_ms: number | null;
+  checks: number;
+  incident_count: number;
 }
 
 export interface ExportData {
