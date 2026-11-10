@@ -1,4 +1,4 @@
-import { DatePipe, DecimalPipe, formatDate } from '@angular/common';
+import { DecimalPipe, NgTemplateOutlet, formatDate } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
@@ -7,24 +7,24 @@ import { ApiService } from '../core/api.service';
 import { DashboardData, Monitor, MonitorStatus } from '../core/models';
 import { MonitorStore } from '../core/monitor-store.service';
 import { AreaChartComponent } from '../shared/area-chart.component';
-import { DonutComponent, DonutSlice } from '../shared/donut.component';
 import { HeartbeatBarComponent } from '../shared/heartbeat-bar.component';
 import { IconComponent } from '../shared/icon.component';
-import { SparklineComponent } from '../shared/sparkline.component';
-import { daysUntil, duration } from '../shared/time';
+import { daysUntil } from '../shared/time';
 
-type View = 'grid' | 'list';
+interface Group { root: Monitor; children: Monitor[]; issues: number; }
+
+const RANK: Record<string, number> = { down: 0, degraded: 1, maintenance: 2, pending: 3, up: 4, paused: 5 };
+const PAGE = 25;
 
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [DatePipe, DecimalPipe, RouterLink, AreaChartComponent, DonutComponent, HeartbeatBarComponent,
-            IconComponent, SparklineComponent],
+  imports: [DecimalPipe, NgTemplateOutlet, RouterLink, AreaChartComponent, HeartbeatBarComponent, IconComponent],
   template: `
     <div class="page-head">
       <div>
         <h1>Dashboard</h1>
-        <div class="sub">{{ greeting }} &middot; {{ today | date: 'EEEE, MMM d' }}</div>
+        <div class="sub">{{ greeting }} &middot; {{ todayText }}</div>
       </div>
       <span class="spacer"></span>
       <div class="range-picker">
@@ -53,232 +53,162 @@ type View = 'grid' | 'list';
     </div>
 
     @if (store.summary(); as s) {
-      <div class="kpi-grid">
-        <div class="kpi-card tone tone-emerald">
-          <div class="kpi-head"><span class="ico"><app-icon name="activity" [size]="16" /></span>Fleet uptime<span class="delta">{{ rangeLabel() }}</span></div>
-          <div class="kpi-value">{{ uptime() === null ? '--' : (uptime() | number: '1.2-2') }}<small>%</small></div>
-          <div class="kpi-sub">{{ uptime() === null ? 'No checks in this range' : uptime()! >= 99.9 ? 'Healthy, above 99.9% SLA' : 'Below 99.9% SLA target' }}</div>
-          <app-sparkline class="kpi-spark" [values]="uptimeSeries()" />
+      <div class="stat-grid">
+        <div class="stat-tile" [class.warn]="uptime() !== null && uptime()! < 99.9">
+          <div class="st-label"><span class="st-ico emerald"><app-icon name="activity" [size]="15" /></span>Uptime</div>
+          <div class="st-value">{{ uptime() === null ? '--' : (uptime() | number: '1.2-2') }}<small>%</small></div>
+          <div class="st-sub">{{ rangeText() }} &middot; target 99.9%</div>
         </div>
-        <div class="kpi-card tone tone-indigo">
-          <div class="kpi-head"><span class="ico"><app-icon name="bolt" [size]="16" /></span>Avg response
-            @if (latencyTrend(); as t) {
-              <span class="delta" [class.bad]="t > 0">{{ t > 0 ? '▲' : '▼' }} {{ t > 0 ? t : -t }}%</span>
-            }
-          </div>
-          <div class="kpi-value">{{ avgLatency() === null ? '--' : (avgLatency() | number: '1.0-0') }}<small>ms</small></div>
-          <div class="kpi-sub">Average over {{ rangeText() }}</div>
-          <app-sparkline class="kpi-spark" [values]="latencySeries()" />
-        </div>
-        <div [class]="'kpi-card tone ' + (s.open_incidents > 0 ? 'tone-rose' : 'tone-amber')">
-          <div class="kpi-head"><span class="ico">
-            <app-icon [name]="s.open_incidents ? 'alert' : 'check'" [size]="16" /></span>Open incidents<span class="delta">now</span></div>
-          <div class="kpi-value">{{ s.open_incidents }}</div>
-          <div class="kpi-sub">
-            @if (s.open_incidents) { <span class="tag-soft down">{{ s.unacknowledged }} not acknowledged</span> }
-            @else { <span class="tag-soft up">All clear</span> }
-            <a routerLink="/incidents" class="kpi-link">View <app-icon name="arrow" [size]="13" /></a>
+        <div class="stat-tile">
+          <div class="st-label"><span class="st-ico indigo"><app-icon name="bolt" [size]="15" /></span>Avg response</div>
+          <div class="st-value">{{ avgLatency() === null ? '--' : (avgLatency() | number: '1.0-0') }}<small>ms</small></div>
+          <div class="st-sub">
+            @if (latencyRange(); as lr) { {{ lr.min }}&ndash;{{ lr.max }} ms range } @else { {{ rangeText() }} }
           </div>
         </div>
-        <div class="kpi-card tone tone-ocean">
-          <div class="kpi-head"><span class="ico"><app-icon name="server" [size]="16" /></span>Monitors</div>
-          <div class="kpi-value">{{ s.total }}<small>{{ s.paused ? s.paused + ' paused' : 'active' }}</small></div>
-          <div class="stack">
+        <a class="stat-tile link" routerLink="/incidents" [class.bad]="s.open_incidents > 0">
+          <div class="st-label"><span class="st-ico rose"><app-icon name="alert" [size]="15" /></span>Open incidents
+            <app-icon class="st-go" name="arrow" [size]="14" /></div>
+          <div class="st-value">{{ s.open_incidents }}</div>
+          <div class="st-sub">{{ s.unacknowledged }} not acknowledged &middot; {{ data()?.incident_count ?? 0 }} in {{ rangeText() }}</div>
+        </a>
+        <div class="stat-tile">
+          <div class="st-label"><span class="st-ico ocean"><app-icon name="server" [size]="15" /></span>Monitors</div>
+          <div class="st-value">{{ s.up }}<small>/ {{ s.total }} up</small></div>
+          <div class="st-bar">
             <i class="up" [style.flex]="s.up"></i><i class="degraded" [style.flex]="s.degraded"></i>
             <i class="down" [style.flex]="s.down"></i><i class="maintenance" [style.flex]="s.maintenance"></i>
             <i class="paused" [style.flex]="s.paused"></i>
           </div>
-          <div class="kpi-sub mini-legend">
-            <span><i class="up"></i>{{ s.up }} up</span><span><i class="degraded"></i>{{ s.degraded }}</span><span><i class="down"></i>{{ s.down }}</span>
-          </div>
         </div>
-      </div>
-
-      <div class="dash-row">
-        <section class="card panel">
-          <div class="card-head">
-            <span class="head-ico tone-indigo"><app-icon name="activity" [size]="16" /></span>
-            <div class="grow"><h2>Response time</h2><div class="sub">Fleet average &middot; {{ rangeText() }}</div></div>
-            @if (latencyStats(); as ls) {
-              <div class="mini-stats">
-                <span><small>Min</small>{{ ls.min }} ms</span><span><small>Avg</small>{{ ls.avg }} ms</span><span><small>Max</small>{{ ls.max }} ms</span>
-              </div>
-            }
-          </div>
-          @if (latencyStats()) {
-            <app-area-chart [values]="chartValues()" [axis]="axis()" />
-          } @else {
-            <div class="empty-state tint-indigo">
-              <span class="empty-ico"><app-icon name="activity" [size]="20" /></span>
-              <div><b>Collecting data</b><div class="muted">The chart appears after a few successful checks.</div></div>
-            </div>
-          }
-        </section>
-        <section class="card panel">
-          <div class="card-head">
-            <span class="head-ico tone-ocean"><app-icon name="server" [size]="16" /></span>
-            <div class="grow"><h2>Status</h2><div class="sub">{{ s.total }} monitors &middot; current state</div></div>
-            @if (s.down + s.degraded === 0) { <span class="tag-soft up">All operational</span> }
-            @else { <span class="tag-soft down">{{ s.down + s.degraded }} need attention</span> }
-          </div>
-          <app-donut [slices]="slices()" [centerValue]="s.total ? ((s.up / s.total) * 100 | number: '1.0-0') + '%' : '--'" caption="operational" />
-        </section>
       </div>
     }
 
-    <div class="dash-row even">
+    <div class="dash-row">
       <section class="card panel">
         <div class="card-head">
-          <span class="head-ico tone-amber"><app-icon name="bolt" [size]="16" /></span>
-          <div class="grow"><h2>Needs attention</h2><div class="sub">Down, degraded or SSL expiring soon</div></div>
-          @if (attention().length) { <span class="count-badge amber">{{ attention().length }}</span> }
+          <div class="grow"><h2>Response time</h2><div class="sub">Fleet average &middot; {{ rangeText() }}</div></div>
         </div>
-        @for (m of attention(); track m.id) {
-          <a class="list-item" [routerLink]="['/monitors', m.id]">
-            <span class="avatar sm" [style.--h]="hue(m.name)">{{ m.name.charAt(0) }}</span>
-            <div class="grow">
-              <div class="title">{{ m.name }}</div>
-              <div class="meta">{{ m.last_message || m.target }}</div>
-            </div>
-            @if (blockedChildren(m); as n) { <span class="dep-chip" title="Dependent monitors affected"><app-icon name="network" [size]="12" /> +{{ n }}</span> }
-            <span [class]="'pill ' + m.status">{{ m.status }}</span>
-          </a>
-        } @empty {
-          <div class="empty-state tint-up">
-            <span class="empty-ico"><app-icon name="check" [size]="20" /></span>
-            <div><b>All systems healthy</b><div class="muted">Nothing needs your attention right now.</div></div>
+        @if (chartReady()) {
+          <app-area-chart [values]="chartValues()" [axis]="axis()" />
+        } @else {
+          <div class="empty-state tint-indigo">
+            <span class="empty-ico"><app-icon name="activity" [size]="20" /></span>
+            <div><b>Collecting data</b><div class="muted">The chart appears after a few successful checks.</div></div>
           </div>
         }
       </section>
       <section class="card panel">
         <div class="card-head">
-          <span class="head-ico tone-rose"><app-icon name="alert" [size]="16" /></span>
-          <div class="grow"><h2>Recent incidents</h2><div class="sub">{{ data()?.incident_count ?? 0 }} in {{ rangeText() }}</div></div>
-          <a routerLink="/incidents" class="kpi-link">View all <app-icon name="arrow" [size]="14" /></a>
+          <div class="grow"><h2>Needs attention</h2><div class="sub">Root causes only</div></div>
+          @if (attention().length) { <span class="count-badge amber">{{ attention().length }}</span> }
         </div>
-        @for (i of data()?.incidents ?? []; track i.id) {
-          <a class="list-item" [routerLink]="['/monitors', i.monitor_id]">
-            <span class="rail" [class.open]="!i.resolved_at"></span>
-            <div class="grow">
-              <div class="title">{{ i.monitor_name }}</div>
-              <div class="meta">{{ i.started_at | date: 'MMM d, HH:mm' }} &middot; {{ duration(i.started_at, i.resolved_at) }}</div>
+        <div class="attn-list">
+          @for (m of attention(); track m.id) {
+            <a class="list-item" [routerLink]="['/monitors', m.id]">
+              <span [class]="'dot ' + m.status"></span>
+              <div class="grow">
+                <div class="title">{{ m.name }}
+                  @if (blockedChildren(m); as n) { <span class="dep-chip" title="Dependent monitors affected"><app-icon name="network" [size]="11" /> {{ n }}</span> }
+                </div>
+                <div class="meta">{{ m.last_message || m.target }}</div>
+              </div>
+            </a>
+          } @empty {
+            <div class="empty-state tint-up">
+              <span class="empty-ico"><app-icon name="check" [size]="20" /></span>
+              <div><b>All systems healthy</b><div class="muted">Nothing needs your attention.</div></div>
             </div>
-            @if (i.resolved_at) { <span class="pill up">resolved</span> }
-            @else if (i.acknowledged_at) { <span class="pill degraded">acked</span> }
-            @else { <span class="pill down">open</span> }
-          </a>
-        } @empty {
-          <div class="empty-state tint-up">
-            <span class="empty-ico"><app-icon name="check" [size]="20" /></span>
-            <div><b>No incidents in this range</b><div class="muted">Outages will be listed here with their duration.</div></div>
-          </div>
-        }
+          }
+        </div>
       </section>
     </div>
 
     <section class="card panel">
       <div class="toolbar">
-        <span class="head-ico tone-emerald"><app-icon name="grid" [size]="16" /></span>
-        <h2>Monitors <span class="count-badge">{{ filtered().length }}</span></h2>
+        <h2>Monitors <span class="count-badge">{{ visibleCount() }}</span></h2>
         <input class="search" placeholder="Search name or target..." [value]="query()"
-               (input)="query.set($any($event.target).value)" />
+               (input)="query.set($any($event.target).value); limit.set(page)" />
+        @if (tags().length) {
+          <select class="tag-select" [value]="tag() ?? ''" (change)="tag.set($any($event.target).value || null); limit.set(page)">
+            <option value="">All tags</option>
+            @for (t of tags(); track t) { <option [value]="t">#{{ t }}</option> }
+          </select>
+        }
         <span class="spacer"></span>
-        <div class="view-toggle">
-          <button [class.active]="view() === 'grid'" (click)="setView('grid')" title="Grid view"><app-icon name="grid" [size]="16" /></button>
-          <button [class.active]="view() === 'list'" (click)="setView('list')" title="List view"><app-icon name="list" [size]="16" /></button>
-        </div>
-      </div>
-      <div class="toolbar">
         <div class="segmented scroll-x">
-          @for (f of filters; track f.value) {
-            <button class="chip" [class.active]="status() === f.value" (click)="status.set(f.value)">{{ f.label }}</button>
+          @for (f of filters(); track f.value) {
+            <button class="chip" [class.active]="status() === f.value" (click)="status.set(f.value); limit.set(page)">
+              {{ f.label }} <span class="chip-n">{{ f.count }}</span>
+            </button>
           }
         </div>
-        @if (tags().length) {
-          <div class="chips scroll-x">
-            @for (t of tags(); track t) {
-              <button class="chip" [class.active]="tag() === t" (click)="tag.set(tag() === t ? null : t)">#{{ t }}</button>
-            }
-          </div>
-        }
       </div>
 
-      @if (view() === 'grid') {
-        <div class="mon-grid">
-          @for (m of filtered(); track m.id) {
-            <a [class]="'mon-card ' + m.status" [class.is-child]="!!parentOf(m)" [class.blocked]="isBlocked(m)" [routerLink]="['/monitors', m.id]">
-              <div class="mc-top">
-                <span class="avatar" [style.--h]="hue(m.name)">{{ m.name.charAt(0) }}</span>
-                <div class="grow">
-                  <div class="title">{{ m.name }}</div>
-                  <div class="target">{{ m.type === 'push' ? 'Push heartbeat' : m.target }}</div>
-                </div>
-                @if (isBlocked(m)) { <span class="pill paused" title="Down because the parent is down">blocked</span> }
-                @else { <span [class]="'pill ' + m.status">{{ m.status }}</span> }
-              </div>
-              <div class="mc-stats">
-                <div><span>Uptime 24h</span><b>{{ m.uptime_24h === null ? '--' : (m.uptime_24h | number: '1.0-2') + '%' }}</b></div>
-                <div><span>Response</span><b>{{ m.last_latency_ms === null ? '--' : (m.last_latency_ms | number: '1.0-0') }}<small> ms</small></b></div>
-                <div class="mc-spark"><app-sparkline [values]="m.recent_latency" /></div>
-              </div>
-              <app-heartbeat-bar [statuses]="m.recent" [max]="30" size="sm" />
-              <div class="mc-foot">
-                <span class="type-badge">{{ m.type }}</span>
-                @if (parentOf(m); as p) { <span class="dep-chip" [title]="'Depends on ' + p.name"><app-icon name="child" [size]="12" /> {{ p.name }}</span> }
-                @if (childrenOf(m).length; as n) { <span class="dep-chip" title="Monitors that depend on this one"><app-icon name="network" [size]="12" /> {{ n }}</span> }
-                @for (t of m.tags.slice(0, 2); track t) { <span class="tag">#{{ t }}</span> }
-                <span class="spacer"></span>
-                <span>every {{ m.interval_sec }}s</span>
-              </div>
-            </a>
-          } @empty {
-            <div class="empty-state">No monitors match. <a routerLink="/monitors/new" class="kpi-link">Create one</a></div>
-          }
+      <div class="mlist">
+        <div class="mrow mhead">
+          <span></span><span>Monitor</span><span>Status</span><span class="hide-sm">Uptime 24h</span>
+          <span class="hide-sm">Response</span><span class="hide-md">Last 30 checks</span>
         </div>
-      } @else {
-        <div class="table-wrap">
-          <table class="mon-table">
-            <thead><tr><th>Monitor</th><th class="hide-sm">Type</th><th>Uptime 24h</th><th class="hide-sm">Response</th><th class="hide-md">Last 30 checks</th></tr></thead>
-            <tbody>
-              @for (m of filtered(); track m.id) {
-                <tr [routerLink]="['/monitors', m.id]">
-                  <td>
-                    <div class="row" style="flex-wrap: nowrap; gap: 10px">
-                      @if (parentOf(m)) { <app-icon class="child-ico" name="child" [size]="14" /> }
-                      <span class="avatar sm" [style.--h]="hue(m.name)">{{ m.name.charAt(0) }}</span>
-                      <div style="min-width: 0"><div class="title">{{ m.name }}</div>
-                        <div class="meta ellipsis">{{ m.type === 'push' ? 'Push heartbeat' : m.target }}</div></div>
-                    </div>
-                  </td>
-                  <td class="hide-sm"><span class="type-badge">{{ m.type }}</span></td>
-                  <td><b>{{ m.uptime_24h === null ? '--' : (m.uptime_24h | number: '1.0-2') + '%' }}</b></td>
-                  <td class="hide-sm">{{ m.last_latency_ms === null ? '--' : (m.last_latency_ms | number: '1.0-0') + ' ms' }}</td>
-                  <td class="hide-md" style="width: 34%"><app-heartbeat-bar [statuses]="m.recent" [max]="30" size="sm" /></td>
-                </tr>
-              } @empty {
-                <tr><td colspan="5" class="muted">No monitors match.</td></tr>
+        @for (g of shownGroups(); track g.root.id) {
+          <div class="mgroup" [class.has-children]="g.children.length">
+            <ng-container *ngTemplateOutlet="row; context: { $implicit: g.root, group: g }" />
+            @if (g.children.length && isOpen(g)) {
+              @for (c of g.children; track c.id) {
+                <ng-container *ngTemplateOutlet="row; context: { $implicit: c, group: null }" />
               }
-            </tbody>
-          </table>
-        </div>
+            }
+          </div>
+        } @empty {
+          <div class="empty-state">No monitors match. <a routerLink="/monitors/new" class="kpi-link">Create one</a></div>
+        }
+      </div>
+      @if (groups().length > limit()) {
+        <button class="btn show-more" (click)="limit.set(limit() + page)">
+          Show more ({{ groups().length - limit() }} remaining)
+        </button>
       }
     </section>
+
+    <ng-template #row let-m let-g="group">
+      <a class="mrow" [class.child]="!g" [class.blocked]="isBlocked(m)" [routerLink]="['/monitors', m.id]">
+        <span class="caret-cell">
+          @if (g?.children.length) {
+            <button class="caret" [class.open]="isOpen(g)" (click)="toggle(g, $event)"
+                    [title]="isOpen(g) ? 'Hide dependents' : 'Show dependents'"><app-icon name="arrow" [size]="14" /></button>
+          } @else if (!g) { <app-icon class="child-ico" name="child" [size]="14" /> }
+        </span>
+        <span class="m-name">
+          <span [class]="'dot ' + (isBlocked(m) ? 'paused' : m.status)"></span>
+          <span class="m-text">
+            <b>{{ m.name }}
+              @if (g?.children.length) { <span class="dep-chip" title="Dependent monitors"><app-icon name="network" [size]="11" /> {{ g.children.length }}</span> }
+            </b>
+            <small><span class="m-type">{{ m.type }}</span>{{ m.type === 'push' ? 'Push heartbeat' : m.target }}</small>
+          </span>
+        </span>
+        <span>
+          @if (isBlocked(m)) { <span class="pill paused" title="Down because its parent is down">blocked</span> }
+          @else { <span [class]="'pill ' + m.status">{{ m.status }}</span> }
+        </span>
+        <span class="hide-sm num">{{ m.uptime_24h === null ? '--' : (m.uptime_24h | number: '1.0-2') + '%' }}</span>
+        <span class="hide-sm num">{{ m.last_latency_ms === null ? '--' : (m.last_latency_ms | number: '1.0-0') + ' ms' }}</span>
+        <span class="hide-md"><app-heartbeat-bar [statuses]="m.recent" [max]="30" size="sm" /></span>
+      </a>
+    </ng-template>
   `,
 })
 export class DashboardComponent {
   store = inject(MonitorStore);
   private api = inject(ApiService);
 
+  readonly page = PAGE;
   readonly today = new Date();
+  readonly todayText = formatDate(this.today, 'EEEE, MMM d', 'en-US');
+  readonly todayIso = formatDate(this.today, 'yyyy-MM-dd', 'en-US');
   readonly greeting = this.today.getHours() < 12 ? 'Good morning' : this.today.getHours() < 18 ? 'Good afternoon' : 'Good evening';
   readonly ranges = [{ hours: 24, label: '24h' }, { hours: 168, label: '7d' }, { hours: 720, label: '30d' }];
-  readonly filters: { value: MonitorStatus | 'all'; label: string }[] = [
-    { value: 'all', label: 'All' }, { value: 'up', label: 'Up' }, { value: 'down', label: 'Down' },
-    { value: 'degraded', label: 'Degraded' }, { value: 'maintenance', label: 'Maintenance' }, { value: 'paused', label: 'Paused' },
-  ];
-  duration = duration;
 
-  readonly todayIso = formatDate(this.today, 'yyyy-MM-dd', 'en-US');
   hours = signal(24);
   custom = signal<{ from: string; to: string } | null>(null);
   customOpen = signal(false);
@@ -288,7 +218,8 @@ export class DashboardComponent {
   query = signal('');
   tag = signal<string | null>(null);
   status = signal<MonitorStatus | 'all'>('all');
-  view = signal<View>((localStorage.getItem('dashView') as View) ?? 'grid');
+  limit = signal(PAGE);
+  private openState = signal(new Map<number, boolean>());
 
   rangeLabel = computed(() => {
     const c = this.custom();
@@ -309,37 +240,19 @@ export class DashboardComponent {
   private rangeParams = computed<{ hours?: number; start?: string; end?: string }>(() => {
     const c = this.custom();
     if (!c) return { hours: this.hours() };
-    return {
-      start: new Date(`${c.from}T00:00:00`).toISOString(),
-      end: new Date(`${c.to}T23:59:59`).toISOString(),
-    };
+    return { start: new Date(`${c.from}T00:00:00`).toISOString(), end: new Date(`${c.to}T23:59:59`).toISOString() };
   });
   private spanHours = computed(() => {
     const p = this.rangeParams();
     return p.hours ?? (Date.parse(p.end!) - Date.parse(p.start!)) / 3_600_000;
   });
-  latencySeries = computed(() => (this.data()?.series ?? []).map((p) => p.avg_latency_ms));
-  uptimeSeries = computed(() => (this.data()?.series ?? []).map((p) => p.uptime));
 
-  latencyStats = computed(() => {
-    const vals = this.latencySeries().filter((v): v is number => v !== null);
-    if (vals.length < 2) return null;
-    return {
-      min: Math.round(Math.min(...vals)),
-      avg: Math.round(vals.reduce((a, b) => a + b, 0) / vals.length),
-      max: Math.round(Math.max(...vals)),
-    };
-  });
-
-  // Percent change between the oldest and newest quarter of the range
-  latencyTrend = computed(() => {
-    const vals = this.latencySeries().filter((v): v is number => v !== null);
-    if (vals.length < 4) return null;
-    const q = Math.max(1, Math.floor(vals.length / 4));
-    const avg = (a: number[]) => a.reduce((x, y) => x + y, 0) / a.length;
-    const first = avg(vals.slice(0, q));
-    const change = Math.round(((avg(vals.slice(-q)) - first) / first) * 100);
-    return change === 0 ? null : change;
+  private latencySeries = computed(() => (this.data()?.series ?? []).map((p) => p.avg_latency_ms));
+  private latencyValues = computed(() => this.latencySeries().filter((v): v is number => v !== null));
+  chartReady = computed(() => this.latencyValues().length >= 2);
+  latencyRange = computed(() => {
+    const v = this.latencyValues();
+    return v.length < 2 ? null : { min: Math.round(Math.min(...v)), max: Math.round(Math.max(...v)) };
   });
   // Chart starts at the first bucket with data, so new installs don't show a mostly empty chart
   private chartStart = computed(() => Math.max(0, this.latencySeries().findIndex((v) => v !== null)));
@@ -347,54 +260,6 @@ export class DashboardComponent {
   axis = computed(() => {
     const fmt = this.spanHours() <= 48 ? 'HH:mm' : 'MMM d';
     return (this.data()?.series ?? []).slice(this.chartStart()).map((p) => formatDate(p.at, fmt, 'en-US'));
-  });
-
-  slices = computed<DonutSlice[]>(() => {
-    const s = this.store.summary();
-    if (!s) return [];
-    const pending = s.total - s.up - s.down - s.degraded - s.maintenance - s.paused;
-    return [
-      { label: 'Up', value: s.up, color: 'var(--up)' },
-      { label: 'Degraded', value: s.degraded, color: 'var(--degraded)' },
-      { label: 'Down', value: s.down, color: 'var(--down)' },
-      { label: 'Maintenance', value: s.maintenance, color: 'var(--maintenance)' },
-      { label: 'Paused', value: s.paused, color: 'var(--paused)' },
-      { label: 'Pending', value: Math.max(0, pending), color: 'var(--pending)' },
-    ];
-  });
-
-  attention = computed(() => {
-    const rank: Record<string, number> = { down: 0, degraded: 1 };
-    return this.store
-      .monitors()
-      .filter((m) => m.active && !this.isBlocked(m) && (m.status === 'down' || m.status === 'degraded' || this.sslSoon(m)))
-      .sort((a, b) => (rank[a.status] ?? 2) - (rank[b.status] ?? 2))
-      .slice(0, 6);
-  });
-
-  tags = computed(() => [...new Set(this.store.monitors().flatMap((m) => m.tags))].sort());
-
-  filtered = computed(() => {
-    const q = this.query().toLowerCase();
-    const t = this.tag();
-    const s = this.status();
-    const rank: Record<string, number> = { down: 0, degraded: 1, maintenance: 2, pending: 3, up: 4, paused: 5 };
-    const list = this.store
-      .monitors()
-      .filter(
-        (m) =>
-          (!q || m.name.toLowerCase().includes(q) || m.target.toLowerCase().includes(q)) &&
-          (!t || m.tags.includes(t)) &&
-          (s === 'all' || m.status === s),
-      );
-    // Keep each child right after its parent when both are visible
-    const shown = new Map(list.map((m) => [m.id, m]));
-    const root = (m: Monitor) => (m.parent_id !== null && shown.has(m.parent_id) ? shown.get(m.parent_id)! : m);
-    return list.sort((a, b) => {
-      const ra = root(a), rb = root(b);
-      if (ra !== rb) return rank[ra.status] - rank[rb.status] || ra.name.localeCompare(rb.name);
-      return (a === ra ? 0 : 1) - (b === rb ? 0 : 1) || a.name.localeCompare(b.name);
-    });
   });
 
   private byId = computed(() => new Map(this.store.monitors().map((m) => [m.id, m])));
@@ -406,21 +271,68 @@ export class DashboardComponent {
     return map;
   });
 
-  parentOf(m: Monitor): Monitor | null {
-    return m.parent_id === null ? null : this.byId().get(m.parent_id) ?? null;
-  }
+  attention = computed(() =>
+    this.store
+      .monitors()
+      .filter((m) => m.active && !this.isBlocked(m) && (m.status === 'down' || m.status === 'degraded' || this.sslSoon(m)))
+      .sort((a, b) => (RANK[a.status] ?? 9) - (RANK[b.status] ?? 9))
+      .slice(0, 6),
+  );
 
-  childrenOf(m: Monitor): Monitor[] {
-    return this.children().get(m.id) ?? [];
-  }
+  tags = computed(() => [...new Set(this.store.monitors().flatMap((m) => m.tags))].sort());
 
-  isBlocked(m: Monitor): boolean {
-    return m.status === 'down' && this.parentOf(m)?.status === 'down';
-  }
+  filters = computed(() => {
+    const all = this.store.monitors();
+    const count = (s: MonitorStatus) => all.filter((m) => m.status === s).length;
+    const opts: { value: MonitorStatus | 'all'; label: string; count: number }[] = [{ value: 'all', label: 'All', count: all.length }];
+    for (const [value, label] of [['down', 'Down'], ['degraded', 'Degraded'], ['up', 'Up'], ['maintenance', 'Maintenance'], ['paused', 'Paused']] as const) {
+      const n = count(value);
+      if (n || this.status() === value) opts.push({ value, label, count: n });
+    }
+    return opts;
+  });
 
-  blockedChildren(m: Monitor): number {
-    return this.childrenOf(m).filter((c) => this.isBlocked(c)).length;
-  }
+  private matches = computed(() => {
+    const q = this.query().toLowerCase();
+    const t = this.tag();
+    const s = this.status();
+    return this.store.monitors().filter(
+      (m) =>
+        (!q || m.name.toLowerCase().includes(q) || m.target.toLowerCase().includes(q)) &&
+        (!t || m.tags.includes(t)) &&
+        (s === 'all' || m.status === s),
+    );
+  });
+  visibleCount = computed(() => this.matches().length);
+
+  // Children are nested under their top-most visible ancestor
+  groups = computed<Group[]>(() => {
+    const list = this.matches();
+    const shown = new Map(list.map((m) => [m.id, m]));
+    const rootOf = (m: Monitor) => {
+      let r = m;
+      const seen = new Set<number>();
+      while (r.parent_id !== null && shown.has(r.parent_id) && !seen.has(r.id)) {
+        seen.add(r.id);
+        r = shown.get(r.parent_id)!;
+      }
+      return r;
+    };
+    const map = new Map<number, Group>();
+    for (const m of list) {
+      const root = rootOf(m);
+      const g = map.get(root.id) ?? { root, children: [], issues: 0 };
+      if (m !== root) {
+        g.children.push(m);
+        if (m.status === 'down' || m.status === 'degraded') g.issues++;
+      }
+      map.set(root.id, g);
+    }
+    const worst = (g: Group) => Math.min(RANK[g.root.status], ...g.children.map((c) => RANK[c.status]));
+    for (const g of map.values()) g.children.sort((a, b) => RANK[a.status] - RANK[b.status] || a.name.localeCompare(b.name));
+    return [...map.values()].sort((a, b) => worst(a) - worst(b) || a.root.name.localeCompare(b.root.name));
+  });
+  shownGroups = computed(() => this.groups().slice(0, this.limit()));
 
   constructor() {
     combineLatest([toObservable(this.rangeParams), timer(0, 30_000)])
@@ -429,6 +341,31 @@ export class DashboardComponent {
         takeUntilDestroyed(),
       )
       .subscribe((d) => this.data.set(d));
+  }
+
+  parentOf(m: Monitor): Monitor | null {
+    return m.parent_id === null ? null : this.byId().get(m.parent_id) ?? null;
+  }
+
+  isBlocked(m: Monitor): boolean {
+    return m.status === 'down' && this.parentOf(m)?.status === 'down';
+  }
+
+  blockedChildren(m: Monitor): number {
+    return (this.children().get(m.id) ?? []).filter((c) => this.isBlocked(c)).length;
+  }
+
+  // Groups start open when a dependent has a problem, closed otherwise
+  isOpen(g: Group): boolean {
+    return this.openState().get(g.root.id) ?? g.issues > 0;
+  }
+
+  toggle(g: Group, event: Event): void {
+    event.preventDefault();
+    event.stopPropagation();
+    const next = new Map(this.openState());
+    next.set(g.root.id, !this.isOpen(g));
+    this.openState.set(next);
   }
 
   pickHours(hours: number): void {
@@ -441,18 +378,6 @@ export class DashboardComponent {
     if (this.rangeError()) return;
     this.custom.set({ from: this.draftFrom(), to: this.draftTo() });
     this.customOpen.set(false);
-  }
-
-  setView(view: View): void {
-    this.view.set(view);
-    localStorage.setItem('dashView', view);
-  }
-
-  // Stable colour per monitor name for its avatar
-  hue(name: string): number {
-    let h = 0;
-    for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) % 360;
-    return h;
   }
 
   private sslSoon(m: Monitor): boolean {

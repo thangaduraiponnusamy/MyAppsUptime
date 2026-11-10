@@ -22,7 +22,12 @@ import { LogoComponent } from './shared/logo.component';
       <div class="backdrop" (click)="navOpen.set(false)"></div>
 
       <aside class="side">
-        <a routerLink="/" class="logo"><app-logo [size]="40" /></a>
+        <div class="side-head">
+          <a routerLink="/" class="logo"><app-logo [size]="34" /></a>
+          <button class="collapse-btn" (click)="toggleCollapsed()" [title]="collapsed() ? 'Expand menu' : 'Collapse menu'">
+            <app-icon [name]="collapsed() ? 'chevrons-right' : 'chevrons-left'" [size]="18" />
+          </button>
+        </div>
         <div class="nav-caption">Monitoring</div>
         @for (item of nav; track item.path) {
           <a class="nav-link" [routerLink]="item.path" routerLinkActive="active" [title]="item.label"
@@ -38,10 +43,6 @@ import { LogoComponent } from './shared/logo.component';
           <button class="btn" (click)="theme.toggle()" [title]="theme.theme() === 'light' ? 'Dark mode' : 'Light mode'">
             <app-icon [name]="theme.theme() === 'light' ? 'moon' : 'sun'" />
             <span class="label">{{ theme.theme() === 'light' ? 'Dark mode' : 'Light mode' }}</span>
-          </button>
-          <button class="btn collapse-btn" (click)="toggleCollapsed()" [title]="collapsed() ? 'Expand menu' : 'Collapse menu'">
-            <app-icon [name]="collapsed() ? 'panel-open' : 'panel-close'" />
-            <span class="label">Collapse menu</span>
           </button>
         </div>
       </aside>

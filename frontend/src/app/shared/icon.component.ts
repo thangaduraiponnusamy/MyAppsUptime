@@ -33,6 +33,8 @@ const PATHS: Record<string, string> = {
   'panel-close': rr(3, 3, 18, 18, 2) + 'M9 3v18M16 15l-3-3 3-3',
   'panel-open': rr(3, 3, 18, 18, 2) + 'M9 3v18M14 9l3 3-3 3',
   child: 'M15 10l5 5-5 5M4 4v7a4 4 0 0 0 4 4h12',
+  'chevrons-left': 'M11 17l-5-5 5-5M18 17l-5-5 5-5',
+  'chevrons-right': 'M6 17l5-5-5-5M13 17l5-5-5-5',
   network: rr(16, 16, 6, 6, 1) + rr(2, 16, 6, 6, 1) + rr(9, 2, 6, 6, 1) + 'M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3M12 12V8',
 };
 
