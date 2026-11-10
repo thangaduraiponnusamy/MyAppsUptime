@@ -131,10 +131,9 @@ export class ActivityComponent {
       this.limit.set(this.page());
     });
     const range = computed(() => rangeQuery(this.hours(), this.custom()));
-    const max = computed(() => this.prefs.limits().max);
     const tick = toObservable(this.auth.refreshMs).pipe(switchMap((ms) => timer(0, ms)));
-    combineLatest([toObservable(range), toObservable(max), tick])
-      .pipe(switchMap(([r, m]) => this.api.incidents(false, m, r).pipe(catchError(() => EMPTY))), takeUntilDestroyed())
+    combineLatest([toObservable(range), tick])
+      .pipe(switchMap(([r]) => this.api.incidents(false, null, r).pipe(catchError(() => EMPTY))), takeUntilDestroyed())
       .subscribe((list) => this.incidents.set(list));
   }
 

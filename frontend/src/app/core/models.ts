@@ -97,7 +97,7 @@ export interface Channel {
   active: boolean;
 }
 
-export type Role = 'admin' | 'member';
+export type Role = 'superadmin' | 'admin' | 'member';
 
 export interface Me {
   id: number;
@@ -107,6 +107,33 @@ export interface Me {
   role: Role;
   must_change_password: boolean;
   refresh_sec: number;
+  tenant: string;
+  tenant_name: string;
+  active_tenant: string;
+  active_tenant_name: string;
+}
+
+export interface Tenant {
+  slug: string;
+  name: string;
+  active: boolean;
+  is_default: boolean;
+  created_at: string;
+  admins: string[];
+  users: number;
+  teams: number;
+  monitors: number;
+  down: number;
+  db_file: string;
+  db_size_kb: number;
+}
+
+export interface TenantCreate {
+  slug: string;
+  name: string;
+  admin_username: string;
+  admin_email: string | null;
+  admin_password: string;
 }
 
 export interface User {
@@ -134,6 +161,8 @@ export interface Project {
 export interface GeneralSettings {
   app_url: string;
   refresh_sec: number;
+  retention_value: number;
+  retention_unit: 'days' | 'months' | 'years';
 }
 
 export interface SmtpSettings {

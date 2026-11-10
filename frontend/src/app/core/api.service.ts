@@ -2,7 +2,7 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import {
   Channel, DashboardData, ExportData, GeneralSettings, Heartbeat, Incident, Maintenance, Monitor, MonitorInput, Project,
-  PublicStatus, SmtpSettings, Stats, StatusPage, Summary, User,
+  PublicStatus, SmtpSettings, Stats, StatusPage, Summary, Tenant, TenantCreate, User,
 } from './models';
 
 type Range = { hours?: number; start?: string; end?: string; project_id?: number };
@@ -31,8 +31,9 @@ export class ApiService {
   }
   stats(id: number) { return this.http.get<Stats>(`${this.base}/monitors/${id}/stats`); }
 
-  incidents(openOnly = false, limit = 100, range: Range = {}) {
-    let params = new HttpParams().set('open_only', openOnly).set('limit', limit);
+  incidents(openOnly = false, limit: number | null = 100, range: Range = {}) {
+    let params = new HttpParams().set('open_only', openOnly);
+    if (limit) params = params.set('limit', limit);
     for (const [k, v] of Object.entries(range)) if (v !== undefined) params = params.set(k, v);
     return this.http.get<Incident[]>(`${this.base}/incidents`, { params });
   }
@@ -58,6 +59,16 @@ export class ApiService {
   createUser(body: User) { return this.http.post<User>(`${this.base}/users`, body); }
   updateUser(id: number, body: User) { return this.http.put<User>(`${this.base}/users/${id}`, body); }
   deleteUser(id: number) { return this.http.delete<void>(`${this.base}/users/${id}`); }
+
+  tenants() { return this.http.get<Tenant[]>(`${this.base}/tenants`); }
+  createTenant(body: TenantCreate) { return this.http.post<Tenant>(`${this.base}/tenants`, body); }
+  updateTenant(slug: string, body: { name: string; active: boolean }) {
+    return this.http.put<Tenant>(`${this.base}/tenants/${slug}`, body);
+  }
+  resetTenantAdmin(slug: string, password: string) {
+    return this.http.post<{ username: string }>(`${this.base}/tenants/${slug}/reset-admin`, { password });
+  }
+  deleteTenant(slug: string) { return this.http.delete<void>(`${this.base}/tenants/${slug}`); }
 
   general() { return this.http.get<GeneralSettings>(`${this.base}/settings/general`); }
   saveGeneral(body: GeneralSettings) { return this.http.put<GeneralSettings>(`${this.base}/settings/general`, body); }

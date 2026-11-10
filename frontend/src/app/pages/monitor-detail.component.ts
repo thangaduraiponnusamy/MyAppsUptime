@@ -126,7 +126,7 @@ import { daysUntil } from '../shared/time';
           }
           <div>
             <div class="muted">Badges (monitor must be on a status page)</div>
-            <div class="code-box mono">{{ origin }}/api/public/badge/{{ m.id }}/uptime.svg</div>
+            <div class="code-box mono">{{ origin }}/api/public/badge/{{ m.id }}/uptime.svg{{ auth.user()?.active_tenant === 'admin' ? '' : '?t=' + auth.user()?.active_tenant }}</div>
           </div>
           <div>
             <div class="muted">Prometheus</div>

@@ -1,4 +1,4 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService, errorText } from '../../core/api.service';
@@ -12,7 +12,7 @@ import { User } from '../../core/models';
   imports: [FormsModule, DatePipe],
   template: `
     <h2 class="s-title">Users</h2>
-    <p class="muted">Admins manage everything. Members see only the projects they belong to and can acknowledge incidents.</p>
+    <p class="muted">Admins manage everything. Members see only the teams they belong to and can acknowledge incidents.</p>
 
     <section class="s-section">
       <div class="s-head">
@@ -26,7 +26,15 @@ import { User } from '../../core/models';
           <label>Full name <input name="nm" [(ngModel)]="u.name" /></label>
           <label>Email <input name="em" type="email" [(ngModel)]="u.email" placeholder="Needed for alerts and password reset" /></label>
           <label>Role
-            <select name="role" [(ngModel)]="u.role"><option value="member">Member</option><option value="admin">Admin</option></select>
+            <select name="role" [(ngModel)]="u.role">
+              <option value="member">Member</option>
+              @if (inAdminTenant()) {
+                @if (auth.isSuper()) { <option value="superadmin">Super admin</option> }
+                @if (u.role === 'admin') { <option value="admin">Admin</option> }
+              } @else {
+                <option value="admin">Admin (one per tenant)</option>
+              }
+            </select>
           </label>
           <label>{{ u.id ? 'New password (optional)' : 'Password' }}
             <input name="pw" type="password" [(ngModel)]="u.password" autocomplete="new-password" />
@@ -47,7 +55,7 @@ import { User } from '../../core/models';
           @for (u of users(); track u.id) {
             <tr [class.muted]="!u.active">
               <td><b>{{ u.username }}</b> @if (u.name) { <div class="muted small">{{ u.name }}</div> }</td>
-              <td class="cap">{{ u.role }}</td>
+              <td class="cap">{{ u.role === 'superadmin' ? 'Super admin' : u.role }}</td>
               <td class="hide-sm">{{ u.email || '-' }}</td>
               <td class="hide-sm">
                 {{ !u.active ? 'Disabled' : u.must_change_password ? 'Must change password' : 'Active' }}
@@ -55,7 +63,7 @@ import { User } from '../../core/models';
               </td>
               <td class="row nowrap">
                 <button class="btn sm" (click)="edit(u)">Edit</button>
-                @if (u.id !== auth.user()?.id) { <button class="btn sm danger" (click)="remove(u)">Delete</button> }
+                @if (u.id !== auth.user()?.id || auth.visiting()) { <button class="btn sm danger" (click)="remove(u)">Delete</button> }
               </td>
             </tr>
           }
@@ -71,6 +79,7 @@ export class UserSettingsComponent {
   users = signal<User[]>([]);
   editing = signal<User | null>(null);
   error = signal('');
+  inAdminTenant = computed(() => this.auth.user()?.active_tenant === 'admin');
 
   constructor() {
     this.load();
@@ -96,7 +105,7 @@ export class UserSettingsComponent {
       next: () => {
         this.editing.set(null);
         this.load();
-        if (u.id === this.auth.user()?.id) this.auth.reload();
+        if (u.id === this.auth.user()?.id && !this.auth.visiting()) this.auth.reload();
       },
       error: (e) => this.error.set(errorText(e)),
     });
@@ -106,7 +115,7 @@ export class UserSettingsComponent {
     const ok = await this.confirm.ask({
       title: 'Delete user?',
       message: `You are about to delete the user "${u.username}".`,
-      details: ['They can no longer sign in.', 'They are removed from all projects and stop getting alerts.'],
+      details: ['They can no longer sign in.', 'They are removed from all teams and stop getting alerts.'],
       typeToConfirm: u.username,
       action: 'Delete user',
     });

@@ -7,10 +7,10 @@ from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
-from . import admin_api, api
+from . import admin_api, api, tenancy, tenants_api
 from .auth import ensure_default_admin
 from .config import APP_VERSION
-from .database import SessionLocal, upgrade_schema
+from .database import upgrade_schema
 from .scheduler import scheduler
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -19,7 +19,10 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     upgrade_schema()
-    with SessionLocal() as db:
+    tenancy.load()
+    for slug in tenancy.slugs(active_only=False):
+        tenancy.session_for(slug).close()  # upgrades every tenant database at start
+    with tenancy.session_for(tenancy.DEFAULT) as db:
         ensure_default_admin(db)
     await scheduler.start()
     yield
@@ -32,11 +35,12 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:4200").split(","),
     allow_methods=["GET", "POST", "PUT", "DELETE"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_headers=["Authorization", "Content-Type", "X-Tenant"],
 )
 
 app.include_router(admin_api.auth)
 app.include_router(admin_api.admin)
+app.include_router(tenants_api.router)
 app.include_router(api.router)
 app.include_router(api.public)
 

@@ -11,18 +11,18 @@ import { MonitorStore } from '../../core/monitor-store.service';
   standalone: true,
   imports: [FormsModule],
   template: `
-    <h2 class="s-title">Projects</h2>
-    <p class="muted">Group monitors by project or customer. Members see only their projects and get email alerts for them.</p>
+    <h2 class="s-title">Teams</h2>
+    <p class="muted">Group services by team. Members see only their teams and get email alerts for them.</p>
 
     <section class="s-section">
       <div class="s-head">
-        <h3>All projects</h3>
-        @if (!editing()) { <button class="btn primary sm" (click)="edit(null)">Add project</button> }
+        <h3>All teams</h3>
+        @if (!editing()) { <button class="btn primary sm" (click)="edit(null)">Add team</button> }
       </div>
 
       @if (editing(); as p) {
         <form class="s-fields s-box" (ngSubmit)="save()">
-          <label>Name <input name="name" [(ngModel)]="p.name" placeholder="Project 1" required /></label>
+          <label>Name <input name="name" [(ngModel)]="p.name" placeholder="Team 1" required /></label>
           <label>Description <input name="desc" [(ngModel)]="p.description" /></label>
 
           <div class="full">
@@ -34,7 +34,7 @@ import { MonitorStore } from '../../core/monitor-store.service';
               } @empty { <span class="muted small">No users yet. Add them in Users.</span> }
             </div>
           </div>
-          <label class="check full"><input type="checkbox" name="em" [(ngModel)]="p.email_members" /> Email members when a monitor in this project goes down or recovers</label>
+          <label class="check full"><input type="checkbox" name="em" [(ngModel)]="p.email_members" /> Email members when a monitor in this team goes down or recovers</label>
 
           <div class="full">
             <span class="field-label">Monitors ({{ picked().size }} selected)</span>
@@ -58,7 +58,7 @@ import { MonitorStore } from '../../core/monitor-store.service';
       }
 
       <table>
-        <thead><tr><th>Project</th><th>Monitors</th><th class="hide-sm">Members</th><th class="hide-sm">Email</th><th></th></tr></thead>
+        <thead><tr><th>Team</th><th>Monitors</th><th class="hide-sm">Members</th><th class="hide-sm">Email</th><th></th></tr></thead>
         <tbody>
           @for (p of projects(); track p.id) {
             <tr>
@@ -72,7 +72,7 @@ import { MonitorStore } from '../../core/monitor-store.service';
               </td>
             </tr>
           } @empty {
-            <tr><td colspan="5" class="muted">No projects yet.</td></tr>
+            <tr><td colspan="5" class="muted">No teams yet.</td></tr>
           }
         </tbody>
       </table>
@@ -168,14 +168,14 @@ export class ProjectSettingsComponent {
 
   async remove(p: Project): Promise<void> {
     const ok = await this.confirm.ask({
-      title: 'Delete project?',
-      message: `You are about to delete the project "${p.name}".`,
+      title: 'Delete team?',
+      message: `You are about to delete the team "${p.name}".`,
       details: [
         `${p.monitor_count ?? 0} monitor(s) are kept but become unassigned.`,
         `${p.member_ids.length} member(s) lose access to these monitors and stop getting their alerts.`,
       ],
       typeToConfirm: p.name,
-      action: 'Delete project',
+      action: 'Delete team',
     });
     if (!ok) return;
     this.api.deleteProject(p.id!).subscribe(() => {

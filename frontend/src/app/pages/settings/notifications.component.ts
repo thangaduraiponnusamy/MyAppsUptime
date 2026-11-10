@@ -19,7 +19,7 @@ const emptyChannel = (): Channel => ({
   template: `
     <h2 class="s-title">Notifications</h2>
     <p class="muted">Alerts go out when a monitor goes down, becomes degraded or recovers.
-      Members of a project also get emails for that project (see Projects).</p>
+      Members of a team also get emails for that team (see Teams).</p>
 
     <section class="s-section">
       <div class="s-head">
@@ -29,7 +29,7 @@ const emptyChannel = (): Channel => ({
 
       @if (editing(); as c) {
         <form class="s-fields s-box" (ngSubmit)="saveChannel()">
-          <label>Name <input name="name" [(ngModel)]="c.name" placeholder="Project 1 on-call" required /></label>
+          <label>Name <input name="name" [(ngModel)]="c.name" placeholder="Team 1 on-call" required /></label>
           <label>Type
             <select name="type" [(ngModel)]="c.type">
               @for (t of types; track t) { <option [value]="t">{{ typeLabels[t] }}</option> }
@@ -48,11 +48,11 @@ const emptyChannel = (): Channel => ({
             </label>
           }
           <div class="full">
-            <span class="field-label">Projects</span>
+            <span class="field-label">Teams</span>
             <div class="check-list">
               @for (p of projects(); track p.id) {
                 <label class="check"><input type="checkbox" [checked]="c.project_ids.includes(p.id!)" (change)="toggleProject(c, p.id!)" /> {{ p.name }}</label>
-              } @empty { <span class="muted small">No projects yet.</span> }
+              } @empty { <span class="muted small">No teams yet.</span> }
             </div>
             <small class="muted">None selected = all projects.</small>
           </div>
@@ -69,7 +69,7 @@ const emptyChannel = (): Channel => ({
       }
 
       <table>
-        <thead><tr><th>Name</th><th>Type</th><th>Sends to</th><th class="hide-sm">Projects</th><th></th></tr></thead>
+        <thead><tr><th>Name</th><th>Type</th><th>Sends to</th><th class="hide-sm">Teams</th><th></th></tr></thead>
         <tbody>
           @for (c of channels(); track c.id) {
             <tr [class.muted]="!c.active">

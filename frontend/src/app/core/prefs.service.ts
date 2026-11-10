@@ -1,11 +1,10 @@
 import { Injectable, effect, signal } from '@angular/core';
 
-export interface Limit { key: 'recent' | 'page' | 'max'; label: string; hint: string; def: number; min: number; max: number; }
+export interface Limit { key: 'recent' | 'page'; label: string; hint: string; def: number; min: number; max: number; }
 
 export const LIMITS: Limit[] = [
   { key: 'recent', label: 'Recent activity on dashboard', hint: 'Rows shown in the dashboard tile', def: 5, min: 1, max: 20 },
   { key: 'page', label: 'Activity rows per page', hint: 'Rows before "Show more"', def: 50, min: 10, max: 500 },
-  { key: 'max', label: 'Activity history limit', hint: 'Most incidents loaded on the Activity page', def: 500, min: 50, max: 5000 },
 ];
 
 const clamp = (l: Limit, v: unknown) => {

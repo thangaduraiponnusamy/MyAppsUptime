@@ -299,7 +299,7 @@ export class DashboardComponent {
       : this.scoped().filter((m) => m.status === 'down').length);
   projectTitle = computed(() => {
     const p = this.project();
-    return p === null ? 'All monitors' : p === 0 ? 'No project' : this.store.projectName(p) || 'Project';
+    return p === null ? 'All monitors' : p === 0 ? 'No team' : this.store.projectName(p) || 'Team';
   });
 
   private latencyValues = computed(() =>

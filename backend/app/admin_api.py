@@ -4,12 +4,11 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from . import notifier
+from . import notifier, tenancy
 from .auth import (RESET_MIN, Principal, bearer, check_lock, clear_fails, create_reset_token, create_session,
-                   current_user, end_all_sessions, end_session, hash_password, record_fail, require_admin,
-                   require_user, use_reset_token, verify_password)
+                   current_user, end_all_sessions, end_session, get_db, hash_password, record_fail, require_admin,
+                   require_user, token_tenant, use_reset_token, verify_password)
 from .config import APP_VERSION, get_setting, put_setting
-from .database import get_db
 from .models import Monitor, NotificationChannel, Project, User
 from .schemas import (ForgotIn, GeneralSettings, LoginIn, LoginOut, MeOut, PasswordIn, ProjectIn, ProjectOut,
                       ResetIn, SmtpOut, SmtpSettings, SmtpTestIn, UserCreate, UserOut, UserUpdate)
@@ -28,33 +27,45 @@ def _get(db: Session, model, obj_id: int):
 
 
 def _me(db: Session, user: Principal) -> MeOut:
-    row = db.get(User, user.id) if user.id else None
-    return MeOut(id=user.id, username=user.username, role=user.role, name=row.name if row else "",
-                 email=row.email if row else None, must_change_password=user.must_change_password,
-                 refresh_sec=get_setting(db, "general")["refresh_sec"])
+    """db is the tenant being worked on; the account itself lives in the user's home tenant."""
+    with tenancy.session_for(user.tenant) as home:
+        row = home.get(User, user.id) if user.id else None
+        name, email = (row.name, row.email) if row else ("", None)
+    return MeOut(id=user.id, username=user.username, role=user.role, name=name, email=email,
+                 must_change_password=user.must_change_password,
+                 refresh_sec=get_setting(db, "general")["refresh_sec"],
+                 tenant=user.tenant, tenant_name=tenancy.name(user.tenant),
+                 active_tenant=user.active, active_tenant_name=tenancy.name(user.active))
 
 
 # ---------- sign in ----------
 
 @auth.post("/login", response_model=LoginOut)
-def login(body: LoginIn, request: Request, db: Session = Depends(get_db)):
+def login(body: LoginIn, request: Request):
     key = f"{body.username.lower()}|{request.client.host if request.client else ''}"
     check_lock(key)
-    user = db.scalar(select(User).where(func.lower(User.username) == body.username.lower()))
-    if user is None or not user.active or not verify_password(body.password, user.password_hash):
-        record_fail(key)
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Wrong user name or password")
-    clear_fails(key)
-    token = create_session(db, user)
-    me = _me(db, Principal(user.id, user.username, user.role, user.must_change_password))
-    return LoginOut(**me.model_dump(), token=token)
+    # User names are unique across tenants, so the first match is the account
+    for slug in tenancy.slugs():
+        with tenancy.session_for(slug) as db:
+            user = db.scalar(select(User).where(func.lower(User.username) == body.username.lower()))
+            if user is None:
+                continue
+            if not user.active or not verify_password(body.password, user.password_hash):
+                break
+            clear_fails(key)
+            token = create_session(db, user)
+            me = _me(db, Principal(user.id, user.username, user.role, user.must_change_password, slug, slug))
+            return LoginOut(**me.model_dump(), token=token)
+    record_fail(key)
+    raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Wrong user name or password")
 
 
 @auth.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-def logout(authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
+def logout(authorization: str | None = Header(default=None)):
     token = bearer(authorization)
-    if token:
-        end_session(db, token)
+    if token and tenancy.exists(token_tenant(token)):
+        with tenancy.session_for(token_tenant(token)) as db:
+            end_session(db, token)
 
 
 @auth.get("/me", response_model=MeOut)
@@ -74,51 +85,69 @@ def options(db: Session = Depends(get_db)):
 
 
 @auth.post("/forgot")
-async def forgot_password(body: ForgotIn, request: Request, db: Session = Depends(get_db)):
+async def forgot_password(body: ForgotIn, request: Request):
     key = f"forgot|{request.client.host if request.client else ''}"
     check_lock(key)
     record_fail(key)  # counts every request, so this cannot be used to spam mailboxes
     name = body.username.strip().lower()
-    user = db.scalar(select(User).where(
-        (func.lower(User.username) == name) | (func.lower(User.email) == name), User.active.is_(True)))
-    if user and user.email and _email_reset_ready(db):
-        token = create_reset_token(db, user)
-        link = f"{get_setting(db, 'general')['app_url']}/reset-password?token={token}"
-        error = await notifier.send_text(
-            get_setting(db, "smtp"), [user.email], "Reset your MyAppsUptime password",
-            f"Hello {user.name or user.username},\n\nUse this link to set a new password. "
-            f"It works once and expires in {RESET_MIN} minutes:\n\n{link}\n\n"
-            "If you did not ask for this, you can ignore this email.")
-        if error:
-            log.warning("Reset email for %s failed: %s", user.username, error)
+    for slug in tenancy.slugs():
+        with tenancy.session_for(slug) as db:
+            user = db.scalar(select(User).where(
+                (func.lower(User.username) == name) | (func.lower(User.email) == name), User.active.is_(True)))
+            if user is None:
+                continue
+            # A tenant without its own mail server uses the one of the admin tenant
+            config = next((c for c in (slug, tenancy.DEFAULT) if _mail_ready(c)), None)
+            if user.email and config:
+                with tenancy.session_for(config) as cfg:
+                    smtp, app_url = get_setting(cfg, "smtp"), get_setting(cfg, "general")["app_url"]
+                token = create_reset_token(db, user)
+                error = await notifier.send_text(
+                    smtp, [user.email], "Reset your MyAppsUptime password",
+                    f"Hello {user.name or user.username},\n\nUse this link to set a new password. "
+                    f"It works once and expires in {RESET_MIN} minutes:\n\n{app_url}/reset-password?token={token}\n\n"
+                    "If you did not ask for this, you can ignore this email.")
+                if error:
+                    log.warning("Reset email for %s failed: %s", user.username, error)
+            break
     return {"ok": True}
 
 
+def _mail_ready(slug: str) -> bool:
+    with tenancy.session_for(slug) as db:
+        return _email_reset_ready(db)
+
+
 @auth.post("/reset")
-def reset_password(body: ResetIn, db: Session = Depends(get_db)):
-    user = use_reset_token(db, body.token)
-    if user is None:
-        db.commit()
+def reset_password(body: ResetIn):
+    slug = token_tenant(body.token)
+    if not tenancy.is_active(slug):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "This link is invalid or has expired")
-    user.password_hash = hash_password(body.new)
-    user.must_change_password = False
-    end_all_sessions(db, user.id)
-    db.commit()
+    with tenancy.session_for(slug) as db:
+        user = use_reset_token(db, body.token)
+        if user is None:
+            db.commit()
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "This link is invalid or has expired")
+        user.password_hash = hash_password(body.new)
+        user.must_change_password = False
+        end_all_sessions(db, user.id)
+        db.commit()
     return {"ok": True}
 
 
 @auth.post("/password", response_model=MeOut)
 def change_password(body: PasswordIn, user: Principal = Depends(current_user), db: Session = Depends(get_db)):
-    row = db.get(User, user.id) if user.id else None
-    if row is None:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "This account has no password")
-    if not verify_password(body.current, row.password_hash):
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Current password is wrong")
-    if body.new == body.current:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Choose a new password")
-    row.password_hash = hash_password(body.new)
-    row.must_change_password = False
-    db.commit()
+    with tenancy.session_for(user.tenant) as home:
+        row = home.get(User, user.id) if user.id else None
+        if row is None:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "This account has no password")
+        if not verify_password(body.current, row.password_hash):
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Current password is wrong")
+        if body.new == body.current:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Choose a new password")
+        row.password_hash = hash_password(body.new)
+        row.must_change_password = False
+        home.commit()
     user.must_change_password = False
     return _me(db, user)
 
@@ -127,13 +156,41 @@ def change_password(body: PasswordIn, user: Principal = Depends(current_user), d
 
 def _active_admins(db: Session, exclude: int) -> int:
     return db.scalar(select(func.count()).select_from(User).where(
-        User.role == "admin", User.active.is_(True), User.id != exclude)) or 0
+        User.role.in_(("admin", "superadmin")), User.active.is_(True), User.id != exclude)) or 0
 
 
 def _unique_username(db: Session, username: str, self_id: int | None) -> None:
-    other = db.scalar(select(User).where(func.lower(User.username) == username.lower()))
-    if other and other.id != self_id:
-        raise HTTPException(status.HTTP_409_CONFLICT, "User name already exists")
+    """User names are unique across all tenants, so sign-in knows which tenant to use."""
+    here = tenancy.tenant_of(db)
+    query = select(User).where(func.lower(User.username) == username.lower())
+    for slug in tenancy.slugs(active_only=False):
+        if slug == here:
+            other = db.scalar(query)
+            taken = other is not None and other.id != self_id
+        else:
+            with tenancy.session_for(slug) as other_db:
+                taken = other_db.scalar(query) is not None
+        if taken:
+            raise HTTPException(status.HTTP_409_CONFLICT, "User name already exists")
+
+
+def _check_role(db: Session, me: Principal, role: str, user: User | None) -> None:
+    if user is not None and user.role == role:
+        return
+    if tenancy.tenant_of(db) == tenancy.DEFAULT:
+        if role == "admin":
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                "The admin tenant has super admins and members only")
+        if role == "superadmin" and not me.is_super:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Only a super admin can add super admins")
+        return
+    if role == "superadmin":
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Super admins belong to the admin tenant only")
+    if role == "admin":
+        other = db.scalar(select(User).where(User.role == "admin", User.id != (user.id if user else 0)))
+        if other is not None:
+            raise HTTPException(status.HTTP_409_CONFLICT,
+                                f"This tenant already has an admin ({other.username}). Make them a member first.")
 
 
 @admin.get("/users", response_model=list[UserOut], dependencies=[Depends(require_admin)])
@@ -141,9 +198,10 @@ def list_users(db: Session = Depends(get_db)):
     return db.scalars(select(User).order_by(User.username)).all()
 
 
-@admin.post("/users", response_model=UserOut, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_admin)])
-def create_user(body: UserCreate, db: Session = Depends(get_db)):
+@admin.post("/users", response_model=UserOut, status_code=status.HTTP_201_CREATED)
+def create_user(body: UserCreate, db: Session = Depends(get_db), me: Principal = Depends(require_admin)):
     _unique_username(db, body.username, None)
+    _check_role(db, me, body.role, None)
     user = User(**body.model_dump(exclude={"password"}), password_hash=hash_password(body.password),
                 must_change_password=True)
     db.add(user)
@@ -155,14 +213,17 @@ def create_user(body: UserCreate, db: Session = Depends(get_db)):
 def update_user(user_id: int, body: UserUpdate, db: Session = Depends(get_db), me: Principal = Depends(require_admin)):
     user = _get(db, User, user_id)
     _unique_username(db, body.username, user.id)
-    losing_admin = user.role == "admin" and (body.role != "admin" or not body.active)
+    _check_role(db, me, body.role, user)
+    if user.role == "superadmin" and not me.is_super:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only a super admin can change a super admin")
+    losing_admin = user.role in ("admin", "superadmin") and (body.role != user.role or not body.active)
     if losing_admin and _active_admins(db, user.id) == 0:
         raise HTTPException(status.HTTP_409_CONFLICT, "At least one active admin is required")
     for key, value in body.model_dump(exclude={"password"}).items():
         setattr(user, key, value)
     if body.password:
         user.password_hash = hash_password(body.password)
-        user.must_change_password = user.id != me.id
+        user.must_change_password = not me.is_self(user.id)
     if body.password or not body.active:
         end_all_sessions(db, user.id)
     db.commit()
@@ -172,9 +233,9 @@ def update_user(user_id: int, body: UserUpdate, db: Session = Depends(get_db), m
 @admin.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_user(user_id: int, db: Session = Depends(get_db), me: Principal = Depends(require_admin)):
     user = _get(db, User, user_id)
-    if user.id == me.id:
+    if me.is_self(user.id):
         raise HTTPException(status.HTTP_409_CONFLICT, "You cannot delete yourself")
-    if user.role == "admin" and _active_admins(db, user.id) == 0:
+    if user.role in ("admin", "superadmin") and _active_admins(db, user.id) == 0:
         raise HTTPException(status.HTTP_409_CONFLICT, "At least one active admin is required")
     end_all_sessions(db, user.id)
     for project in db.scalars(select(Project)).all():
@@ -215,7 +276,7 @@ def list_projects(db: Session = Depends(get_db), user: Principal = Depends(requi
             dependencies=[Depends(require_admin)])
 def create_project(body: ProjectIn, db: Session = Depends(get_db)):
     if db.scalar(select(Project).where(Project.name == body.name)):
-        raise HTTPException(status.HTTP_409_CONFLICT, "Project name already exists")
+        raise HTTPException(status.HTTP_409_CONFLICT, "Team name already exists")
     project = Project(**body.model_dump(exclude={"member_ids"}), member_ids=_check_members(db, body.member_ids))
     db.add(project)
     db.commit()
@@ -227,7 +288,7 @@ def update_project(project_id: int, body: ProjectIn, db: Session = Depends(get_d
     project = _get(db, Project, project_id)
     other = db.scalar(select(Project).where(Project.name == body.name))
     if other and other.id != project.id:
-        raise HTTPException(status.HTTP_409_CONFLICT, "Project name already exists")
+        raise HTTPException(status.HTTP_409_CONFLICT, "Team name already exists")
     project.name, project.description, project.email_members = body.name, body.description, body.email_members
     project.member_ids = _check_members(db, body.member_ids)
     db.commit()

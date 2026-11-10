@@ -9,12 +9,12 @@ import { IconComponent } from './icon.component';
   imports: [IconComponent],
   template: `
     @if (store.projects().length) {
-      <label class="project-pick" [class.active]="project() !== null" title="Show one project">
+      <label class="project-pick" [class.active]="project() !== null" title="Show one team">
         <app-icon name="folder" [size]="16" />
         <select (change)="onChange($any($event.target).value)">
-          <option value="" [selected]="project() === null">All projects</option>
+          <option value="" [selected]="project() === null">All teams</option>
           @for (p of store.projects(); track p.id) { <option [value]="p.id" [selected]="project() === p.id">{{ p.name }}</option> }
-          <option value="0" [selected]="project() === 0">No project</option>
+          <option value="0" [selected]="project() === 0">No team</option>
         </select>
       </label>
     }

@@ -10,11 +10,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from . import notifier
-from .auth import Principal, require_admin, require_user, visible_monitor_ids
+from . import notifier, tenancy
+from .auth import Principal, get_db, require_admin, require_user, visible_monitor_ids
 from .checks import CheckResult
 from .config import get_setting
-from .database import get_db
 from .models import (Heartbeat, Incident, MaintenanceWindow, Monitor, NotificationChannel, Project, StatusPage,
                      aware, utcnow)
 from .scheduler import record_result, scheduler
@@ -257,7 +256,7 @@ async def check_now(monitor_id: int, db: Session = Depends(get_db), user: Princi
     m = _get_monitor(db, user, monitor_id)
     if not m.active:
         raise HTTPException(status.HTTP_409_CONFLICT, "Monitor is paused")
-    return {"queued": scheduler.trigger(m)}
+    return {"queued": scheduler.trigger(tenancy.tenant_of(db), m)}
 
 
 @router.get("/monitors/{monitor_id}/heartbeats", response_model=list[HeartbeatOut])
@@ -393,15 +392,17 @@ def dashboard(
 @router.get("/incidents", response_model=list[IncidentOut])
 def incidents(
     open_only: bool = False,
-    limit: int = Query(100, ge=1, le=5000),
-    hours: int | None = Query(None, ge=1, le=24 * 90),
+    limit: int | None = Query(None, ge=1),
+    hours: int | None = Query(None, ge=1, le=24 * 3650),
     start: datetime | None = None,
     end: datetime | None = None,
     project_id: int | None = None,
     db: Session = Depends(get_db),
     user: Principal = Depends(require_user),
 ):
-    query = select(Incident, Monitor.name).join(Monitor).order_by(Incident.started_at.desc()).limit(limit)
+    query = select(Incident, Monitor.name).join(Monitor).order_by(Incident.started_at.desc())
+    if limit:
+        query = query.limit(limit)
     ids = _scope(db, user, project_id)
     if ids is not None:
         query = query.where(Incident.monitor_id.in_(ids))
@@ -510,8 +511,17 @@ def list_status_pages(db: Session = Depends(get_db)):
 
 @router.post("/status-pages", response_model=StatusPageOut, status_code=status.HTTP_201_CREATED)
 def create_status_page(body: StatusPageIn, db: Session = Depends(get_db)):
-    if db.scalar(select(StatusPage).where(StatusPage.slug == body.slug)):
-        raise HTTPException(status.HTTP_409_CONFLICT, "Slug already exists")
+    # Public links are /status/<slug>, so slugs are unique across tenants
+    query = select(StatusPage.id).where(StatusPage.slug == body.slug)
+    here = tenancy.tenant_of(db)
+    for slug in tenancy.slugs(active_only=False):
+        if slug == here:
+            taken = db.scalar(query) is not None
+        else:
+            with tenancy.session_for(slug) as other:
+                taken = other.scalar(query) is not None
+        if taken:
+            raise HTTPException(status.HTTP_409_CONFLICT, "Slug already exists")
     page = StatusPage(**body.model_dump())
     db.add(page)
     db.commit()
@@ -605,25 +615,32 @@ async def push(
     status_: Literal["up", "down"] = Query("up", alias="status"),
     msg: str = Query("OK", max_length=300),
     ping: float | None = Query(None, ge=0),
-    db: Session = Depends(get_db),
 ):
-    m = db.scalar(select(Monitor).where(Monitor.push_token == token, Monitor.type == "push"))
-    if m is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Unknown push token")
-    if not m.active:
-        return {"ok": False, "reason": "paused"}
-    m.last_push_at = utcnow()
-    db.commit()
-    await record_result(m.id, CheckResult(status_, ping, msg))
-    return {"ok": True}
+    for slug in tenancy.slugs():
+        with tenancy.session_for(slug) as db:
+            m = db.scalar(select(Monitor).where(Monitor.push_token == token, Monitor.type == "push"))
+            if m is None:
+                continue
+            if not m.active:
+                return {"ok": False, "reason": "paused"}
+            m.last_push_at = utcnow()
+            db.commit()
+        await record_result(slug, m.id, CheckResult(status_, ping, msg))
+        return {"ok": True}
+    raise HTTPException(status.HTTP_404_NOT_FOUND, "Unknown push token")
 
 
 @public.get("/status/{slug}", response_model=PublicStatusOut)
-def public_status(slug: str, db: Session = Depends(get_db)):
-    page = db.scalar(select(StatusPage).where(StatusPage.slug == slug))
-    if page is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Status page not found")
+def public_status(slug: str):
+    for tenant in tenancy.slugs():
+        with tenancy.session_for(tenant) as db:
+            page = db.scalar(select(StatusPage).where(StatusPage.slug == slug))
+            if page is not None:
+                return _public_status(db, page)
+    raise HTTPException(status.HTTP_404_NOT_FOUND, "Status page not found")
 
+
+def _public_status(db: Session, page: StatusPage) -> PublicStatusOut:
     monitors = db.scalars(select(Monitor).where(Monitor.id.in_(page.monitor_ids))).all()
     uptimes = _uptime_by_monitor(db, utcnow() - timedelta(days=30), [m.id for m in monitors])
     items = [
@@ -663,7 +680,15 @@ def _badge_svg(label: str, value: str, color: str) -> str:
 
 
 @public.get("/badge/{monitor_id}/{kind}.svg")
-def badge(monitor_id: int, kind: Literal["status", "uptime", "latency"], db: Session = Depends(get_db)):
+def badge(monitor_id: int, kind: Literal["status", "uptime", "latency"],
+          t: str = Query(tenancy.DEFAULT, max_length=30)):
+    if not tenancy.is_active(t):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Badge not found")
+    with tenancy.session_for(t) as db:
+        return _badge(db, monitor_id, kind)
+
+
+def _badge(db: Session, monitor_id: int, kind: str) -> Response:
     m = db.get(Monitor, monitor_id)
     # Only monitors shown on a public status page expose badges
     if m is None or not _monitor_is_public(db, monitor_id):

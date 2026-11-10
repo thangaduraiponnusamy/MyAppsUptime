@@ -14,11 +14,11 @@ import { LogoComponent } from './logo.component';
         <app-logo [size]="44" [tagline]="false" />
         <div class="auth-pitch">
           <h1>Know the moment<br />something goes down.</h1>
-          <p>One place to watch your apps, sites and devices, grouped by project, with alerts to the right team.</p>
+          <p>One place to watch your apps, sites and devices, grouped by team, with alerts to the right people.</p>
           <ul>
             <li><app-icon name="check-circle" [size]="18" /> HTTP, TCP, ping, DNS, SSL and push checks</li>
             <li><app-icon name="check-circle" [size]="18" /> Alerts by Microsoft Teams, email, Slack or webhook</li>
-            <li><app-icon name="check-circle" [size]="18" /> Projects with their own members and alerts</li>
+            <li><app-icon name="check-circle" [size]="18" /> Tenants and teams with their own members and alerts</li>
           </ul>
         </div>
         <small>&copy; {{ year }} {{ appName }}</small>

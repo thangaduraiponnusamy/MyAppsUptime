@@ -18,3 +18,8 @@ export const adminGuard: CanActivateFn = () => {
   const auth = inject(AuthService);
   return auth.isAdmin() || inject(Router).createUrlTree(['/']);
 };
+
+export const superGuard: CanActivateFn = () => {
+  const auth = inject(AuthService);
+  return auth.isSuper() || inject(Router).createUrlTree(['/']);
+};

@@ -77,7 +77,7 @@ class Incident(Base):
     monitor_id: Mapped[int] = mapped_column(ForeignKey("monitors.id", ondelete="CASCADE"), index=True)
     cause: Mapped[str | None] = mapped_column(String(300))
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     acknowledged_by: Mapped[str | None] = mapped_column(String(120))
     note: Mapped[str | None] = mapped_column(String(1000))
@@ -135,7 +135,7 @@ class User(Base):
     username: Mapped[str] = mapped_column(String(60), unique=True)
     name: Mapped[str] = mapped_column(String(120), default="")
     email: Mapped[str | None] = mapped_column(String(200))
-    role: Mapped[str] = mapped_column(String(10), default="member")  # admin | member
+    role: Mapped[str] = mapped_column(String(10), default="member")  # superadmin | admin | member
     password_hash: Mapped[str] = mapped_column(String(200))
     must_change_password: Mapped[bool] = mapped_column(default=False)
     active: Mapped[bool] = mapped_column(default=True)
@@ -156,3 +156,14 @@ class AppSetting(Base):
 
     key: Mapped[str] = mapped_column(String(60), primary_key=True)
     value: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class Tenant(Base):
+    """Tenant registry; only used in the default (admin) database."""
+    __tablename__ = "tenants"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    slug: Mapped[str] = mapped_column(String(30), unique=True)
+    name: Mapped[str] = mapped_column(String(120))
+    active: Mapped[bool] = mapped_column(default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

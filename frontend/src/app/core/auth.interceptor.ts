@@ -8,8 +8,12 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
   const auth = inject(AuthService);
   const router = inject(Router);
   const token = auth.token;
+  const tenant = auth.tenant;
   const isPublic = req.url.startsWith('/api/public') || req.url.startsWith('/api/auth/');
-  return next(token ? req.clone({ setHeaders: { Authorization: `Bearer ${token}` } }) : req).pipe(
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  if (token && tenant && !req.url.startsWith('/api/public')) headers['X-Tenant'] = tenant;
+  return next(token ? req.clone({ setHeaders: headers }) : req).pipe(
     catchError((err: HttpErrorResponse) => {
       if (!isPublic && err.status === 401) {
         auth.clear();

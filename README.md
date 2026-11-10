@@ -48,26 +48,38 @@ Data is stored in the `myappsuptime-data` Docker volume.
 
 | Settings page | What you set |
 |---|---|
-| General | Auto refresh (default 5 seconds), app URL for links in alerts |
+| Tenants | Super admin only: add, rename, disable or delete tenants |
+| General | Auto refresh (default 5 seconds), app URL for links in alerts, how long to keep logs (default 1 year) |
 | Notifications | Teams, email, Slack or webhook channels, and the email (SMTP) server |
-| Projects | Projects, their members and their monitors |
-| Users | Add users, set role (admin or member), reset a password |
+| Teams | Teams, their members and their services (monitors) |
+| Users | Add users, set role, reset a password |
 | Security | Your account and password |
 | Backup | Export and import as JSON |
 | About | Version and GitHub link |
+
+**Tenants**
+
+Tenant > Team > Service.
+
+- The default tenant is `admin`. Its first user is the super admin.
+- The super admin manages all tenants and can open any tenant from the sidebar.
+- Each tenant has its own database file: `tenants/<tenant>.db`, next to the main database (change with `TENANT_DATA_DIR`).
+- Each tenant can have one admin. User names are unique across all tenants.
+- A deleted tenant's file is moved to `tenants/deleted/`.
 
 **Roles**
 
 | Role | Can do |
 |---|---|
-| Admin | Everything |
-| Member | Sees only their projects, can acknowledge incidents and run a check |
+| Super admin | Everything, in every tenant |
+| Admin | Everything inside their own tenant |
+| Member | Sees only their teams, can acknowledge incidents and run a check |
 
 **How alerts reach the right people**
 
-1. Put monitors in a project (Settings > Projects, or the Project field on the monitor).
-2. Add users as project members. With "Email members" on, they get an email when a monitor goes down or recovers.
-3. Optional: add a Teams channel and tick the project, so the alert also goes to that team's Teams channel.
+1. Put monitors in a team (Settings > Teams, or the Team field on the monitor).
+2. Add users as team members. With "Email members" on, they get an email when a monitor goes down or recovers.
+3. Optional: add a Teams channel and tick the team, so the alert also goes to that Teams channel.
 
 **Forgot password**
 
@@ -82,7 +94,13 @@ python -m app.reset_password admin 'NewPassword123'
 
 In Docker: `docker exec -it myappsuptime python -m app.reset_password admin 'NewPassword123'`
 
-**Upgrading** keeps your data. New tables and columns are added on start.
+**Upgrading** keeps your data. On start, every database (main and each tenant) is updated:
+
+1. New tables and columns are added.
+2. Pending migrations run once, in order. They are listed in `backend/app/database.py` (`MIGRATIONS`) and tracked in the `schema_migrations` table.
+3. Before a migration runs, the database file is copied to `<name>.db.v<old version>.bak`.
+
+To add a migration for a new feature: append a step with the next number. Never change a released step.
 
 ### Without compose
 
@@ -98,7 +116,7 @@ docker run -d --name myappsuptime -p 8000:8000 -v myappsuptime-data:/data myapps
 | `API_TOKEN` | empty | Optional token for scripts: `Authorization: Bearer <token>` (acts as admin) |
 | `SESSION_DAYS` | `7` | How long a sign-in lasts |
 | `DATABASE_URL` | `sqlite:////data/myappsuptime.db` | SQLAlchemy database URL |
-| `HEARTBEAT_RETENTION_DAYS` | `90` | Older check results are deleted |
+| `TENANT_DATA_DIR` | `tenants/` next to the main DB | Where tenant database files live |
 | `CORS_ORIGINS` | `http://localhost:4200` | Only for local dev |
 
 ## Local testing (without Docker)

@@ -13,8 +13,8 @@ import { LIMITS, PrefsService } from '../../core/prefs.service';
     <h2 class="s-title">General</h2>
 
     <section class="s-section">
-      <h3>Auto refresh</h3>
-      <p class="muted">How often the dashboard, monitor pages and public status pages load new data. Applies to everyone.</p>
+      <h3>Refresh, links and logs</h3>
+      <p class="muted">Auto refresh, app address and how long logs are kept. Applies to everyone.</p>
       <div class="s-fields">
         <label>Refresh every (seconds)
           <input type="number" min="5" max="3600" [(ngModel)]="form.refresh_sec" [disabled]="!auth.isAdmin()" />
@@ -23,6 +23,17 @@ import { LIMITS, PrefsService } from '../../core/prefs.service';
         <label>App address
           <input [(ngModel)]="form.app_url" placeholder="https://uptime.example.com" [disabled]="!auth.isAdmin()" />
           <small class="muted">Used for links in alerts and password reset emails.</small>
+        </label>
+        <label>Keep logs for
+          <span class="row nowrap">
+            <input type="number" min="1" max="3650" [(ngModel)]="form.retention_value" [disabled]="!auth.isAdmin()" style="flex: 1" />
+            <select [(ngModel)]="form.retention_unit" [disabled]="!auth.isAdmin()" style="width: auto">
+              <option value="days">Days</option>
+              <option value="months">Months</option>
+              <option value="years">Years</option>
+            </select>
+          </span>
+          <small class="muted">Older check results and closed incidents are deleted. Max 10 years. Default 1 year.</small>
         </label>
       </div>
       @if (auth.isAdmin()) {
@@ -52,7 +63,7 @@ export class GeneralSettingsComponent {
   auth = inject(AuthService);
   prefs = inject(PrefsService);
   readonly limitList = LIMITS;
-  form: GeneralSettings = { app_url: '', refresh_sec: 5 };
+  form: GeneralSettings = { app_url: '', refresh_sec: 5, retention_value: 1, retention_unit: 'years' };
   notice = signal('');
 
   constructor() {
@@ -60,7 +71,7 @@ export class GeneralSettingsComponent {
   }
 
   save(): void {
-    this.api.saveGeneral({ ...this.form, refresh_sec: Number(this.form.refresh_sec) }).subscribe({
+    this.api.saveGeneral({ ...this.form, refresh_sec: Number(this.form.refresh_sec), retention_value: Number(this.form.retention_value) }).subscribe({
       next: (g) => {
         this.form = { ...g };
         this.notice.set('Saved.');

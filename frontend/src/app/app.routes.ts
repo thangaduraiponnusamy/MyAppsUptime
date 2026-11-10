@@ -1,6 +1,6 @@
 import { Routes } from '@angular/router';
 import { ShellComponent } from './shell.component';
-import { adminGuard, authGuard } from './core/auth.guard';
+import { adminGuard, authGuard, superGuard } from './core/auth.guard';
 import { DashboardComponent } from './pages/dashboard.component';
 import { ActivityComponent } from './pages/activity.component';
 import { MonitorDetailComponent } from './pages/monitor-detail.component';
@@ -19,6 +19,7 @@ import { UserSettingsComponent } from './pages/settings/users.component';
 import { SecuritySettingsComponent } from './pages/settings/security.component';
 import { BackupSettingsComponent } from './pages/settings/backup.component';
 import { AboutSettingsComponent } from './pages/settings/about.component';
+import { TenantSettingsComponent } from './pages/settings/tenants.component';
 
 export const routes: Routes = [
   { path: 'status/:slug', component: PublicStatusComponent },
@@ -46,8 +47,10 @@ export const routes: Routes = [
           { path: '', redirectTo: 'general', pathMatch: 'full' },
           { path: 'general', component: GeneralSettingsComponent },
           { path: 'notifications', component: NotificationSettingsComponent, canActivate: [adminGuard] },
-          { path: 'projects', component: ProjectSettingsComponent, canActivate: [adminGuard] },
+          { path: 'projects', redirectTo: 'teams' },
+          { path: 'teams', component: ProjectSettingsComponent, canActivate: [adminGuard] },
           { path: 'users', component: UserSettingsComponent, canActivate: [adminGuard] },
+          { path: 'tenants', component: TenantSettingsComponent, canActivate: [superGuard] },
           { path: 'security', component: SecuritySettingsComponent },
           { path: 'backup', component: BackupSettingsComponent, canActivate: [adminGuard] },
           { path: 'about', component: AboutSettingsComponent },

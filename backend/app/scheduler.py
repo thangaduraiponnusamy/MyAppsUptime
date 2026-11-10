@@ -1,21 +1,18 @@
 import asyncio
 import logging
-import os
 import statistics
 from datetime import timedelta
 
 from sqlalchemy import delete, select
 
-from . import notifier
+from . import notifier, tenancy
 from .checks import CheckResult, run_check
-from .config import get_setting
-from .database import SessionLocal
+from .config import get_setting, retention_days
 from .models import Heartbeat, Incident, MaintenanceWindow, Monitor, NotificationChannel, Project, User, aware, utcnow
 
 log = logging.getLogger(__name__)
 
 TICK_SEC = 5
-RETENTION_DAYS = int(os.getenv("HEARTBEAT_RETENTION_DAYS", "90"))
 
 
 def in_maintenance(db, monitor_id: int, now) -> bool:
@@ -41,9 +38,9 @@ def latency_anomaly(db, monitor_id: int, latency: float) -> float | None:
     return None
 
 
-async def record_result(monitor_id: int, result: CheckResult) -> None:
+async def record_result(tenant: str, monitor_id: int, result: CheckResult) -> None:
     now = utcnow()
-    with SessionLocal() as db:
+    with tenancy.session_for(tenant) as db:
         m = db.get(Monitor, monitor_id)
         if m is None or not m.active:
             return
@@ -117,7 +114,7 @@ async def record_result(monitor_id: int, result: CheckResult) -> None:
 
 class Scheduler:
     def __init__(self) -> None:
-        self._running: set[int] = set()
+        self._running: set[tuple[str, int]] = set()
         self._tasks: set[asyncio.Task] = set()
         self._task: asyncio.Task | None = None
         self._last_prune = utcnow() - timedelta(days=1)
@@ -140,44 +137,48 @@ class Scheduler:
 
     def _dispatch(self) -> None:
         now = utcnow()
-        with SessionLocal() as db:
-            monitors = db.scalars(select(Monitor).where(Monitor.active.is_(True))).all()
-        for m in monitors:
-            last = aware(m.last_checked)
-            if m.id in self._running or (last and (now - last).total_seconds() < m.interval_sec):
-                continue
-            self.trigger(m)
+        for tenant in tenancy.slugs():
+            with tenancy.session_for(tenant) as db:
+                monitors = db.scalars(select(Monitor).where(Monitor.active.is_(True))).all()
+            for m in monitors:
+                last = aware(m.last_checked)
+                if (tenant, m.id) in self._running or (last and (now - last).total_seconds() < m.interval_sec):
+                    continue
+                self.trigger(tenant, m)
 
-    def trigger(self, m: Monitor) -> bool:
-        if m.id in self._running:
+    def trigger(self, tenant: str, m: Monitor) -> bool:
+        key = (tenant, m.id)
+        if key in self._running:
             return False
-        self._running.add(m.id)
-        task = asyncio.create_task(self._check(m))
+        self._running.add(key)
+        task = asyncio.create_task(self._check(tenant, m))
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
         return True
 
-    async def _check(self, m: Monitor) -> None:
+    async def _check(self, tenant: str, m: Monitor) -> None:
         try:
             result = await run_check(m)
             # Push monitors record their UP beats when the push arrives
             if not (m.type == "push" and result.status == "up"):
-                await record_result(m.id, result)
+                await record_result(tenant, m.id, result)
         except Exception:
-            log.exception("Check failed for monitor %s", m.id)
+            log.exception("Check failed for monitor %s/%s", tenant, m.id)
         finally:
-            self._running.discard(m.id)
+            self._running.discard((tenant, m.id))
 
     def _prune(self) -> None:
         now = utcnow()
         if now - self._last_prune < timedelta(hours=1):
             return
         self._last_prune = now
-        cutoff = now - timedelta(days=RETENTION_DAYS)
-        with SessionLocal() as db:
-            db.execute(delete(Heartbeat).where(Heartbeat.created_at < cutoff))
-            db.execute(delete(MaintenanceWindow).where(MaintenanceWindow.ends_at < cutoff))
-            db.commit()
+        for tenant in tenancy.slugs():
+            with tenancy.session_for(tenant) as db:
+                cutoff = now - timedelta(days=retention_days(get_setting(db, "general")))
+                db.execute(delete(Heartbeat).where(Heartbeat.created_at < cutoff))
+                db.execute(delete(Incident).where(Incident.resolved_at.is_not(None), Incident.resolved_at < cutoff))
+                db.execute(delete(MaintenanceWindow).where(MaintenanceWindow.ends_at < cutoff))
+                db.commit()
 
 
 scheduler = Scheduler()

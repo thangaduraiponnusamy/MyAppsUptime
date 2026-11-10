@@ -267,7 +267,7 @@ class ProjectExport(ProjectIn):
     id: int
 
 
-Role = Literal["admin", "member"]
+Role = Literal["superadmin", "admin", "member"]
 
 
 class UserBase(BaseModel):
@@ -325,15 +325,61 @@ class MeOut(BaseModel):
     role: Role
     must_change_password: bool
     refresh_sec: int
+    tenant: str = "admin"
+    tenant_name: str = ""
+    active_tenant: str = "admin"
+    active_tenant_name: str = ""
 
 
 class LoginOut(MeOut):
     token: str
 
 
+class TenantCreate(BaseModel):
+    slug: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{1,29}$")
+    name: str = Field(min_length=1, max_length=120)
+    admin_username: str = Field(pattern=r"^[A-Za-z0-9._@-]{2,60}$")
+    admin_email: str | None = Field(default=None, pattern=EMAIL_PATTERN, max_length=200)
+    admin_password: str = Field(min_length=8, max_length=200)
+
+    @field_validator("admin_email", mode="before")
+    @classmethod
+    def blank_email(cls, value):
+        return value or None
+
+
+class TenantUpdate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    active: bool = True
+
+
+class TenantOut(BaseModel):
+    slug: str
+    name: str
+    active: bool
+    is_default: bool
+    created_at: Utc
+    admins: list[str]
+    users: int
+    teams: int
+    monitors: int
+    down: int
+    db_file: str
+    db_size_kb: int
+
+
 class GeneralSettings(BaseModel):
     app_url: str = Field(default="", max_length=300)
     refresh_sec: int = Field(default=5, ge=5, le=3600)
+    retention_value: int = Field(default=1, ge=1, le=3650)
+    retention_unit: Literal["days", "months", "years"] = "years"
+
+    @model_validator(mode="after")
+    def check_retention(self):
+        days = self.retention_value * {"days": 1, "months": 30, "years": 365}[self.retention_unit]
+        if days > 3650:
+            raise ValueError("Log retention can be at most 10 years")
+        return self
 
     @field_validator("app_url")
     @classmethod

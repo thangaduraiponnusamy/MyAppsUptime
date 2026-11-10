@@ -2,7 +2,9 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { IsActiveMatchOptions, NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { filter } from 'rxjs';
+import { ApiService } from './core/api.service';
 import { AuthService } from './core/auth.service';
+import { Tenant } from './core/models';
 import { MonitorStore } from './core/monitor-store.service';
 import { ThemeService } from './core/theme.service';
 import { IconComponent } from './shared/icon.component';
@@ -31,6 +33,23 @@ import { LogoComponent } from './shared/logo.component';
             <app-icon [name]="collapsed() ? 'chevrons-right' : 'chevrons-left'" [size]="18" />
           </button>
         </div>
+        <div class="tenant-box" [class.visiting]="auth.visiting()" [title]="'Tenant: ' + (auth.user()?.active_tenant_name ?? '')">
+          <app-icon name="globe" [size]="16" />
+          @if (auth.isSuper() && tenants().length > 1) {
+            <select class="label" (change)="auth.switchTenant($any($event.target).value)" aria-label="Switch tenant">
+              @for (t of tenants(); track t.slug) {
+                <option [value]="t.slug" [selected]="t.slug === auth.user()?.active_tenant">{{ t.name }}{{ t.active ? '' : ' (disabled)' }}</option>
+              }
+            </select>
+          } @else {
+            <span class="label">{{ auth.user()?.active_tenant_name }}</span>
+          }
+        </div>
+        @if (auth.visiting()) {
+          <button class="btn sm back-home" (click)="auth.switchTenant(null)" title="Back to Admin">
+            <app-icon name="chevrons-left" [size]="16" /> <span class="label">Back to Admin</span>
+          </button>
+        }
         <div class="nav-caption">Monitoring</div>
         @for (item of nav; track item.path) {
           @if (!item.admin || auth.isAdmin()) {
@@ -54,9 +73,9 @@ import { LogoComponent } from './shared/logo.component';
           <div class="user-box">
             <a routerLink="/settings/security" class="user-link" [title]="auth.user()?.username ?? ''">
               <span class="avatar">{{ initials() }}</span>
-              <span class="label user-text"><b>{{ auth.user()?.name || auth.user()?.username }}</b><small class="cap">{{ auth.user()?.role }}</small></span>
+              <span class="label user-text"><b>{{ auth.user()?.name || auth.user()?.username }}</b><small class="cap">{{ roleLabel() }}</small></span>
             </a>
-            <button class="icon-btn label" (click)="logout()" title="Sign out" aria-label="Sign out"><app-icon name="logout" [size]="18" /></button>
+            <button class="btn signout" (click)="logout()" title="Sign out"><app-icon name="logout" [size]="16" /> <span class="label">Sign out</span></button>
           </div>
         </div>
       </aside>
@@ -69,6 +88,7 @@ export class ShellComponent {
   theme = inject(ThemeService);
   auth = inject(AuthService);
   private router = inject(Router);
+  private api = inject(ApiService);
   navOpen = signal(false);
   // Tablets start with the compact menu unless the user chose otherwise
   collapsed = signal(
@@ -94,6 +114,9 @@ export class ShellComponent {
     return words.slice(0, 2).map((w) => w[0].toUpperCase()).join('');
   });
 
+  roleLabel = computed(() => (this.auth.user()?.role === 'superadmin' ? 'Super admin' : this.auth.user()?.role ?? ''));
+  tenants = signal<Tenant[]>([]);
+
   logout(): void {
     this.auth.logout();
     this.router.navigate(['/login']);
@@ -103,6 +126,7 @@ export class ShellComponent {
     this.router
       .events.pipe(filter((e) => e instanceof NavigationEnd), takeUntilDestroyed())
       .subscribe(() => this.navOpen.set(false));
+    if (this.auth.isSuper()) this.api.tenants().subscribe((t) => this.tenants.set(t));
   }
 
   toggleCollapsed(): void {
