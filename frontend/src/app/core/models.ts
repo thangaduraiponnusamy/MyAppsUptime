@@ -47,6 +47,7 @@ export interface Monitor extends MonitorInput {
   ssl_expires_at: string | null;
   created_at: string;
   uptime_24h: number | null;
+  status_since: string | null;
   recent: MonitorStatus[];
   recent_latency: (number | null)[];
 }

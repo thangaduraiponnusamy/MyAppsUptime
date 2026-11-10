@@ -83,6 +83,7 @@ class MonitorOut(MonitorBase):
     ssl_expires_at: Utc | None
     created_at: Utc
     uptime_24h: float | None = None
+    status_since: Utc | None = None
     recent: list[str] = Field(default_factory=list)
     recent_latency: list[float | None] = Field(default_factory=list)
 

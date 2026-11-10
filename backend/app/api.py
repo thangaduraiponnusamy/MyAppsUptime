@@ -77,9 +77,26 @@ def _recent(db: Session, monitor_id: int, limit: int) -> list[tuple[str, float |
     return [(r[0], r[1]) for r in reversed(rows)]
 
 
+STATE_GROUPS = ({"up", "degraded"}, {"down"}, {"maintenance"})
+
+
+def _status_since(db: Session, m: Monitor) -> datetime | None:
+    """When the monitor entered its current state (first heartbeat after the last different one)."""
+    group = next((g for g in STATE_GROUPS if m.status in g), None)
+    if not m.active or group is None:
+        return None
+    changed = db.scalar(select(func.max(Heartbeat.created_at)).where(
+        Heartbeat.monitor_id == m.id, Heartbeat.status.not_in(group)))
+    query = select(func.min(Heartbeat.created_at)).where(Heartbeat.monitor_id == m.id)
+    if changed is not None:
+        query = query.where(Heartbeat.created_at > changed)
+    return aware(db.scalar(query))
+
+
 def _monitor_out(db: Session, m: Monitor, uptime: float | None) -> MonitorOut:
     out = MonitorOut.model_validate(m)
     out.uptime_24h = uptime
+    out.status_since = _status_since(db, m)
     recent = _recent(db, m.id, 30)
     out.recent = [s for s, _ in recent]
     out.recent_latency = [lat for _, lat in recent]
@@ -291,7 +308,7 @@ def dashboard(
     recent = []
     in_range = (Incident.started_at <= until) & (Incident.resolved_at.is_(None) | (Incident.resolved_at >= since))
     for incident, name in db.execute(
-        select(Incident, Monitor.name).join(Monitor).where(in_range).order_by(Incident.started_at.desc()).limit(6)
+        select(Incident, Monitor.name).join(Monitor).where(in_range).order_by(Incident.started_at.desc()).limit(12)
     ):
         out = IncidentOut.model_validate(incident)
         out.monitor_name = name

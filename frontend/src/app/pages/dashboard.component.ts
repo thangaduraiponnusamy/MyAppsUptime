@@ -1,4 +1,4 @@
-import { DecimalPipe, NgTemplateOutlet, formatDate } from '@angular/common';
+import { DatePipe, DecimalPipe, NgTemplateOutlet, formatDate } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
@@ -6,12 +6,14 @@ import { EMPTY, catchError, combineLatest, switchMap, timer } from 'rxjs';
 import { ApiService } from '../core/api.service';
 import { DashboardData, Monitor, MonitorStatus } from '../core/models';
 import { MonitorStore } from '../core/monitor-store.service';
-import { AreaChartComponent } from '../shared/area-chart.component';
 import { HeartbeatBarComponent } from '../shared/heartbeat-bar.component';
 import { IconComponent } from '../shared/icon.component';
-import { daysUntil } from '../shared/time';
+import { StatusMapComponent } from '../shared/status-map.component';
+import { daysUntil, short } from '../shared/time';
 
 interface Group { root: Monitor; children: Monitor[]; issues: number; }
+type Filter = MonitorStatus | 'all' | 'blocked';
+interface ActivityEvent { key: string; monitorId: number; name: string; kind: 'up' | 'down'; at: string; detail: string; }
 
 const RANK: Record<string, number> = { down: 0, degraded: 1, maintenance: 2, pending: 3, up: 4, paused: 5 };
 const PAGE = 25;
@@ -19,7 +21,7 @@ const PAGE = 25;
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [DecimalPipe, NgTemplateOutlet, RouterLink, AreaChartComponent, HeartbeatBarComponent, IconComponent],
+  imports: [DatePipe, DecimalPipe, NgTemplateOutlet, RouterLink, HeartbeatBarComponent, IconComponent, StatusMapComponent],
   template: `
     <div class="page-head">
       <div>
@@ -52,8 +54,28 @@ const PAGE = 25;
       </div>
     </div>
 
+    <section class="card panel status-board">
+      <div class="card-head">
+        <div class="grow"><h2>Service status</h2><div class="sub">{{ store.monitors().length }} monitors &middot; click a tile to filter the list</div></div>
+        @if (status() !== 'all') { <button class="btn sm" (click)="status.set('all')">Show all</button> }
+      </div>
+      <div class="sb-grid">
+        @for (t of statusTiles(); track t.key) {
+          <button class="sb-tile" [class]="'sb-tile ' + t.key" [class.active]="status() === t.key" [class.zero]="!t.count"
+                  (click)="filterBy(t.key)">
+            <span class="sb-ico"><app-icon [name]="t.icon" [size]="22" /></span>
+            <span class="sb-body">
+              <span class="sb-count">{{ t.count }}</span>
+              <span class="sb-label">{{ t.label }}</span>
+              <span class="sb-sub">{{ t.sub }}</span>
+            </span>
+          </button>
+        }
+      </div>
+    </section>
+
     @if (store.summary(); as s) {
-      <div class="stat-grid">
+      <div class="stat-grid three">
         <div class="stat-tile" [class.warn]="uptime() !== null && uptime()! < 99.9">
           <div class="st-label"><span class="st-ico emerald"><app-icon name="activity" [size]="15" /></span>Uptime</div>
           <div class="st-value">{{ uptime() === null ? '--' : (uptime() | number: '1.2-2') }}<small>%</small></div>
@@ -72,29 +94,34 @@ const PAGE = 25;
           <div class="st-value">{{ s.open_incidents }}</div>
           <div class="st-sub">{{ s.unacknowledged }} not acknowledged &middot; {{ data()?.incident_count ?? 0 }} in {{ rangeText() }}</div>
         </a>
-        <div class="stat-tile">
-          <div class="st-label"><span class="st-ico ocean"><app-icon name="server" [size]="15" /></span>Monitors</div>
-          <div class="st-value">{{ s.up }}<small>/ {{ s.total }} up</small></div>
-          <div class="st-bar">
-            <i class="up" [style.flex]="s.up"></i><i class="degraded" [style.flex]="s.degraded"></i>
-            <i class="down" [style.flex]="s.down"></i><i class="maintenance" [style.flex]="s.maintenance"></i>
-            <i class="paused" [style.flex]="s.paused"></i>
-          </div>
-        </div>
       </div>
     }
 
     <div class="dash-row">
       <section class="card panel">
         <div class="card-head">
-          <div class="grow"><h2>Response time</h2><div class="sub">Fleet average &middot; {{ rangeText() }}</div></div>
+          <span class="head-ico tone-indigo"><app-icon name="history" [size]="16" /></span>
+          <div class="grow"><h2>Recent activity</h2><div class="sub">Which service went down and came back &middot; {{ rangeText() }}</div></div>
         </div>
-        @if (chartReady()) {
-          <app-area-chart [values]="chartValues()" [axis]="axis()" />
+        @if (events().length) {
+          <div class="evt-list">
+            <div class="evt evt-head"><span>Service</span><span>Status</span><span>Date &amp; time</span><span class="hide-sm">Duration</span></div>
+            @for (e of events(); track e.key) {
+              <a class="evt" [routerLink]="['/monitors', e.monitorId]">
+                <span class="evt-name">
+                  <span [class]="'evt-ico ' + e.kind"><app-icon [name]="e.kind === 'up' ? 'trend-up' : 'trend-down'" [size]="14" /></span>
+                  <b>{{ e.name }}</b>
+                </span>
+                <span><span [class]="'pill ' + e.kind">{{ e.kind === 'up' ? 'Up' : 'Down' }}</span></span>
+                <span class="num muted-strong">{{ e.at | date: 'MMM d, HH:mm:ss' }}</span>
+                <span class="hide-sm evt-dur">{{ e.detail }}</span>
+              </a>
+            }
+          </div>
         } @else {
-          <div class="empty-state tint-indigo">
-            <span class="empty-ico"><app-icon name="activity" [size]="20" /></span>
-            <div><b>Collecting data</b><div class="muted">The chart appears after a few successful checks.</div></div>
+          <div class="empty-state tint-up">
+            <span class="empty-ico"><app-icon name="check" [size]="20" /></span>
+            <div><b>No status changes</b><div class="muted">Every service stayed up {{ rangeText() }}.</div></div>
           </div>
         }
       </section>
@@ -125,6 +152,22 @@ const PAGE = 25;
     </div>
 
     <section class="card panel">
+      <div class="card-head">
+        <span class="head-ico tone-ocean"><app-icon name="map" [size]="16" /></span>
+        <div class="grow"><h2>Status map</h2><div class="sub">How services depend on each other &middot; click a node to open it</div></div>
+        <div class="map-legend hide-sm">
+          <span><i class="up"></i>Up</span><span><i class="down"></i>Down</span><span><i class="blocked"></i>Blocked</span>
+          <span><i class="degraded"></i>Degraded</span><span><i class="paused"></i>Paused</span>
+        </div>
+      </div>
+      @if (store.monitors().length) {
+        <app-status-map [monitors]="store.monitors()" title="All monitors" />
+      } @else {
+        <div class="empty-state">No monitors yet. <a routerLink="/monitors/new" class="kpi-link">Create one</a></div>
+      }
+    </section>
+
+    <section class="card panel">
       <div class="toolbar">
         <h2>Monitors <span class="count-badge">{{ visibleCount() }}</span></h2>
         <input class="search" placeholder="Search name or target..." [value]="query()"
@@ -136,18 +179,16 @@ const PAGE = 25;
           </select>
         }
         <span class="spacer"></span>
-        <div class="segmented scroll-x">
-          @for (f of filters(); track f.value) {
-            <button class="chip" [class.active]="status() === f.value" (click)="status.set(f.value); limit.set(page)">
-              {{ f.label }} <span class="chip-n">{{ f.count }}</span>
-            </button>
-          }
-        </div>
+        @if (status() !== 'all') {
+          <button class="chip active" (click)="status.set('all')" title="Clear status filter">
+            {{ statusLabel() }} <app-icon name="x" [size]="12" />
+          </button>
+        }
       </div>
 
       <div class="mlist">
         <div class="mrow mhead">
-          <span></span><span>Monitor</span><span>Status</span><span class="hide-sm">Uptime 24h</span>
+          <span></span><span>Monitor</span><span>Status</span><span class="hide-sm">For</span><span class="hide-sm">Uptime 24h</span>
           <span class="hide-sm">Response</span><span class="hide-md">Last 30 checks</span>
         </div>
         @for (g of shownGroups(); track g.root.id) {
@@ -184,13 +225,15 @@ const PAGE = 25;
             <b>{{ m.name }}
               @if (g?.children.length) { <span class="dep-chip" title="Dependent monitors"><app-icon name="network" [size]="11" /> {{ g.children.length }}</span> }
             </b>
-            <small><span class="m-type">{{ m.type }}</span>{{ m.type === 'push' ? 'Push heartbeat' : m.target }}</small>
+            <small><span class="m-type">{{ m.type }}</span>&middot; {{ m.type === 'push' ? 'Push heartbeat' : m.target }}</small>
           </span>
         </span>
         <span>
           @if (isBlocked(m)) { <span class="pill paused" title="Down because its parent is down">blocked</span> }
           @else { <span [class]="'pill ' + m.status">{{ m.status }}</span> }
         </span>
+        <span class="hide-sm num muted-strong" [title]="m.status_since ? 'Since ' + (m.status_since | date: 'MMM d, HH:mm') : ''">
+          {{ m.status_since ? shortSince(m.status_since) : '--' }}</span>
         <span class="hide-sm num">{{ m.uptime_24h === null ? '--' : (m.uptime_24h | number: '1.0-2') + '%' }}</span>
         <span class="hide-sm num">{{ m.last_latency_ms === null ? '--' : (m.last_latency_ms | number: '1.0-0') + ' ms' }}</span>
         <span class="hide-md"><app-heartbeat-bar [statuses]="m.recent" [max]="30" size="sm" /></span>
@@ -217,7 +260,7 @@ export class DashboardComponent {
   data = signal<DashboardData | null>(null);
   query = signal('');
   tag = signal<string | null>(null);
-  status = signal<MonitorStatus | 'all'>('all');
+  status = signal<Filter>('all');
   limit = signal(PAGE);
   private openState = signal(new Map<number, boolean>());
 
@@ -242,24 +285,52 @@ export class DashboardComponent {
     if (!c) return { hours: this.hours() };
     return { start: new Date(`${c.from}T00:00:00`).toISOString(), end: new Date(`${c.to}T23:59:59`).toISOString() };
   });
-  private spanHours = computed(() => {
-    const p = this.rangeParams();
-    return p.hours ?? (Date.parse(p.end!) - Date.parse(p.start!)) / 3_600_000;
-  });
 
-  private latencySeries = computed(() => (this.data()?.series ?? []).map((p) => p.avg_latency_ms));
-  private latencyValues = computed(() => this.latencySeries().filter((v): v is number => v !== null));
-  chartReady = computed(() => this.latencyValues().length >= 2);
+  private latencyValues = computed(() =>
+    (this.data()?.series ?? []).map((p) => p.avg_latency_ms).filter((v): v is number => v !== null));
   latencyRange = computed(() => {
     const v = this.latencyValues();
     return v.length < 2 ? null : { min: Math.round(Math.min(...v)), max: Math.round(Math.max(...v)) };
   });
-  // Chart starts at the first bucket with data, so new installs don't show a mostly empty chart
-  private chartStart = computed(() => Math.max(0, this.latencySeries().findIndex((v) => v !== null)));
-  chartValues = computed(() => this.latencySeries().slice(this.chartStart()));
-  axis = computed(() => {
-    const fmt = this.spanHours() <= 48 ? 'HH:mm' : 'MMM d';
-    return (this.data()?.series ?? []).slice(this.chartStart()).map((p) => formatDate(p.at, fmt, 'en-US'));
+
+  statusTiles = computed(() => {
+    const all = this.store.monitors();
+    const total = all.length || 1;
+    const blocked = all.filter((m) => this.isBlocked(m)).length;
+    const n = (s: MonitorStatus) => all.filter((m) => m.status === s).length;
+    const up = n('up');
+    return [
+      { key: 'up', label: 'Up', icon: 'check-circle', count: up, sub: `${Math.round((up / total) * 100)}% of monitors` },
+      { key: 'down', label: 'Down', icon: 'x-circle', count: n('down') - blocked, sub: 'Root cause failures' },
+      { key: 'blocked', label: 'Blocked', icon: 'link-off', count: blocked, sub: 'Parent is down' },
+      { key: 'degraded', label: 'Degraded', icon: 'alert', count: n('degraded'), sub: 'Slow or partial' },
+      { key: 'maintenance', label: 'Maintenance', icon: 'wrench', count: n('maintenance'), sub: 'Planned work' },
+      { key: 'paused', label: 'Paused', icon: 'pause-circle', count: n('paused'), sub: 'Not checked' },
+    ] as { key: Filter; label: string; icon: string; count: number; sub: string }[];
+  });
+  statusLabel = computed(() => this.statusTiles().find((t) => t.key === this.status())?.label ?? this.status());
+
+  // Each incident = a "down" event, plus an "up" event when it was resolved
+  events = computed<ActivityEvent[]>(() => {
+    const incidents = this.data()?.incidents ?? [];
+    const list: ActivityEvent[] = [];
+    for (const i of incidents) {
+      const name = i.monitor_name ?? `#${i.monitor_id}`;
+      list.push({
+        key: `d${i.id}`, monitorId: i.monitor_id, name, kind: 'down', at: i.started_at,
+        detail: i.resolved_at ? `Down for ${short(i.started_at, i.resolved_at)}` : `Still down · ${short(i.started_at)}`,
+      });
+      if (i.resolved_at) {
+        const next = incidents
+          .filter((o) => o.monitor_id === i.monitor_id && o.started_at > i.resolved_at!)
+          .sort((a, b) => a.started_at.localeCompare(b.started_at))[0];
+        list.push({
+          key: `u${i.id}`, monitorId: i.monitor_id, name, kind: 'up', at: i.resolved_at,
+          detail: next ? `Up for ${short(i.resolved_at, next.started_at)}` : `Up for ${short(i.resolved_at)} · running`,
+        });
+      }
+    }
+    return list.sort((a, b) => b.at.localeCompare(a.at)).slice(0, 8);
   });
 
   private byId = computed(() => new Map(this.store.monitors().map((m) => [m.id, m])));
@@ -281,26 +352,18 @@ export class DashboardComponent {
 
   tags = computed(() => [...new Set(this.store.monitors().flatMap((m) => m.tags))].sort());
 
-  filters = computed(() => {
-    const all = this.store.monitors();
-    const count = (s: MonitorStatus) => all.filter((m) => m.status === s).length;
-    const opts: { value: MonitorStatus | 'all'; label: string; count: number }[] = [{ value: 'all', label: 'All', count: all.length }];
-    for (const [value, label] of [['down', 'Down'], ['degraded', 'Degraded'], ['up', 'Up'], ['maintenance', 'Maintenance'], ['paused', 'Paused']] as const) {
-      const n = count(value);
-      if (n || this.status() === value) opts.push({ value, label, count: n });
-    }
-    return opts;
-  });
-
   private matches = computed(() => {
     const q = this.query().toLowerCase();
     const t = this.tag();
     const s = this.status();
+    const statusOk = (m: Monitor) =>
+      s === 'all' ||
+      (s === 'blocked' ? this.isBlocked(m) : s === 'down' ? m.status === 'down' && !this.isBlocked(m) : m.status === s);
     return this.store.monitors().filter(
       (m) =>
         (!q || m.name.toLowerCase().includes(q) || m.target.toLowerCase().includes(q)) &&
         (!t || m.tags.includes(t)) &&
-        (s === 'all' || m.status === s),
+        statusOk(m),
     );
   });
   visibleCount = computed(() => this.matches().length);
@@ -366,6 +429,15 @@ export class DashboardComponent {
     const next = new Map(this.openState());
     next.set(g.root.id, !this.isOpen(g));
     this.openState.set(next);
+  }
+
+  filterBy(key: Filter): void {
+    this.status.set(this.status() === key ? 'all' : key);
+    this.limit.set(PAGE);
+  }
+
+  shortSince(iso: string): string {
+    return short(iso);
   }
 
   pickHours(hours: number): void {

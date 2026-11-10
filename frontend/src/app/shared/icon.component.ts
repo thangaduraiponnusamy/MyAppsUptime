@@ -36,6 +36,14 @@ const PATHS: Record<string, string> = {
   'chevrons-left': 'M11 17l-5-5 5-5M18 17l-5-5 5-5',
   'chevrons-right': 'M6 17l5-5-5-5M13 17l5-5-5-5',
   network: rr(16, 16, 6, 6, 1) + rr(2, 16, 6, 6, 1) + rr(9, 2, 6, 6, 1) + 'M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3M12 12V8',
+  'check-circle': 'M12 2a10 10 0 1 0 0 20 10 10 0 1 0 0-20zM8 12l3 3 5-6',
+  'x-circle': 'M12 2a10 10 0 1 0 0 20 10 10 0 1 0 0-20zM15 9l-6 6M9 9l6 6',
+  'link-off': 'M9 17H7A5 5 0 0 1 7 7h2M15 7h2a5 5 0 0 1 4 8M8 12h4M2 2l20 20',
+  'pause-circle': 'M12 2a10 10 0 1 0 0 20 10 10 0 1 0 0-20zM10 15V9M14 15V9',
+  history: 'M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l4 2',
+  map: 'M5 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM19 3a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM19 17a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 12h4c2 0 2-7 6-7M11 12c2 0 2 7 6 7',
+  'trend-up': 'M22 7l-8.5 8.5-5-5L2 17M16 7h6v6',
+  'trend-down': 'M22 17l-8.5-8.5-5 5L2 7M16 17h6v-6',
 };
 
 @Component({
