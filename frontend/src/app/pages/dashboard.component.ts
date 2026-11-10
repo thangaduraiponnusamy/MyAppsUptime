@@ -36,14 +36,14 @@ type View = 'grid' | 'list';
 
     @if (store.summary(); as s) {
       <div class="kpi-grid">
-        <div class="kpi-card hero">
+        <div class="kpi-card tone tone-emerald">
           <div class="kpi-head"><span class="ico"><app-icon name="activity" [size]="16" /></span>Fleet uptime<span class="delta">24h</span></div>
           <div class="kpi-value">{{ s.avg_uptime_24h === null ? '--' : (s.avg_uptime_24h | number: '1.2-2') }}<small>%</small></div>
           <div class="kpi-sub">{{ s.avg_uptime_24h === null ? 'Waiting for first checks' : s.avg_uptime_24h >= 99.9 ? 'Healthy, above 99.9% SLA' : 'Below 99.9% SLA target' }}</div>
           <app-sparkline class="kpi-spark" [values]="uptimeSeries()" />
         </div>
-        <div class="kpi-card glow-primary">
-          <div class="kpi-head"><span class="ico primary"><app-icon name="bolt" [size]="16" /></span>Avg response
+        <div class="kpi-card tone tone-indigo">
+          <div class="kpi-head"><span class="ico"><app-icon name="bolt" [size]="16" /></span>Avg response
             @if (latencyTrend(); as t) {
               <span class="delta" [class.bad]="t > 0">{{ t > 0 ? '▲' : '▼' }} {{ t > 0 ? t : -t }}%</span>
             }
@@ -52,8 +52,8 @@ type View = 'grid' | 'list';
           <div class="kpi-sub">Latest check across active monitors</div>
           <app-sparkline class="kpi-spark" [values]="latencySeries()" />
         </div>
-        <div class="kpi-card" [class.glow-down]="s.open_incidents > 0" [class.glow-up]="s.open_incidents === 0">
-          <div class="kpi-head"><span class="ico" [class.down]="s.open_incidents > 0" [class.up]="s.open_incidents === 0">
+        <div [class]="'kpi-card tone ' + (s.open_incidents > 0 ? 'tone-rose' : 'tone-amber')">
+          <div class="kpi-head"><span class="ico">
             <app-icon [name]="s.open_incidents ? 'alert' : 'check'" [size]="16" /></span>Open incidents</div>
           <div class="kpi-value">{{ s.open_incidents }}</div>
           <div class="kpi-sub">
@@ -62,8 +62,8 @@ type View = 'grid' | 'list';
             <a routerLink="/incidents" class="kpi-link">View <app-icon name="arrow" [size]="13" /></a>
           </div>
         </div>
-        <div class="kpi-card glow-info">
-          <div class="kpi-head"><span class="ico maintenance"><app-icon name="server" [size]="16" /></span>Monitors</div>
+        <div class="kpi-card tone tone-ocean">
+          <div class="kpi-head"><span class="ico"><app-icon name="server" [size]="16" /></span>Monitors</div>
           <div class="kpi-value">{{ s.total }}<small>{{ s.paused ? s.paused + ' paused' : 'active' }}</small></div>
           <div class="stack">
             <i class="up" [style.flex]="s.up"></i><i class="degraded" [style.flex]="s.degraded"></i>

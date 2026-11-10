@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>MyAppsUptime - KPI tiles</title>
+  <link rel="stylesheet" href="../frontend/src/styles.css" />
+  <style>
+    body { padding: 24px; }
+    .kpi-grid { margin-bottom: 18px; }
+    h3 { margin: 6px 0 12px; color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: .08em; }
+  </style>
+</head>
+<body>
+  <h3>All clear</h3>
+  <div class="kpi-grid" id="clear"></div>
+  <h3>Open incident</h3>
+  <div class="kpi-grid" id="incident"></div>
+
+  <script>
+    // Sample data only.
+    if (location.hash === '#dark') document.documentElement.dataset.theme = 'dark';
+    const ico = (d) => `<span class="ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="${d}"/></svg></span>`;
+    const spark = (seed) => {
+      let s = seed; const r = () => ((s = (s * 9301 + 49297) % 233280) / 233280);
+      const v = Array.from({ length: 24 }, (_, i) => 50 + Math.sin(i / 3) * 12 + r() * 14);
+      const max = Math.max(...v), min = Math.min(...v);
+      return `<span class="kpi-spark"><svg viewBox="0 0 100 30" preserveAspectRatio="none" class="spark"><path d="${v.map((x, i) => `${i ? 'L' : 'M'}${(i / 23 * 100).toFixed(1)},${(28 - (x - min) / (max - min) * 26).toFixed(1)}`).join(' ')}"/></svg></span>`;
+    };
+    const tiles = (open) => `
+      <div class="kpi-card tone tone-emerald">
+        <div class="kpi-head">${ico('M3 12h4l3 8 4-16 3 8h4')}Fleet uptime<span class="delta">24h</span></div>
+        <div class="kpi-value">${open ? '99.42' : '99.98'}<small>%</small></div>
+        <div class="kpi-sub">${open ? 'Below 99.9% SLA target' : 'Healthy, above 99.9% SLA'}</div>${spark(3)}
+      </div>
+      <div class="kpi-card tone tone-indigo">
+        <div class="kpi-head">${ico('M13 2L4 14h7l-1 8 9-12h-7l1-8z')}Avg response<span class="delta">${open ? '▲ 18%' : '▼ 6%'}</span></div>
+        <div class="kpi-value">${open ? '412' : '184'}<small>ms</small></div>
+        <div class="kpi-sub">Latest check across active monitors</div>${spark(7)}
+      </div>
+      <div class="kpi-card tone ${open ? 'tone-rose' : 'tone-amber'}">
+        <div class="kpi-head">${ico(open ? 'M12 3l9 16H3L12 3zM12 10v4M12 17v.5' : 'M5 12l5 5 9-10')}Open incidents</div>
+        <div class="kpi-value">${open ? 2 : 0}</div>
+        <div class="kpi-sub"><span class="tag-soft">${open ? '1 not acknowledged' : 'All clear'}</span><a class="kpi-link">View &rsaquo;</a></div>
+      </div>
+      <div class="kpi-card tone tone-ocean">
+        <div class="kpi-head">${ico('M4 4h16v6H4zM4 14h16v6H4zM8 7h.01M8 17h.01')}Monitors</div>
+        <div class="kpi-value">12<small>${open ? '1 paused' : 'active'}</small></div>
+        <div class="stack"><i class="up" style="flex:${open ? 8 : 11}"></i><i class="degraded" style="flex:1"></i><i class="down" style="flex:${open ? 2 : 0}"></i><i class="paused" style="flex:${open ? 1 : 0}"></i></div>
+        <div class="kpi-sub mini-legend"><span><i class="up"></i>${open ? 8 : 11} up</span><span><i class="degraded"></i>1</span><span><i class="down"></i>${open ? 2 : 0}</span></div>
+      </div>`;
+    clear.innerHTML = tiles(false);
+    incident.innerHTML = tiles(true);
+  </script>
+</body>
+</html>
