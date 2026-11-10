@@ -2,7 +2,7 @@ from sqlalchemy.orm import Session
 
 from .models import AppSetting
 
-APP_VERSION = "14.0.0"
+APP_VERSION = "15.0.0"
 
 DEFAULTS = {
     "general": {"app_url": "", "refresh_sec": 5},

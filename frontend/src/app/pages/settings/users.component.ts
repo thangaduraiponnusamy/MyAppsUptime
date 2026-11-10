@@ -3,6 +3,7 @@ import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService, errorText } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
+import { ConfirmService } from '../../core/confirm.service';
 import { User } from '../../core/models';
 
 @Component({
@@ -66,6 +67,7 @@ import { User } from '../../core/models';
 export class UserSettingsComponent {
   private api = inject(ApiService);
   auth = inject(AuthService);
+  private confirm = inject(ConfirmService);
   users = signal<User[]>([]);
   editing = signal<User | null>(null);
   error = signal('');
@@ -100,9 +102,15 @@ export class UserSettingsComponent {
     });
   }
 
-  remove(u: User): void {
-    if (confirm(`Delete user "${u.username}"?`)) {
-      this.api.deleteUser(u.id!).subscribe({ next: () => this.load(), error: (e) => alert(errorText(e)) });
-    }
+  async remove(u: User): Promise<void> {
+    const ok = await this.confirm.ask({
+      title: 'Delete user?',
+      message: `You are about to delete the user "${u.username}".`,
+      details: ['They can no longer sign in.', 'They are removed from all projects and stop getting alerts.'],
+      typeToConfirm: u.username,
+      action: 'Delete user',
+    });
+    if (!ok) return;
+    this.api.deleteUser(u.id!).subscribe({ next: () => this.load(), error: (e) => alert(errorText(e)) });
   }
 }

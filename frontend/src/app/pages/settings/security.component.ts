@@ -37,11 +37,15 @@ import { AuthService } from '../../core/auth.service';
 
     <section class="s-section">
       <h3>Forgot password</h3>
-      <p class="muted">Use "Forgot password?" on the sign-in page to get a reset link by email
-        (needs the email server in Notifications and the app address in General).
-        An admin can also set a new password in Users.
-        If every admin is locked out, run this on the server:</p>
-      <div class="code-box mono">python -m app.reset_password admin NEW_PASSWORD</div>
+      @if (auth.isAdmin()) {
+        <p class="muted">Use "Forgot password?" on the sign-in page to get a reset link by email
+          (needs the email server in Notifications and the app address in General).
+          An admin can also set a new password in Users.
+          If every admin is locked out, run this on the server:</p>
+        <div class="code-box mono">python -m app.reset_password admin NEW_PASSWORD</div>
+      } @else {
+        <p class="muted">Use "Forgot password?" on the sign-in page to get a reset link by email, or ask an admin to set a new password for you.</p>
+      }
     </section>
 
     <section class="s-section">

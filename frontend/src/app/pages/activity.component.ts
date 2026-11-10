@@ -9,12 +9,14 @@ import { Incident } from '../core/models';
 import { PrefsService } from '../core/prefs.service';
 import { toEvents } from '../shared/activity';
 import { IconComponent } from '../shared/icon.component';
+import { ProjectPickComponent, parseProject } from '../shared/project-pick.component';
 import { DAY, DayRange, RANGES, RangePickerComponent, rangeLabel, rangeQuery } from '../shared/range-picker.component';
+import { MonitorStore } from '../core/monitor-store.service';
 
 @Component({
   selector: 'app-activity',
   standalone: true,
-  imports: [DatePipe, RouterLink, IconComponent, RangePickerComponent],
+  imports: [DatePipe, RouterLink, IconComponent, RangePickerComponent, ProjectPickComponent],
   template: `
     <div class="page-head">
       <div>
@@ -22,6 +24,7 @@ import { DAY, DayRange, RANGES, RangePickerComponent, rangeLabel, rangeQuery } f
         <div class="sub">Every time a service went down or came back up &middot; {{ rangeText() }}</div>
       </div>
       <span class="spacer"></span>
+      <app-project-pick [project]="project()" (pick)="setParams({ project: $event === null ? null : '' + $event })" />
       <app-range-picker [hours]="hours()" [custom]="custom()" (pick)="pickHours($event)" (range)="applyCustom($event)" />
     </div>
 
@@ -74,6 +77,7 @@ export class ActivityComponent {
   private router = inject(Router);
   private prefs = inject(PrefsService);
   private auth = inject(AuthService);
+  private store = inject(MonitorStore);
   readonly kinds = [
     { value: 'all', label: 'All' },
     { value: 'down', label: 'Down' },
@@ -86,6 +90,7 @@ export class ActivityComponent {
   incidents = signal<Incident[]>([]);
   query = signal('');
   kind = signal<'all' | 'up' | 'down'>('all');
+  project = signal<number | null>(null);
   limit = signal(this.page());
 
   rangeText = computed(() => {
@@ -109,7 +114,11 @@ export class ActivityComponent {
   filtered = computed(() => {
     const q = this.query().toLowerCase();
     const k = this.kind();
-    return this.events().filter((e) => (k === 'all' || e.kind === k) && (!q || e.name.toLowerCase().includes(q)));
+    const p = this.project();
+    const of = this.store.projectOf();
+    return this.events().filter(
+      (e) => (k === 'all' || e.kind === k) && (!q || e.name.toLowerCase().includes(q)) && (p === null || (of.get(e.monitorId) ?? 0) === p),
+    );
   });
   shown = computed(() => this.filtered().slice(0, this.limit()));
 
@@ -118,6 +127,7 @@ export class ActivityComponent {
       const from = p.get('from'), to = p.get('to');
       this.custom.set(from && to && DAY.test(from) && DAY.test(to) && from <= to ? { from, to } : null);
       this.hours.set(RANGES.find((r) => r.label === p.get('range'))?.hours ?? 24);
+      this.project.set(parseProject(p.get('project')));
       this.limit.set(this.page());
     });
     const range = computed(() => rangeQuery(this.hours(), this.custom()));
@@ -136,7 +146,7 @@ export class ActivityComponent {
     this.setParams({ range: null, from: r.from, to: r.to });
   }
 
-  private setParams(params: Record<string, string | null | undefined>): void {
+  setParams(params: Record<string, string | null | undefined>): void {
     this.router.navigate([], { relativeTo: this.route, queryParams: params, queryParamsHandling: 'merge', replaceUrl: true });
   }
 }

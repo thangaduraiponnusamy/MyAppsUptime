@@ -10,6 +10,7 @@ import { MonitorStore } from '../core/monitor-store.service';
 import { toEvents } from '../shared/activity';
 import { HeartbeatBarComponent } from '../shared/heartbeat-bar.component';
 import { IconComponent } from '../shared/icon.component';
+import { ProjectPickComponent } from '../shared/project-pick.component';
 import { DAY, DayRange, RANGES, RangePickerComponent, rangeLabel, rangeQuery } from '../shared/range-picker.component';
 import { StatusMapComponent } from '../shared/status-map.component';
 import { PrefsService } from '../core/prefs.service';
@@ -25,7 +26,7 @@ const PAGE = 25;
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [DatePipe, DecimalPipe, NgTemplateOutlet, RouterLink, HeartbeatBarComponent, IconComponent, RangePickerComponent, StatusMapComponent],
+  imports: [DatePipe, DecimalPipe, NgTemplateOutlet, RouterLink, HeartbeatBarComponent, IconComponent, RangePickerComponent, StatusMapComponent, ProjectPickComponent],
   template: `
     <div class="page-head">
       <div>
@@ -33,16 +34,7 @@ const PAGE = 25;
         <div class="sub">{{ greeting }} &middot; {{ todayText }}</div>
       </div>
       <span class="spacer"></span>
-      @if (store.projects().length) {
-        <label class="project-pick" title="Show one project">
-          <app-icon name="folder" [size]="16" />
-          <select (change)="pickProject($any($event.target).value)">
-            <option value="" [selected]="project() === null">All projects</option>
-            @for (p of store.projects(); track p.id) { <option [value]="p.id" [selected]="project() === p.id">{{ p.name }}</option> }
-            <option value="0" [selected]="project() === 0">No project</option>
-          </select>
-        </label>
-      }
+      <app-project-pick [project]="project()" (pick)="pickProject($event === null ? '' : '' + $event)" />
     </div>
 
     <section class="card panel status-board">

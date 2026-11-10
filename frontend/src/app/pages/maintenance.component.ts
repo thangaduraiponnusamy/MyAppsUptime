@@ -2,6 +2,7 @@ import { DatePipe } from '@angular/common';
 import { Component, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ApiService, errorText } from '../core/api.service';
+import { ConfirmService } from '../core/confirm.service';
 import { Maintenance } from '../core/models';
 import { MonitorStore } from '../core/monitor-store.service';
 
@@ -40,7 +41,7 @@ import { MonitorStore } from '../core/monitor-store.service';
               <td>{{ w.starts_at | date: 'MMM d, HH:mm' }}</td>
               <td>{{ w.ends_at | date: 'MMM d, HH:mm' }}</td>
               <td class="muted">{{ w.monitor_ids.length ? w.monitor_ids.length + ' monitors' : 'All monitors' }}</td>
-              <td><button class="btn sm danger" (click)="remove(w.id!)">Delete</button></td>
+              <td><button class="btn sm danger" (click)="remove(w)">Delete</button></td>
             </tr>
           } @empty {
             <tr><td colspan="5" class="muted">No maintenance windows.</td></tr>
@@ -53,6 +54,7 @@ import { MonitorStore } from '../core/monitor-store.service';
 export class MaintenanceComponent {
   private api = inject(ApiService);
   store = inject(MonitorStore);
+  private confirm = inject(ConfirmService);
   windows = signal<Maintenance[]>([]);
   selected = signal(new Set<number>());
   error = signal('');
@@ -97,7 +99,14 @@ export class MaintenanceComponent {
       });
   }
 
-  remove(id: number): void {
-    this.api.deleteMaintenance(id).subscribe(() => this.load());
+  async remove(w: Maintenance): Promise<void> {
+    const ok = await this.confirm.ask({
+      title: 'Delete maintenance window?',
+      message: `You are about to delete the maintenance window "${w.title}".`,
+      details: ['Its monitors return to normal checks and alerts right away.'],
+      typeToConfirm: w.title,
+      action: 'Delete window',
+    });
+    if (ok) this.api.deleteMaintenance(w.id!).subscribe(() => this.load());
   }
 }

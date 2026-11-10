@@ -12,6 +12,8 @@ export class MonitorStore {
   readonly monitors = signal<Monitor[]>([]);
   readonly summary = signal<Summary | null>(null);
   readonly projects = signal<Project[]>([]);
+  /** monitor id -> project id (0 = no project) */
+  readonly projectOf = computed(() => new Map(this.monitors().map((m) => [m.id, m.project_id ?? 0])));
 
   /** Poll only while signed in, at the interval set in Settings > General. */
   private readonly pollMs = computed(() => {

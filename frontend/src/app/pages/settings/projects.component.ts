@@ -2,6 +2,7 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { forkJoin, of, switchMap } from 'rxjs';
 import { ApiService, errorText } from '../../core/api.service';
+import { ConfirmService } from '../../core/confirm.service';
 import { Project, User } from '../../core/models';
 import { MonitorStore } from '../../core/monitor-store.service';
 
@@ -81,6 +82,7 @@ import { MonitorStore } from '../../core/monitor-store.service';
 export class ProjectSettingsComponent {
   private api = inject(ApiService);
   private store = inject(MonitorStore);
+  private confirm = inject(ConfirmService);
   projects = signal<Project[]>([]);
   users = signal<User[]>([]);
   editing = signal<Project | null>(null);
@@ -164,8 +166,18 @@ export class ProjectSettingsComponent {
       });
   }
 
-  remove(p: Project): void {
-    if (!confirm(`Delete project "${p.name}"? Its monitors are kept and become unassigned.`)) return;
+  async remove(p: Project): Promise<void> {
+    const ok = await this.confirm.ask({
+      title: 'Delete project?',
+      message: `You are about to delete the project "${p.name}".`,
+      details: [
+        `${p.monitor_count ?? 0} monitor(s) are kept but become unassigned.`,
+        `${p.member_ids.length} member(s) lose access to these monitors and stop getting their alerts.`,
+      ],
+      typeToConfirm: p.name,
+      action: 'Delete project',
+    });
+    if (!ok) return;
     this.api.deleteProject(p.id!).subscribe(() => {
       this.load();
       this.store.refresh();

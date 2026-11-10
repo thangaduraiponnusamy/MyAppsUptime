@@ -5,6 +5,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { EMPTY, catchError, combineLatest, forkJoin, switchMap, timer } from 'rxjs';
 import { ApiService, errorText } from '../core/api.service';
 import { AuthService } from '../core/auth.service';
+import { ConfirmService } from '../core/confirm.service';
 import { Heartbeat, Monitor, Stats } from '../core/models';
 import { MonitorStore } from '../core/monitor-store.service';
 import { HeartbeatBarComponent } from '../shared/heartbeat-bar.component';
@@ -142,6 +143,7 @@ export class MonitorDetailComponent {
   private api = inject(ApiService);
   store = inject(MonitorStore);
   auth = inject(AuthService);
+  private confirm = inject(ConfirmService);
 
   readonly origin = location.origin;
   monitor = signal<Monitor | null>(null);
@@ -214,8 +216,19 @@ export class MonitorDetailComponent {
     });
   }
 
-  remove(m: Monitor): void {
-    if (!confirm(`Delete monitor "${m.name}" and all its history?`)) return;
+  async remove(m: Monitor): Promise<void> {
+    const kids = this.store.monitors().filter((c) => c.parent_id === m.id).length;
+    const ok = await this.confirm.ask({
+      title: 'Delete monitor?',
+      message: `You are about to delete the monitor "${m.name}".`,
+      details: [
+        'All its checks, incidents and uptime history are deleted.',
+        ...(kids ? [`${kids} monitor(s) that depend on it lose that link.`] : []),
+      ],
+      typeToConfirm: m.name,
+      action: 'Delete monitor',
+    });
+    if (!ok) return;
     this.api.deleteMonitor(m.id).subscribe(() => {
       this.store.refresh();
       this.router.navigate(['/']);

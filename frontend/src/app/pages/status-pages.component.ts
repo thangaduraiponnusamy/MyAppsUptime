@@ -2,6 +2,7 @@ import { Component, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { ApiService, errorText } from '../core/api.service';
+import { ConfirmService } from '../core/confirm.service';
 import { StatusPage } from '../core/models';
 import { MonitorStore } from '../core/monitor-store.service';
 
@@ -36,7 +37,7 @@ import { MonitorStore } from '../core/monitor-store.service';
               <td>{{ p.title }}</td>
               <td><a [routerLink]="['/status', p.slug]" target="_blank">/status/{{ p.slug }}</a></td>
               <td>{{ p.monitor_ids.length }}</td>
-              <td><button class="btn sm danger" (click)="remove(p.id!)">Delete</button></td>
+              <td><button class="btn sm danger" (click)="remove(p)">Delete</button></td>
             </tr>
           } @empty {
             <tr><td colspan="4" class="muted">No status pages yet.</td></tr>
@@ -49,6 +50,7 @@ import { MonitorStore } from '../core/monitor-store.service';
 export class StatusPagesComponent {
   private api = inject(ApiService);
   store = inject(MonitorStore);
+  private confirm = inject(ConfirmService);
   pages = signal<StatusPage[]>([]);
   selected = signal(new Set<number>());
   error = signal('');
@@ -88,7 +90,14 @@ export class StatusPagesComponent {
       });
   }
 
-  remove(id: number): void {
-    this.api.deleteStatusPage(id).subscribe(() => this.load());
+  async remove(p: StatusPage): Promise<void> {
+    const ok = await this.confirm.ask({
+      title: 'Delete status page?',
+      message: `You are about to delete the status page "${p.title}".`,
+      details: [`The public link /status/${p.slug} stops working.`, 'Monitors are not deleted.'],
+      typeToConfirm: p.slug,
+      action: 'Delete page',
+    });
+    if (ok) this.api.deleteStatusPage(p.id!).subscribe(() => this.load());
   }
 }

@@ -1,16 +1,18 @@
 import { DatePipe } from '@angular/common';
-import { Component, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ApiService } from '../core/api.service';
 import { Incident } from '../core/models';
 import { MonitorStore } from '../core/monitor-store.service';
+import { ProjectPickComponent, parseProject } from '../shared/project-pick.component';
 import { duration } from '../shared/time';
 
 @Component({
   selector: 'app-incidents',
   standalone: true,
-  imports: [DatePipe, FormsModule, RouterLink],
+  imports: [DatePipe, FormsModule, RouterLink, ProjectPickComponent],
   template: `
     <div class="page-head">
       <div>
@@ -18,6 +20,7 @@ import { duration } from '../shared/time';
         <div class="sub">Opened automatically on DOWN, closed on recovery. Acknowledge to tell the team you are on it.</div>
       </div>
       <span class="spacer"></span>
+      <app-project-pick [project]="project()" (pick)="pickProject($event)" />
       <div class="segmented">
         <button class="chip" [class.active]="!openOnly()" (click)="load(false)">All</button>
         <button class="chip" [class.active]="openOnly()" (click)="load(true)">Ongoing</button>
@@ -28,7 +31,7 @@ import { duration } from '../shared/time';
       <table>
         <thead><tr><th>Monitor</th><th>Cause</th><th>Started</th><th>Duration</th><th>State</th><th>Owner / note</th></tr></thead>
         <tbody>
-          @for (i of incidents(); track i.id) {
+          @for (i of shown(); track i.id) {
             <tr>
               <td><a [routerLink]="['/monitors', i.monitor_id]"><b>{{ i.monitor_name }}</b></a></td>
               <td class="muted">{{ i.cause }}</td>
@@ -65,7 +68,15 @@ import { duration } from '../shared/time';
 export class IncidentsComponent {
   private api = inject(ApiService);
   private store = inject(MonitorStore);
+  private route = inject(ActivatedRoute);
+  private router = inject(Router);
   incidents = signal<Incident[]>([]);
+  project = signal<number | null>(null);
+  shown = computed(() => {
+    const p = this.project();
+    const of = this.store.projectOf();
+    return p === null ? this.incidents() : this.incidents().filter((i) => (of.get(i.monitor_id) ?? 0) === p);
+  });
   openOnly = signal(false);
   editing = signal<number | null>(null);
   by = localStorage.getItem('ackName') ?? '';
@@ -73,7 +84,12 @@ export class IncidentsComponent {
   duration = duration;
 
   constructor() {
+    this.route.queryParamMap.pipe(takeUntilDestroyed()).subscribe((p) => this.project.set(parseProject(p.get('project'))));
     this.load(false);
+  }
+
+  pickProject(project: number | null): void {
+    this.router.navigate([], { relativeTo: this.route, queryParams: { project }, queryParamsHandling: 'merge', replaceUrl: true });
   }
 
   load(openOnly: boolean): void {

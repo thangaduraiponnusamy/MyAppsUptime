@@ -1,6 +1,7 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ApiService, errorText } from '../../core/api.service';
+import { ConfirmService } from '../../core/confirm.service';
 import { Channel, ChannelType, Project, SmtpSettings } from '../../core/models';
 
 const TYPE_LABELS: Record<ChannelType, string> = {
@@ -122,6 +123,7 @@ const emptyChannel = (): Channel => ({
 })
 export class NotificationSettingsComponent {
   private api = inject(ApiService);
+  private confirm = inject(ConfirmService);
   readonly types: ChannelType[] = ['teams', 'email', 'slack', 'webhook'];
   readonly typeLabels = TYPE_LABELS;
   channels = signal<Channel[]>([]);
@@ -193,8 +195,15 @@ export class NotificationSettingsComponent {
     });
   }
 
-  remove(c: Channel): void {
-    if (confirm(`Delete channel "${c.name}"?`)) this.api.deleteChannel(c.id!).subscribe(() => this.load());
+  async remove(c: Channel): Promise<void> {
+    const ok = await this.confirm.ask({
+      title: 'Delete notification channel?',
+      message: `You are about to delete the channel "${c.name}".`,
+      details: ['Alerts will no longer be sent through this channel.'],
+      typeToConfirm: c.name,
+      action: 'Delete channel',
+    });
+    if (ok) this.api.deleteChannel(c.id!).subscribe(() => this.load());
   }
 
   saveSmtp(): void {
