@@ -2,11 +2,25 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>MyAppsUptime - Sample UI</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MyAppsUptime - Dashboard sample</title>
   <link rel="stylesheet" href="../frontend/src/styles.css" />
 </head>
 <body>
-  <div class="app">
+  <div class="app" id="app">
+    <header class="mobile-bar">
+      <button class="icon-btn" onclick="app.classList.add('nav-open')" aria-label="Open menu">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      </button>
+      <img src="../branding/logo-mark.svg" width="28" height="28" alt="" />
+      <span class="wordmark"><span class="name" style="font-size: 17px"><span class="my">My</span><span class="apps">Apps</span><span class="uptime">Uptime</span></span></span>
+      <span class="spacer"></span>
+      <a class="icon-btn primary" aria-label="New monitor">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+      </a>
+    </header>
+    <div class="backdrop" onclick="app.classList.remove('nav-open')"></div>
+
     <aside class="side">
       <a class="logo">
         <img class="logo-mark" src="../branding/logo-mark.svg" width="40" height="40" alt="" />
@@ -15,56 +29,98 @@
           <span class="tagline">Uptime &middot; SLA &middot; Insights</span>
         </span>
       </a>
-      <a class="nav-link active">Overview</a>
-      <a class="nav-link">Incidents <span class="count">1</span></a>
-      <a class="nav-link">Maintenance</a>
-      <a class="nav-link">Alerting</a>
-      <a class="nav-link">Status pages</a>
-      <a class="nav-link">Settings</a>
+      <div class="nav-caption">Monitoring</div>
+      <div id="nav"></div>
       <div class="bottom">
-        <a class="btn primary">+ New monitor</a>
-        <button class="btn" onclick="toggleTheme()">Dark / Light</button>
+        <a class="btn primary" title="New monitor"><span data-ico="plus"></span><span class="label">New monitor</span></a>
+        <button class="btn" onclick="toggleTheme()" title="Theme"><span data-ico="moon"></span><span class="label">Dark mode</span></button>
       </div>
     </aside>
 
     <main class="main">
       <div class="page-head">
-        <div>
-          <h1>Overview</h1>
-          <div class="sub">Live health of 9 monitors. Refreshes every 10 seconds.</div>
-        </div>
+        <div><h1>Dashboard</h1><div class="sub">Good morning &middot; Tuesday, Nov 10</div></div>
         <span class="spacer"></span>
-        <input class="search" placeholder="Search name or target..." />
+        <div class="segmented"><button class="chip active">24h</button><button class="chip">7d</button><button class="chip">30d</button></div>
       </div>
 
-      <div class="two-col">
-        <div class="grid-cards">
-          <div class="card kpi"><span class="ico up">&#10003;</span><div><div class="val">6</div><div class="lbl">Up</div></div></div>
-          <div class="card kpi"><span class="ico down">&#10005;</span><div><div class="val">1</div><div class="lbl">Down</div></div></div>
-          <div class="card kpi"><span class="ico degraded">&#9889;</span><div><div class="val">1</div><div class="lbl">Degraded</div></div></div>
-          <div class="card kpi"><span class="ico maintenance">&#9874;</span><div><div class="val">1</div><div class="lbl">Maintenance</div></div></div>
-          <div class="card kpi"><span class="ico down">!</span><div><div class="val">1</div><div class="lbl">Unacked incidents</div></div></div>
-          <div class="card kpi"><span class="ico degraded">&#128274;</span><div><div class="val">1</div><div class="lbl">SSL &lt; 14 days</div></div></div>
+      <div class="kpi-grid">
+        <div class="card kpi-card">
+          <div class="kpi-head"><span>Fleet uptime</span><span class="ico up" data-ico="activity"></span></div>
+          <div class="kpi-value">99.41%</div>
+          <div class="kpi-sub">Average of all monitors, last 24h</div>
+          <svg viewBox="0 0 100 30" preserveAspectRatio="none" class="spark"><path id="spark1"/></svg>
         </div>
-        <div class="card row" style="justify-content: space-around">
-          <div class="ring" style="--p: 99.4"><div><span><b>99.41%</b><span class="muted">fleet uptime</span></span></div></div>
-          <div>
-            <div class="muted">Avg response</div><div style="font-size:24px;font-weight:750">184 ms</div>
-            <div class="muted" style="margin-top:8px">Paused</div><div style="font-size:24px;font-weight:750">1</div>
+        <div class="card kpi-card">
+          <div class="kpi-head"><span>Avg response</span><span class="ico primary" data-ico="bolt"></span></div>
+          <div class="kpi-value">184<small> ms</small></div>
+          <div class="kpi-sub">Latest check, active monitors</div>
+          <svg viewBox="0 0 100 30" preserveAspectRatio="none" class="spark"><path id="spark2"/></svg>
+        </div>
+        <div class="card kpi-card">
+          <div class="kpi-head"><span>Open incidents</span><span class="ico down" data-ico="alert"></span></div>
+          <div class="kpi-value down">1</div>
+          <div class="kpi-sub">1 not acknowledged</div>
+          <a class="kpi-link">View incidents &rsaquo;</a>
+        </div>
+        <div class="card kpi-card">
+          <div class="kpi-head"><span>Monitors</span><span class="ico maintenance" data-ico="server"></span></div>
+          <div class="kpi-value">9</div>
+          <div class="kpi-sub">6 up &middot; 1 degraded &middot; 1 down</div>
+          <div class="stack"><i class="up" style="flex:6"></i><i class="degraded" style="flex:1"></i><i class="down" style="flex:1"></i><i class="maintenance" style="flex:1"></i></div>
+        </div>
+      </div>
+
+      <div class="dash-row">
+        <section class="card">
+          <div class="card-head"><div><h2>Response time</h2><div class="sub">Fleet average &middot; last 24h</div></div></div>
+          <svg viewBox="0 0 600 180" preserveAspectRatio="none" class="area-chart" id="area">
+            <defs><linearGradient id="ag" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6366f1" stop-opacity=".28"/><stop offset="1" stop-color="#6366f1" stop-opacity="0"/></linearGradient></defs>
+            <line x1="0" x2="600" y1="45" y2="45" class="grid"/><line x1="0" x2="600" y1="90" y2="90" class="grid"/><line x1="0" x2="600" y1="135" y2="135" class="grid"/>
+          </svg>
+          <div class="chart-axis"><span>12:00</span><span>18:00</span><span>00:00</span><span>06:00</span><span>11:00</span></div>
+        </section>
+        <section class="card">
+          <div class="card-head"><div><h2>Status</h2><div class="sub">Current state of all monitors</div></div></div>
+          <div class="donut">
+            <svg viewBox="0 0 100 100" id="donut"><circle cx="50" cy="50" r="42" class="donut-track"/></svg>
+            <div class="donut-center"><b>9</b><span>monitors</span></div>
           </div>
-        </div>
+          <ul class="donut-legend" id="legend"></ul>
+        </section>
       </div>
 
-      <div class="row">
-        <div class="segmented">
-          <button class="chip active">All</button><button class="chip">Up</button><button class="chip">Down</button>
-          <button class="chip">Degraded</button><button class="chip">Maintenance</button><button class="chip">Paused</button>
-        </div>
-        <span class="spacer"></span>
-        <div class="chips"><button class="chip">#prod</button><button class="chip">#api</button><button class="chip">#cron</button><button class="chip">#eu-west-1</button></div>
+      <div class="dash-row even">
+        <section class="card">
+          <div class="card-head"><div><h2>Needs attention</h2><div class="sub">Down, degraded or SSL expiring soon</div></div></div>
+          <a class="list-item"><span class="dot down"></span><div class="grow"><div class="title">Payments API</div><div class="meta">data.status = "error" (expected ok)</div></div><span class="pill down">down</span></a>
+          <a class="list-item"><span class="dot degraded"></span><div class="grow"><div class="title">Customer Login</div><div class="meta">HTTP 200 (latency anomaly, baseline 151 ms)</div></div><span class="pill degraded">degraded</span></a>
+          <a class="list-item"><span class="dot up"></span><div class="grow"><div class="title">api.example.com SSL</div><div class="meta">Certificate expires in 9 days</div></div><span class="pill degraded">ssl</span></a>
+        </section>
+        <section class="card">
+          <div class="card-head"><div><h2>Recent incidents</h2><div class="sub">Latest outages across all monitors</div></div><a class="kpi-link">View all &rsaquo;</a></div>
+          <a class="list-item"><span class="rail open"></span><div class="grow"><div class="title">Payments API</div><div class="meta">Nov 10, 10:31 &middot; 12 min</div></div><span class="pill down">open</span></a>
+          <a class="list-item"><span class="rail"></span><div class="grow"><div class="title">Customer Login</div><div class="meta">Nov 9, 22:12 &middot; 18 min</div></div><span class="pill up">resolved</span></a>
+          <a class="list-item"><span class="rail"></span><div class="grow"><div class="title">Public API</div><div class="meta">Nov 6, 03:40 &middot; 6 min</div></div><span class="pill up">resolved</span></a>
+        </section>
       </div>
 
-      <div class="mon-grid" id="grid"></div>
+      <section class="card">
+        <div class="toolbar">
+          <h2>Monitors <span class="muted">9</span></h2>
+          <input class="search" placeholder="Search name or target..." />
+          <span class="spacer"></span>
+          <div class="view-toggle"><button onclick="setView('grid')" id="vg" class="active" data-ico="grid"></button><button onclick="setView('list')" id="vl" data-ico="list"></button></div>
+        </div>
+        <div class="toolbar">
+          <div class="segmented scroll-x"><button class="chip active">All</button><button class="chip">Up</button><button class="chip">Down</button><button class="chip">Degraded</button><button class="chip">Maintenance</button><button class="chip">Paused</button></div>
+          <div class="chips scroll-x"><button class="chip">#prod</button><button class="chip">#api</button><button class="chip">#cron</button></div>
+        </div>
+        <div class="mon-grid" id="grid"></div>
+        <div class="table-wrap" id="list" style="display:none">
+          <table class="mon-table"><thead><tr><th>Monitor</th><th class="hide-sm">Type</th><th>Uptime 24h</th><th class="hide-sm">Response</th><th class="hide-md">Last 30 checks</th></tr></thead><tbody id="rows"></tbody></table>
+        </div>
+      </section>
     </main>
   </div>
 
@@ -72,51 +128,75 @@
     // Sample data only - the real app loads everything from the API.
     let seed = 11;
     const rand = () => ((seed = (seed * 9301 + 49297) % 233280) / 233280);
-    function toggleTheme() {
-      const r = document.documentElement;
-      r.dataset.theme = r.dataset.theme === 'dark' ? 'light' : 'dark';
-    }
+    const app = document.getElementById('app');
+    const ICONS = {
+      grid: 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z', alert: 'M12 3l9 16H3L12 3zM12 10v4M12 17v.5',
+      wrench: 'M14 6a4 4 0 0 0 5 5l-8 8-3-3 8-8a4 4 0 0 0-2-2zM5 19l-1 1', bell: 'M6 16V11a6 6 0 1 1 12 0v5l2 2H4l2-2zM10 20a2 2 0 0 0 4 0',
+      globe: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18',
+      cog: 'M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2',
+      plus: 'M12 5v14M5 12h14', moon: 'M20 14A8 8 0 1 1 10 4a6 6 0 0 0 10 10z', activity: 'M3 12h4l3 8 4-16 3 8h4',
+      bolt: 'M13 2L4 14h7l-1 8 9-12h-7l1-8z', server: 'M4 4h16v6H4zM4 14h16v6H4zM8 7h.01M8 17h.01',
+      list: 'M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01',
+    };
+    const svg = (n, s = 18) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="${ICONS[n]}"/></svg>`;
+    document.getElementById('nav').innerHTML = [['grid', 'Dashboard', 1], ['alert', 'Incidents'], ['wrench', 'Maintenance'], ['bell', 'Alerting'], ['globe', 'Status pages'], ['cog', 'Settings']]
+      .map(([i, l, a]) => `<a class="nav-link ${a ? 'active' : ''}" title="${l}">${svg(i)} <span class="label">${l}</span>${l === 'Incidents' ? '<span class="count">1</span>' : ''}</a>`).join('');
+    document.querySelectorAll('[data-ico]').forEach((el) => el.insertAdjacentHTML('afterbegin', svg(el.dataset.ico, el.closest('.view-toggle') ? 16 : 18)));
+    function toggleTheme() { const r = document.documentElement; r.dataset.theme = r.dataset.theme === 'dark' ? 'light' : 'dark'; }
     if (location.hash === '#dark') document.documentElement.dataset.theme = 'dark';
+    function setView(v) {
+      document.getElementById('grid').style.display = v === 'grid' ? '' : 'none';
+      document.getElementById('list').style.display = v === 'list' ? '' : 'none';
+      vg.classList.toggle('active', v === 'grid'); vl.classList.toggle('active', v === 'list');
+    }
+
+    const sparkPath = (vals) => {
+      const max = Math.max(...vals), min = Math.min(...vals);
+      return vals.map((x, i) => `${i ? 'L' : 'M'}${(i / (vals.length - 1) * 100).toFixed(1)},${(28 - (x - min) / (max - min || 1) * 26).toFixed(1)}`).join(' ');
+    };
+    spark1.setAttribute('d', sparkPath(Array.from({ length: 24 }, (_, i) => 99 + rand() - (i === 17 ? 3 : 0))));
+    spark2.setAttribute('d', sparkPath(Array.from({ length: 24 }, (_, i) => 160 + Math.sin(i / 3) * 30 + rand() * 25)));
+
+    const pts = Array.from({ length: 24 }, (_, i) => 160 + Math.sin(i / 3.5) * 40 + rand() * 30 + (i === 17 ? 120 : 0));
+    const max = Math.max(...pts) * 1.15;
+    const xy = pts.map((v, i) => ({ x: i / 23 * 600, y: 180 - v / max * 180 }));
+    let d = `M${xy[0].x},${xy[0].y}`;
+    for (let i = 1; i < xy.length; i++) { const mx = (xy[i - 1].x + xy[i].x) / 2; d += ` C${mx},${xy[i - 1].y} ${mx},${xy[i].y} ${xy[i].x},${xy[i].y}`; }
+    area.insertAdjacentHTML('beforeend', `<path d="${d} L600,180 L0,180 Z" fill="url(#ag)"/><path class="line" d="${d}"/>`);
+
+    const slices = [['Up', 6, 'var(--up)'], ['Degraded', 1, 'var(--degraded)'], ['Down', 1, 'var(--down)'], ['Maintenance', 1, 'var(--maintenance)'], ['Paused', 0, 'var(--paused)'], ['Pending', 0, 'var(--pending)']];
+    const C = 2 * Math.PI * 42; let off = 0;
+    slices.filter((s) => s[1]).forEach(([l, v, c]) => {
+      const len = v / 9 * C;
+      donut.insertAdjacentHTML('beforeend', `<circle cx="50" cy="50" r="42" fill="none" stroke="${c}" stroke-width="11" stroke-dasharray="${len - 1.5} ${C - len + 1.5}" stroke-dashoffset="${-off}" transform="rotate(-90 50 50)"/>`);
+      off += len;
+    });
+    legend.innerHTML = slices.map(([l, v, c]) => `<li><i style="background:${c}"></i>${l}<b>${v}</b></li>`).join('');
 
     const monitors = [
-      ['Payments API', 'down', 'json', 'https://pay.example.com/health', '96.42%', '--', ['prod', 'api'], 0.3],
-      ['Customer Login', 'degraded', 'http', 'https://login.example.com', '99.10%', '842', ['prod'], 0.05],
-      ['MQTT Broker', 'maintenance', 'tcp', 'mqtt.example.com:8883', '99.80%', '31', ['eu-west-1'], 0.02],
-      ['Customer Portal', 'up', 'keyword', 'https://portal.example.com', '100%', '142', ['prod'], 0],
-      ['Nightly Backup Job', 'up', 'push', 'Push heartbeat', '100%', '--', ['cron'], 0],
-      ['Metrics Dashboard', 'up', 'http', 'https://metrics.example.com', '99.98%', '96', ['prod'], 0.01],
-      ['api.example.com SSL', 'up', 'ssl', 'api.example.com', '100%', '58', ['api'], 0],
-      ['Core Router', 'up', 'ping', '10.0.0.1', '100%', '2', ['eu-west-1'], 0],
-      ['Legacy Reports', 'paused', 'http', 'https://old.example.com', '--', '--', [], 0],
+      ['Payments API', 'down', 'json', 'https://pay.example.com/health', '96.42%', '--', 0.3],
+      ['Customer Login', 'degraded', 'http', 'https://login.example.com', '99.10%', '842', 0.05],
+      ['MQTT Broker', 'maintenance', 'tcp', 'mqtt.example.com:8883', '99.80%', '31', 0.02],
+      ['Customer Portal', 'up', 'keyword', 'https://portal.example.com', '100%', '142', 0],
+      ['Nightly Backup Job', 'up', 'push', 'Push heartbeat', '100%', '--', 0],
+      ['Metrics Dashboard', 'up', 'http', 'https://metrics.example.com', '99.98%', '96', 0.01],
+      ['api.example.com SSL', 'up', 'ssl', 'api.example.com', '100%', '58', 0],
+      ['Core Router', 'up', 'ping', '10.0.0.1', '100%', '2', 0],
+      ['Legacy Reports', 'paused', 'http', 'https://old.example.com', '--', '--', 0],
     ];
-
-    const beats = (fail, last) => Array.from({ length: 30 }, (_, i) => {
-      if (last === 'paused') return 'paused';
-      if (i >= 27 && last !== 'up') return last;
-      const r = rand();
-      return r < fail ? 'down' : r < fail * 1.5 ? 'degraded' : 'up';
-    });
-    const spark = () => {
-      const v = Array.from({ length: 30 }, (_, i) => 40 + Math.sin(i / 3) * 10 + rand() * 18);
-      const max = Math.max(...v), min = Math.min(...v);
-      return v.map((x, i) => `${i ? 'L' : 'M'}${(i / 29 * 100).toFixed(1)},${(28 - (x - min) / (max - min) * 26).toFixed(1)}`).join(' ');
-    };
-
-    document.getElementById('grid').innerHTML = monitors.map(([name, status, type, target, uptime, ms, tags, fail]) => `
-      <a class="mon-card ${status}">
-        <div class="row" style="flex-wrap:nowrap">
-          <span class="dot ${status}"></span>
-          <div style="min-width:0;flex:1"><div class="title">${name}</div><div class="target">${target}</div></div>
-          <span class="type-badge">${type}</span>
-        </div>
-        <div class="metrics">
-          <div><b>${uptime}</b><span>uptime 24h</span></div>
-          <div><b>${ms}</b><span>ms</span></div>
-          <div style="flex:1"><svg viewBox="0 0 100 30" preserveAspectRatio="none" class="spark"><path d="${status === 'paused' ? '' : spark()}"/></svg></div>
-        </div>
-        <div class="hb-bar sm">${beats(fail, status).map((s) => `<span class="beat ${s}"></span>`).join('')}</div>
-        <div>${tags.map((t) => `<span class="tag">#${t}</span>`).join('')}</div>
-      </a>`).join('');
+    const beats = (fail, last) => Array.from({ length: 30 }, (_, i) => last === 'paused' ? 'paused' : (i >= 27 && last !== 'up') ? last : (rand() < fail ? 'down' : 'up'));
+    const bar = (b) => `<div class="hb-bar sm">${b.map((s) => `<span class="beat ${s}"></span>`).join('')}</div>`;
+    grid.innerHTML = monitors.map(([n, s, t, tg, u, ms, f]) => `
+      <a class="mon-card ${s}"><div class="row" style="flex-wrap:nowrap"><span class="dot ${s}"></span>
+        <div style="min-width:0;flex:1"><div class="title">${n}</div><div class="target">${tg}</div></div><span class="type-badge">${t}</span></div>
+        <div class="metrics"><div><b>${u}</b><span>uptime 24h</span></div><div><b>${ms}</b><span>ms</span></div>
+        <div style="flex:1"><svg viewBox="0 0 100 30" preserveAspectRatio="none" class="spark"><path d="${s === 'paused' ? '' : sparkPath(Array.from({ length: 30 }, (_, i) => 40 + Math.sin(i / 3) * 10 + rand() * 18))}"/></svg></div></div>
+        ${bar(beats(f, s))}</a>`).join('');
+    rows.innerHTML = monitors.map(([n, s, t, tg, u, ms, f]) => `
+      <tr><td><div class="row" style="flex-wrap:nowrap;gap:10px"><span class="dot ${s}"></span><div style="min-width:0"><div class="title">${n}</div><div class="meta ellipsis">${tg}</div></div></div></td>
+      <td class="hide-sm"><span class="type-badge">${t}</span></td><td><b>${u}</b></td><td class="hide-sm">${ms === '--' ? '--' : ms + ' ms'}</td>
+      <td class="hide-md" style="width:34%">${bar(beats(f, s))}</td></tr>`).join('');
+    if (location.search.includes('list')) setView('list');
   </script>
 </body>
 </html>
