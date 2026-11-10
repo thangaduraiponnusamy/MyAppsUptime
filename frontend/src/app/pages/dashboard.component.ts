@@ -77,9 +77,10 @@ type View = 'grid' | 'list';
       </div>
 
       <div class="dash-row">
-        <section class="card">
+        <section class="card panel">
           <div class="card-head">
-            <div><h2>Response time</h2><div class="sub">Fleet average &middot; last {{ rangeLabel() }}</div></div>
+            <span class="head-ico tone-indigo"><app-icon name="activity" [size]="16" /></span>
+            <div class="grow"><h2>Response time</h2><div class="sub">Fleet average &middot; last {{ rangeLabel() }}</div></div>
             @if (latencyStats(); as ls) {
               <div class="mini-stats">
                 <span><small>Min</small>{{ ls.min }} ms</span><span><small>Avg</small>{{ ls.avg }} ms</span><span><small>Max</small>{{ ls.max }} ms</span>
@@ -89,23 +90,34 @@ type View = 'grid' | 'list';
           @if (latencyStats()) {
             <app-area-chart [values]="latencySeries()" [axis]="axis()" />
           } @else {
-            <div class="chart-empty"><app-icon name="activity" [size]="22" /><div><b>Collecting data</b>
-              <div class="muted">The chart fills in after a few checks.</div></div></div>
+            <div class="empty-state tint-indigo">
+              <span class="empty-ico"><app-icon name="activity" [size]="20" /></span>
+              <div><b>Collecting data</b><div class="muted">The chart fills in after a few hours of checks.</div></div>
+            </div>
           }
         </section>
-        <section class="card">
-          <div class="card-head"><div><h2>Status</h2><div class="sub">Current state of all monitors</div></div></div>
-          <app-donut [slices]="slices()" caption="monitors" />
+        <section class="card panel">
+          <div class="card-head">
+            <span class="head-ico tone-ocean"><app-icon name="server" [size]="16" /></span>
+            <div class="grow"><h2>Status</h2><div class="sub">{{ s.total }} monitors &middot; current state</div></div>
+            @if (s.down + s.degraded === 0) { <span class="tag-soft up">All operational</span> }
+            @else { <span class="tag-soft down">{{ s.down + s.degraded }} need attention</span> }
+          </div>
+          <app-donut [slices]="slices()" [centerValue]="s.total ? ((s.up / s.total) * 100 | number: '1.0-0') + '%' : '--'" caption="operational" />
         </section>
       </div>
     }
 
     <div class="dash-row even">
-      <section class="card">
-        <div class="card-head"><div><h2>Needs attention</h2><div class="sub">Down, degraded or SSL expiring soon</div></div></div>
+      <section class="card panel">
+        <div class="card-head">
+          <span class="head-ico tone-amber"><app-icon name="bolt" [size]="16" /></span>
+          <div class="grow"><h2>Needs attention</h2><div class="sub">Down, degraded or SSL expiring soon</div></div>
+          @if (attention().length) { <span class="count-badge amber">{{ attention().length }}</span> }
+        </div>
         @for (m of attention(); track m.id) {
           <a class="list-item" [routerLink]="['/monitors', m.id]">
-            <span [class]="'dot ' + m.status"></span>
+            <span class="avatar sm" [style.--h]="hue(m.name)">{{ m.name.charAt(0) }}</span>
             <div class="grow">
               <div class="title">{{ m.name }}</div>
               <div class="meta">{{ m.last_message || m.target }}</div>
@@ -113,12 +125,16 @@ type View = 'grid' | 'list';
             <span [class]="'pill ' + m.status">{{ m.status }}</span>
           </a>
         } @empty {
-          <div class="empty-state"><span class="ico up"><app-icon name="check" /></span> Everything looks healthy.</div>
+          <div class="empty-state tint-up">
+            <span class="empty-ico"><app-icon name="check" [size]="20" /></span>
+            <div><b>All systems healthy</b><div class="muted">Nothing needs your attention right now.</div></div>
+          </div>
         }
       </section>
-      <section class="card">
+      <section class="card panel">
         <div class="card-head">
-          <div><h2>Recent incidents</h2><div class="sub">Latest outages across all monitors</div></div>
+          <span class="head-ico tone-rose"><app-icon name="alert" [size]="16" /></span>
+          <div class="grow"><h2>Recent incidents</h2><div class="sub">Latest outages across all monitors</div></div>
           <a routerLink="/incidents" class="kpi-link">View all <app-icon name="arrow" [size]="14" /></a>
         </div>
         @for (i of data()?.incidents ?? []; track i.id) {
@@ -133,14 +149,18 @@ type View = 'grid' | 'list';
             @else { <span class="pill down">open</span> }
           </a>
         } @empty {
-          <div class="empty-state"><span class="ico up"><app-icon name="check" /></span> No incidents yet.</div>
+          <div class="empty-state tint-up">
+            <span class="empty-ico"><app-icon name="check" [size]="20" /></span>
+            <div><b>No incidents yet</b><div class="muted">Outages will be listed here with their duration.</div></div>
+          </div>
         }
       </section>
     </div>
 
-    <section class="card">
+    <section class="card panel">
       <div class="toolbar">
-        <h2>Monitors <span class="muted">{{ filtered().length }}</span></h2>
+        <span class="head-ico tone-emerald"><app-icon name="grid" [size]="16" /></span>
+        <h2>Monitors <span class="count-badge">{{ filtered().length }}</span></h2>
         <input class="search" placeholder="Search name or target..." [value]="query()"
                (input)="query.set($any($event.target).value)" />
         <span class="spacer"></span>
@@ -168,20 +188,26 @@ type View = 'grid' | 'list';
         <div class="mon-grid">
           @for (m of filtered(); track m.id) {
             <a [class]="'mon-card ' + m.status" [routerLink]="['/monitors', m.id]">
-              <div class="row" style="flex-wrap: nowrap">
-                <span [class]="'dot ' + m.status"></span>
-                <div style="min-width: 0; flex: 1">
+              <div class="mc-top">
+                <span class="avatar" [style.--h]="hue(m.name)">{{ m.name.charAt(0) }}</span>
+                <div class="grow">
                   <div class="title">{{ m.name }}</div>
                   <div class="target">{{ m.type === 'push' ? 'Push heartbeat' : m.target }}</div>
                 </div>
-                <span class="type-badge">{{ m.type }}</span>
+                <span [class]="'pill ' + m.status">{{ m.status }}</span>
               </div>
-              <div class="metrics">
-                <div><b>{{ m.uptime_24h === null ? '--' : (m.uptime_24h | number: '1.0-2') + '%' }}</b><span>uptime 24h</span></div>
-                <div><b>{{ m.last_latency_ms === null ? '--' : (m.last_latency_ms | number: '1.0-0') }}</b><span>ms</span></div>
-                <div style="flex: 1"><app-sparkline [values]="m.recent_latency" /></div>
+              <div class="mc-stats">
+                <div><span>Uptime 24h</span><b>{{ m.uptime_24h === null ? '--' : (m.uptime_24h | number: '1.0-2') + '%' }}</b></div>
+                <div><span>Response</span><b>{{ m.last_latency_ms === null ? '--' : (m.last_latency_ms | number: '1.0-0') }}<small> ms</small></b></div>
+                <div class="mc-spark"><app-sparkline [values]="m.recent_latency" /></div>
               </div>
               <app-heartbeat-bar [statuses]="m.recent" [max]="30" size="sm" />
+              <div class="mc-foot">
+                <span class="type-badge">{{ m.type }}</span>
+                @for (t of m.tags.slice(0, 2); track t) { <span class="tag">#{{ t }}</span> }
+                <span class="spacer"></span>
+                <span>every {{ m.interval_sec }}s</span>
+              </div>
             </a>
           } @empty {
             <div class="empty-state">No monitors match. <a routerLink="/monitors/new" class="kpi-link">Create one</a></div>
@@ -196,7 +222,7 @@ type View = 'grid' | 'list';
                 <tr [routerLink]="['/monitors', m.id]">
                   <td>
                     <div class="row" style="flex-wrap: nowrap; gap: 10px">
-                      <span [class]="'dot ' + m.status"></span>
+                      <span class="avatar sm" [style.--h]="hue(m.name)">{{ m.name.charAt(0) }}</span>
                       <div style="min-width: 0"><div class="title">{{ m.name }}</div>
                         <div class="meta ellipsis">{{ m.type === 'push' ? 'Push heartbeat' : m.target }}</div></div>
                     </div>
@@ -318,6 +344,13 @@ export class DashboardComponent {
   setView(view: View): void {
     this.view.set(view);
     localStorage.setItem('dashView', view);
+  }
+
+  // Stable colour per monitor name for its avatar
+  hue(name: string): number {
+    let h = 0;
+    for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) % 360;
+    return h;
   }
 
   private sslSoon(m: Monitor): boolean {
