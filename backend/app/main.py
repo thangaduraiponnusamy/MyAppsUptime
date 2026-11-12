@@ -10,14 +10,36 @@ from fastapi.responses import FileResponse, RedirectResponse
 from . import admin_api, api, dnscache, probes, tenancy, tenants_api
 from .auth import ensure_default_admin
 from .config import APP_VERSION, get_setting
-from .database import upgrade_schema
+from .database import DB_PASSWORD, upgrade_schema
 from .scheduler import scheduler
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 
+def production_problems() -> list[str]:
+    """Security settings that APP_ENV=production requires."""
+    secret = os.getenv("SECRET_KEY", "")
+    token = os.getenv("API_TOKEN", "")
+    problems = []
+    if len(DB_PASSWORD) < 16:
+        problems.append("DB_PASSWORD (or DB_PASSWORD_FILE) must be set, at least 16 characters")
+    if len(secret) < 32:
+        problems.append("SECRET_KEY must be set, at least 32 characters")
+    elif secret == DB_PASSWORD:
+        problems.append("SECRET_KEY and DB_PASSWORD must be different")
+    if not os.getenv("APP_URL", "").startswith("https://"):
+        problems.append("APP_URL must be set to the https:// address of the app")
+    if token and len(token) < 32:
+        problems.append("API_TOKEN must be at least 32 characters (or leave it empty)")
+    return problems
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    if os.getenv("APP_ENV", "").lower() in ("prod", "production"):
+        problems = production_problems()
+        if problems:
+            raise RuntimeError("APP_ENV=production, but:\n  - " + "\n  - ".join(problems))
     upgrade_schema()
     tenancy.load()
     for slug in tenancy.slugs(active_only=False):

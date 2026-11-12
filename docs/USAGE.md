@@ -185,6 +185,43 @@ What is stored and how:
 | Alert webhook URLs | Encrypted (Fernet / AES) |
 | Monitors, history, settings | Plain SQLite, or fully encrypted with `DB_PASSWORD` |
 
+### Production setup
+
+Set `APP_ENV=production`. The app then **refuses to start** unless all of these are set:
+
+| Variable | Rule |
+|---|---|
+| `DB_PASSWORD` (or `DB_PASSWORD_FILE`) | At least 16 characters. Encrypts the database |
+| `SECRET_KEY` | At least 32 characters, different from `DB_PASSWORD` |
+| `APP_URL` | Starts with `https://` |
+| `API_TOKEN` | Empty, or at least 32 characters |
+
+```bash
+umask 077
+cat > myapps.env <<EOF
+APP_ENV=production
+APP_URL=https://uptime.example.com
+DB_PASSWORD=$(openssl rand -base64 32)
+SECRET_KEY=$(openssl rand -base64 48)
+TZ=Asia/Kolkata
+EOF
+
+docker run -d --name myappsuptime --restart unless-stopped \
+  -p 127.0.0.1:8000:8000 \
+  --env-file myapps.env \
+  -v myappsuptime-data:/data \
+  --read-only --tmpfs /tmp \
+  --cap-drop ALL --security-opt no-new-privileges \
+  ghcr.io/thangaduraiponnusamy/myappsuptime:latest
+
+docker logs myappsuptime   # a missing setting is listed here
+```
+
+- `-p 127.0.0.1:8000:8000`: only the HTTPS reverse proxy on the same server can reach the app.
+- Keep a copy of `myapps.env` in a password manager. Without `DB_PASSWORD` the data cannot be read.
+- Needs an amd64 server (`DB_PASSWORD` is not available on arm64).
+- If Ping monitors fail, add `--cap-add NET_RAW`.
+
 ### Database password (encrypts the whole file)
 
 Set `DB_PASSWORD` and the whole database is encrypted (SQLCipher, AES-256). Without it the database is plain.

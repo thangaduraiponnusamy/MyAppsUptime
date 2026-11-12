@@ -159,6 +159,7 @@ Both images are built for amd64 and arm64, with the same tags. `DB_PASSWORD` wor
 
 | Variable | Default | Meaning |
 |---|---|---|
+| `APP_ENV` | empty | `production` = app does not start unless `DB_PASSWORD`, `SECRET_KEY` and an `https://` `APP_URL` are set (see [docs/USAGE.md](docs/USAGE.md#production-setup)) |
 | `API_TOKEN` | empty | Optional token for scripts: `Authorization: Bearer <token>` (acts as admin) |
 | `DB_PASSWORD` | empty | Encrypts the whole database file (SQLCipher). Empty = plain database |
 | `DB_PASSWORD_FILE` | empty | Read `DB_PASSWORD` from this file (Docker/Kubernetes secrets) |
