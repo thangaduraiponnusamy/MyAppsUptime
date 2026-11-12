@@ -31,12 +31,15 @@ def _count(db: Session, model, *where) -> int:
 
 
 def _out(t: Tenant) -> TenantOut:
+    path = _db_file(t.slug)
+    if not tenancy.exists(t.slug):
+        return TenantOut(slug=t.slug, name=t.name, active=t.active, is_default=False, created_at=t.created_at,
+                         admins=[], users=0, teams=0, monitors=0, down=0, db_file="missing", db_size_kb=0)
     with tenancy.session_for(t.slug) as db:
         admin_role = "superadmin" if t.slug == tenancy.DEFAULT else "admin"
         admins = db.scalars(select(User.username).where(User.role == admin_role).order_by(User.username)).all()
         users, teams, monitors = _count(db, User), _count(db, Project), _count(db, Monitor)
         down = _count(db, Monitor, Monitor.status == "down")
-    path = _db_file(t.slug)
     return TenantOut(slug=t.slug, name=t.name, active=t.active, is_default=t.slug == tenancy.DEFAULT,
                      created_at=t.created_at, admins=list(admins), users=users, teams=teams, monitors=monitors,
                      down=down, db_file=path.name if path else "database server",
@@ -64,14 +67,18 @@ def create_tenant(body: TenantCreate):
         if db.scalar(select(Tenant).where(Tenant.slug == body.slug)) or tenancy.db_path(body.slug).exists():
             raise HTTPException(status.HTTP_409_CONFLICT, "Tenant ID already exists")
         _unique_username(db, body.admin_username, None)
-    with tenancy.session_for(body.slug, create=True) as tdb:
-        tdb.add(User(username=body.admin_username, name="Tenant admin", email=body.admin_email, role="admin",
-                     password_hash=hash_password(body.admin_password), must_change_password=True))
-        tdb.commit()
-    with tenancy.session_for(tenancy.DEFAULT) as db:
-        t = Tenant(slug=body.slug, name=body.name.strip())
-        db.add(t)
-        db.commit()
+    try:
+        with tenancy.session_for(body.slug, create=True) as tdb:
+            tdb.add(User(username=body.admin_username, name="Tenant admin", email=body.admin_email, role="admin",
+                         password_hash=hash_password(body.admin_password), must_change_password=True))
+            tdb.commit()
+        with tenancy.session_for(tenancy.DEFAULT) as db:
+            t = Tenant(slug=body.slug, name=body.name.strip())
+            db.add(t)
+            db.commit()
+    except Exception:
+        tenancy.archive(body.slug)  # a half-created file would block the tenant ID
+        raise
     tenancy.load()
     return _out(t)
 

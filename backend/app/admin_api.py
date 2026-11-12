@@ -48,7 +48,7 @@ def login(body: LoginIn, request: Request):
     key = f"{body.username.lower()}|{request.client.host if request.client else ''}"
     check_lock(key)
     # User names are unique across tenants, so the first match is the account
-    for slug in tenancy.slugs():
+    for slug in tenancy.slugs(active_only=False):
         with tenancy.session_for(slug) as db:
             user = db.scalar(select(User).where(func.lower(User.username) == body.username.lower()))
             if user is None:
@@ -56,6 +56,8 @@ def login(body: LoginIn, request: Request):
             if not user.active or not verify_password(body.password, user.password_hash):
                 break
             clear_fails(key)
+            if not tenancy.is_active(slug):
+                raise HTTPException(status.HTTP_403_FORBIDDEN, "Your organization is disabled. Contact the administrator.")
             token = create_session(db, user)
             me = _me(db, Principal(user.id, user.username, user.role, user.must_change_password, slug, slug))
             return LoginOut(**me.model_dump(), token=token)

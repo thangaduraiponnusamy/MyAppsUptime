@@ -42,3 +42,25 @@ def test_tenant_alerts_fall_back_to_admin_settings(client, su):
     with tenancy.session_for("beta") as db:
         general, _ = tenant_config(db, "beta")
     assert general["app_url"] == "https://up.example.com" and general["timezone"] == "Europe/Berlin"
+
+
+def test_missing_tenant_file_is_skipped(client, su, data_dir):
+    body = {"slug": "gone", "name": "Gone", "admin_username": "gone-admin", "admin_password": "Gone12345"}
+    assert client.post("/api/tenants", json=body, headers=su).status_code == 201
+    tenancy.archive("gone")  # file removed by hand, row still there
+    tenancy.load()
+    assert "gone" not in tenancy.slugs(active_only=False)
+    listed = {t["slug"]: t for t in client.get("/api/tenants", headers=su).json()}
+    assert listed["gone"]["db_file"] == "missing"
+    assert client.get("/api/monitors", headers=auth(client.token, "gone")).status_code == 200
+    assert client.delete("/api/tenants/gone", headers=su).status_code == 204
+
+
+def test_disabled_tenant_sign_in_message(client, su):
+    body = {"slug": "paused", "name": "Paused", "admin_username": "paused-admin", "admin_password": "Paused123"}
+    assert client.post("/api/tenants", json=body, headers=su).status_code == 201
+    client.put("/api/tenants/paused", json={"name": "Paused", "active": False}, headers=su)
+    ok = client.post("/api/auth/login", json={"username": "paused-admin", "password": "Paused123"})
+    assert ok.status_code == 403 and "disabled" in ok.json()["detail"]
+    bad = client.post("/api/auth/login", json={"username": "paused-admin", "password": "wrong-pass"})
+    assert bad.status_code == 401

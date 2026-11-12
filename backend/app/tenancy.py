@@ -78,6 +78,14 @@ def load() -> None:
         db.expunge_all()
     _registry.clear()
     _registry.update({t.slug: t for t in rows})
+    for slug in _registry:
+        if not _usable(slug):
+            log.warning("Tenant %s is skipped: database file %s is missing", slug, db_path(slug))
+
+
+def _usable(slug: str) -> bool:
+    # a tenant whose file was removed by hand must not break the other tenants
+    return slug in _registry and (slug == DEFAULT or slug in _makers or db_path(slug).exists())
 
 
 def get(slug: str) -> Tenant | None:
@@ -90,17 +98,16 @@ def name(slug: str) -> str:
 
 
 def exists(slug: str) -> bool:
-    return slug in _registry
+    return _usable(slug)
 
 
 def is_active(slug: str) -> bool:
-    t = _registry.get(slug)
-    return t is not None and t.active
+    return _usable(slug) and _registry[slug].active
 
 
 def slugs(active_only: bool = True) -> list[str]:
     """Default tenant first."""
-    found = [s for s, t in _registry.items() if s != DEFAULT and (t.active or not active_only)]
+    found = [s for s, t in _registry.items() if s != DEFAULT and (t.active or not active_only) and _usable(s)]
     return [DEFAULT, *sorted(found)]
 
 
