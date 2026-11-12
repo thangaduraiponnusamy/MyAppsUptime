@@ -41,7 +41,7 @@ const modernZone = (z: string) => RENAMED[z] ?? z;
           <datalist id="tz-list">
             @for (z of zones; track z) { <option [value]="z"></option> }
           </datalist>
-          <small class="muted">Times in Teams, Telegram, Slack and email alerts.
+          <small class="muted">Times shown in all alerts.
             @if (auth.isAdmin() && form.timezone !== localZone) {
               <a href="" (click)="$event.preventDefault(); form.timezone = localZone">Use {{ localZone }}</a>
             }

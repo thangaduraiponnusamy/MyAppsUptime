@@ -91,7 +91,7 @@ class NotificationChannel(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(120))
-    type: Mapped[str] = mapped_column(String(20))  # webhook | slack | teams | telegram | email
+    type: Mapped[str] = mapped_column(String(20))  # webhook | slack | teams | telegram | discord | googlechat | ntfy | email
     url: Mapped[str] = mapped_column(EncryptedText, default="")  # webhook URLs contain secrets
     recipients: Mapped[list] = mapped_column(JSON, default=list)  # email addresses for email channels
     tags: Mapped[list] = mapped_column(JSON, default=list)  # empty = all monitors

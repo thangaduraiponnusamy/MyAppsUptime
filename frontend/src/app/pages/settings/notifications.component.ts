@@ -5,7 +5,20 @@ import { ConfirmService } from '../../core/confirm.service';
 import { Channel, ChannelType, Project, SmtpSettings } from '../../core/models';
 
 const TYPE_LABELS: Record<ChannelType, string> = {
-  teams: 'Microsoft Teams', email: 'Email', telegram: 'Telegram', slack: 'Slack', webhook: 'Webhook',
+  teams: 'Microsoft Teams', email: 'Email', telegram: 'Telegram', discord: 'Discord', googlechat: 'Google Chat',
+  ntfy: 'ntfy (phone push)', slack: 'Slack / Mattermost / Rocket.Chat', webhook: 'Webhook',
+};
+
+const URL_HELP: Partial<Record<ChannelType, [string, string, string]>> = {
+  teams: ['Teams workflow / incoming webhook URL', 'https://...',
+    'In Teams: channel > Workflows > "Post to a channel when a webhook request is received". Alerts arrive as cards.'],
+  discord: ['Discord webhook URL', 'https://discord.com/api/webhooks/...',
+    'In Discord: Server settings > Integrations > Webhooks > New webhook > Copy webhook URL.'],
+  googlechat: ['Google Chat webhook URL', 'https://chat.googleapis.com/v1/spaces/...',
+    'In Google Chat: space name > Apps & integrations > Webhooks > Add webhook, copy the URL.'],
+  ntfy: ['ntfy server and topic', 'https://ntfy.sh/my-team-alerts',
+    'Install the ntfy app and subscribe to the same topic. Use a long, hard-to-guess topic name: anyone who knows it can read the alerts.'],
+  slack: ['Incoming webhook URL', 'https://hooks.slack.com/services/...', 'Also works with Mattermost and Rocket.Chat incoming webhooks.'],
 };
 
 const TG_PREFIX = 'https://api.telegram.org/bot';
@@ -52,10 +65,10 @@ const emptyChannel = (): Channel => ({
               2. Add the bot to your group or channel (as admin for channels) and send it a message.
               3. Open https://api.telegram.org/bot&lt;token&gt;/getUpdates and copy "chat":{{ '{' }}"id": ...{{ '}' }}.</small>
           } @else {
-            <label class="full">{{ c.type === 'teams' ? 'Teams workflow / incoming webhook URL' : 'Webhook URL' }}
-              <input name="url" [(ngModel)]="c.url" placeholder="https://..." />
-              @if (c.type === 'teams') {
-                <small class="muted">In Teams: channel &gt; Workflows &gt; "Post to a channel when a webhook request is received". Alerts arrive as cards.</small>
+            <label class="full">{{ urlHelp[c.type]?.[0] ?? 'Webhook URL' }}
+              <input name="url" [(ngModel)]="c.url" [placeholder]="urlHelp[c.type]?.[1] ?? 'https://...'" />
+              @if (urlHelp[c.type]; as h) {
+                <small class="muted">{{ h[2] }}</small>
               }
             </label>
           }
@@ -136,8 +149,9 @@ const emptyChannel = (): Channel => ({
 export class NotificationSettingsComponent {
   private api = inject(ApiService);
   private confirm = inject(ConfirmService);
-  readonly types: ChannelType[] = ['teams', 'email', 'telegram', 'slack', 'webhook'];
+  readonly types: ChannelType[] = ['teams', 'email', 'telegram', 'discord', 'googlechat', 'ntfy', 'slack', 'webhook'];
   readonly typeLabels = TYPE_LABELS;
+  readonly urlHelp = URL_HELP;
   channels = signal<Channel[]>([]);
   projects = signal<Project[]>([]);
   editing = signal<Channel | null>(null);
@@ -178,6 +192,7 @@ export class NotificationSettingsComponent {
   sendsTo(c: Channel): string {
     if (c.type === 'email') return c.recipients.join(', ');
     if (c.type === 'telegram') return `Chat ${c.url.split('?chat_id=')[1] ?? ''}`;
+    if (c.type === 'ntfy') return c.url.replace(/^https?:\/\//, '');
     return this.host(c.url);
   }
 

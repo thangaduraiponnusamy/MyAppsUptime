@@ -150,10 +150,44 @@ async def _send_telegram(client: httpx.AsyncClient, channel: NotificationChannel
         raise RuntimeError(f"Telegram HTTP {resp.status_code} {detail}".strip())
 
 
+def discord_payload(alert: Alert) -> dict:
+    color = {"up": 0x22C55E, "down": 0xEF4444, "degraded": 0xF59E0B, "maintenance": 0x3B82F6}.get(alert.status, 0x64748B)
+    embed = {
+        "title": alert.title[:256], "color": color, "timestamp": alert.at.isoformat(),
+        "fields": [{"name": k, "value": v[:1024], "inline": k in ("Status", "Team", "Time")} for k, v in alert.facts()],
+        "footer": {"text": f"MyAppsUptime{' on ' + alert.server if alert.server else ''}"},
+    }
+    if alert.buttons():
+        embed["description"] = "  |  ".join(f"[{t}]({u})" for t, u in alert.buttons())
+    return {"username": "MyAppsUptime", "embeds": [embed], "allowed_mentions": {"parse": []}}
+
+
+def ntfy_payload(alert: Alert, topic: str) -> dict:
+    tag = {"up": "green_circle", "down": "red_circle", "degraded": "orange_circle",
+           "maintenance": "large_blue_circle"}.get(alert.status, "white_circle")
+    payload = {"topic": topic, "title": alert.title, "tags": [tag], "priority": 5 if alert.status == "down" else 3,
+               "message": "\n".join(f"{k}: {v}" for k, v in alert.facts() if k != "Monitor")}
+    if alert.buttons():
+        payload["click"] = alert.buttons()[0][1]
+        payload["actions"] = [{"action": "view", "label": t, "url": u} for t, u in alert.buttons()]
+    return payload
+
+
+def endpoint(channel: NotificationChannel) -> str:
+    if channel.type == "ntfy":
+        # JSON publishing goes to the server root; the topic is in the body
+        return channel.url.rstrip("/").rsplit("/", 1)[0] + "/"
+    return channel.url
+
+
 def build_payload(channel: NotificationChannel, alert: Alert) -> dict:
     text = f"[{alert.status.upper()}] {alert.title}: {alert.message}"
     if channel.type == "teams":
         return teams_payload(alert)
+    if channel.type == "discord":
+        return discord_payload(alert)
+    if channel.type == "ntfy":
+        return ntfy_payload(alert, channel.url.rstrip("/").rsplit("/", 1)[1])
     if channel.type == "telegram":
         return telegram_payload(alert, split_telegram(channel.url)[1])
     if channel.type == "webhook":
@@ -161,7 +195,7 @@ def build_payload(channel: NotificationChannel, alert: Alert) -> dict:
                 "project": alert.project, "target": alert.target, "link": alert.link, "server": alert.app_url or None,
                 "time": alert.at.isoformat(), "time_local": alert.local_time, "text": text}
     lines = [f"*{alert.title}*", alert.message, alert.local_time] + [f"<{u}|{t}>" for t, u in alert.buttons()]
-    return {"text": "\n".join(x for x in lines if x)}  # Slack
+    return {"text": "\n".join(x for x in lines if x)}  # Slack, Google Chat
 
 
 def _one_line(value: str) -> str:
@@ -277,11 +311,14 @@ async def send(channels: list[NotificationChannel], alert: Alert, emails: list[s
                     if channel.type == "telegram":
                         await _send_telegram(client, channel, alert)
                         continue
-                    resp = await client.post(channel.url, json=build_payload(channel, alert))
+                    resp = await client.post(endpoint(channel), json=build_payload(channel, alert))
                     resp.raise_for_status()
                 except (httpx.HTTPError, RuntimeError) as exc:
-                    if channel.type == "telegram" and isinstance(exc, httpx.HTTPError):
-                        exc = type(exc).__name__  # the message would include the bot token
+                    # httpx error texts contain the URL, which holds the channel's secret token
+                    if isinstance(exc, httpx.HTTPStatusError):
+                        exc = f"HTTP {exc.response.status_code}"
+                    elif isinstance(exc, httpx.HTTPError):
+                        exc = type(exc).__name__
                     log.warning("Notification '%s' failed: %s", channel.name, exc)
                     errors.append(f"{channel.name}: {exc}")
     error = await send_email(smtp, alert, recipients)

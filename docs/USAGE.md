@@ -117,7 +117,18 @@ Report a failure with `status=down`. If no call arrives within the interval, the
 
 ## 6. Alerting
 
-Go to **Alerting** and add a channel: Microsoft Teams, email, Telegram, Slack or generic webhook.
+Go to **Alerting** and add a channel:
+
+| Channel | What you paste |
+|---|---|
+| Microsoft Teams | Workflow webhook URL |
+| Email | Email addresses (needs the email server in Settings) |
+| Telegram | Bot token + chat ID (see below) |
+| Discord | Server settings > Integrations > Webhooks > Copy webhook URL |
+| Google Chat | Space > Apps & integrations > Webhooks > URL |
+| ntfy (phone push) | `https://ntfy.sh/<topic>` (or your own ntfy server); subscribe to the topic in the ntfy app |
+| Slack / Mattermost / Rocket.Chat | Incoming webhook URL |
+| Webhook | Any URL; gets JSON (fields below) |
 
 - No tags = alerts for all monitors.
 - With tags (for example `team-payments`) = only monitors with that tag.
@@ -131,7 +142,7 @@ Telegram setup:
 | 2 | Add the bot to your group (or as admin to your channel) and send a message there |
 | 3 | Open `https://api.telegram.org/bot<token>/getUpdates`, copy `"chat":{"id": ...}` as **Chat ID** |
 
-Tip: Mattermost and Rocket.Chat accept the **Slack** type.
+ntfy: anyone who knows the topic name can read it, so use a long random name.
 
 Set these in **Settings > General** so alerts look right:
 

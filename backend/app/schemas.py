@@ -7,8 +7,16 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 MonitorType = Literal["http", "keyword", "json", "tcp", "ping", "dns", "ssl", "push"]
-ChannelType = Literal["webhook", "slack", "teams", "telegram", "email"]
+ChannelType = Literal["webhook", "slack", "teams", "telegram", "discord", "googlechat", "ntfy", "email"]
 TELEGRAM_URL = re.compile(r"^https://api\.telegram\.org/bot\d+:[A-Za-z0-9_-]{30,}/sendMessage\?chat_id=(-?\d+|@[A-Za-z0-9_]{5,32})$")
+CHANNEL_URLS = {
+    "discord": (re.compile(r"^https://(discord|discordapp)\.com/api/webhooks/\d+/[A-Za-z0-9_-]+(\?[^\s]*)?$"),
+                "Discord webhook URL is not valid"),
+    "googlechat": (re.compile(r"^https://chat\.googleapis\.com/v1/spaces/[A-Za-z0-9_-]+/messages\?\S+$"),
+                   "Google Chat webhook URL is not valid"),
+    "ntfy": (re.compile(r"^https?://[^\s/?#]+(/[^\s/?#]+)*/[A-Za-z0-9_-]{1,64}/?$"),
+             "ntfy URL must be the server address plus topic, for example https://ntfy.sh/my-alerts"),
+}
 EMAIL_PATTERN = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
 
 # SQLite returns naive datetimes; mark them UTC so clients convert correctly
@@ -152,6 +160,11 @@ class ChannelIn(BaseModel):
         elif self.type == "telegram":
             if not TELEGRAM_URL.match(self.url):
                 raise ValueError("Telegram bot token or chat ID is not valid")
+            self.recipients = []
+        elif self.type in CHANNEL_URLS:
+            pattern, message = CHANNEL_URLS[self.type]
+            if not pattern.match(self.url):
+                raise ValueError(message)
             self.recipients = []
         else:
             _require_http_url(self.url)
