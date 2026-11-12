@@ -116,7 +116,7 @@ Every push to `main` and every `v*` tag builds and publishes an image to GitHub 
 | Tag | When |
 |---|---|
 | `latest` | Last push to `main` |
-| `v16-tenants` etc. | Git tag |
+| `v17` etc. | Each new `v*` git tag |
 | `sha-<commit>` | Every build |
 
 ```bash

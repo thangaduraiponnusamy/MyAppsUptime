@@ -1,5 +1,53 @@
 # MyAppsUptime - Usage Guide
 
+## 0. Install without building
+
+A ready-made image is published to GitHub Container Registry on every push to `main`.
+
+**Docker run**
+
+```bash
+docker pull ghcr.io/thangaduraiponnusamy/myappsuptime:latest
+docker run -d --name myappsuptime -p 8000:8000 \
+  -v myappsuptime-data:/data --restart unless-stopped \
+  ghcr.io/thangaduraiponnusamy/myappsuptime:latest
+```
+
+**Docker compose** (save as `docker-compose.yml`, then `docker compose up -d`)
+
+```yaml
+services:
+  myappsuptime:
+    image: ghcr.io/thangaduraiponnusamy/myappsuptime:latest
+    container_name: myappsuptime
+    ports:
+      - "8000:8000"
+    volumes:
+      - myappsuptime-data:/data
+    restart: unless-stopped
+
+volumes:
+  myappsuptime-data:
+```
+
+Open http://localhost:8000 and sign in with `admin` / `admin`. You must change the password right away.
+
+**Pick a version**
+
+| Tag | Meaning |
+|---|---|
+| `latest` | Newest build from `main` |
+| `v17` etc. | A fixed release (each new `v*` git tag) |
+| `sha-<commit>` | One exact commit |
+
+**Update to a new version** (data in the volume is kept)
+
+```bash
+docker pull ghcr.io/thangaduraiponnusamy/myappsuptime:latest
+docker rm -f myappsuptime
+# run the same "docker run" command again, or: docker compose up -d
+```
+
 ## 1. Add a monitor
 
 Click **+ New monitor** and pick a check type.
