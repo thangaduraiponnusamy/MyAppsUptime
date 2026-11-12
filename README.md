@@ -148,6 +148,14 @@ Every push to `main`, `develop`, `release/*`, `feature/*` and every `v*` tag bui
 docker run -d --name myappsuptime -p 8000:8000 -v myappsuptime-data:/data ghcr.io/thangaduraiponnusamy/myappsuptime:latest
 ```
 
+Production (one command; generate values with `openssl rand -base64 32` and keep them in a password manager):
+
+```bash
+docker run -d --name myappsuptime --restart unless-stopped -p 127.0.0.1:8000:8000 -e APP_ENV=production -e APP_URL=https://uptime.example.com -e DB_PASSWORD='<16+ chars>' -e SECRET_KEY='<32+ chars>' -v myappsuptime-data:/data ghcr.io/thangaduraiponnusamy/myappsuptime:latest
+```
+
+Start the line with a space so bash does not save it in history. Safer: `--env-file` (see [docs/USAGE.md](docs/USAGE.md#production-setup)).
+
 | Image | What |
 |---|---|
 | `ghcr.io/thangaduraiponnusamy/myappsuptime` | Server (UI + API) |
