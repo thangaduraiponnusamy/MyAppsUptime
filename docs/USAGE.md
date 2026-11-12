@@ -54,8 +54,10 @@ Compose (run `stat -c %g /var/run/docker.sock` and use that number):
 
 | Error on the monitor | Fix |
 |---|---|
-| `Docker socket /var/run/docker.sock not found` | Add the `-v` line |
+| `Docker socket /var/run/docker.sock not found` | Add the `-v` line, then `docker rm -f` and run again (a restart is not enough) |
 | `Permission denied` | Add the `--group-add` line (the app runs as user 10001) |
+| Still not found, mount is listed | Remove any `--tmpfs /run` or `--tmpfs /var/run` option |
+| Monitor runs on a private location | Add the same two options to the probe container |
 | Rootless Docker | Mount its socket instead, e.g. `-v /run/user/1000/docker.sock:/var/run/docker.sock:ro` |
 
 The socket gives full control of Docker, even with `:ro`. Add it only if you use Docker monitors.

@@ -167,12 +167,45 @@ docker run -d --name myappsuptime --restart unless-stopped -p 127.0.0.1:8000:800
 
 Start the line with a space so bash does not save it in history. Safer: `--env-file` (see [docs/USAGE.md](docs/USAGE.md#production-setup)).
 
-Docker container monitors need the Docker socket. Add to either command:
+### Docker container monitors
+
+To monitor containers on the same host, the app needs the Docker socket. Mounts cannot be added to a running container, so remove and run it again with two extra options **before** the image name:
 
 ```bash
--v /var/run/docker.sock:/var/run/docker.sock:ro --group-add $(stat -c %g /var/run/docker.sock)
+docker rm -f myappsuptime
+docker run -d --name myappsuptime --restart unless-stopped \
+  -p 127.0.0.1:8000:8000 \
+  -e APP_ENV=production -e APP_URL=https://uptime.example.com \
+  -e DB_PASSWORD='<same as before>' -e SECRET_KEY='<same as before>' \
+  -v myappsuptime-data:/data \
+  -v /var/run/docker.sock:/var/run/docker.sock:ro \
+  --group-add $(stat -c %g /var/run/docker.sock) \
+  ghcr.io/thangaduraiponnusamy/myappsuptime:latest
 ```
 
+- Keep the same `DB_PASSWORD`, `SECRET_KEY` and data volume, or existing data cannot be read. To see the current values: `docker inspect myappsuptime --format '{{range .Config.Env}}{{println .}}{{end}}'`
+- `--group-add` is needed because the app runs as user 10001, and the socket belongs to the `docker` group.
+
+Check it:
+
+```bash
+docker inspect myappsuptime --format '{{range .Mounts}}{{.Source}} -> {{.Destination}}{{"\n"}}{{end}}'
+docker exec myappsuptime ls -l /var/run/docker.sock
+```
+
+The first command must list `/var/run/docker.sock -> /var/run/docker.sock`. Then click **Check now** on the monitor.
+
+| Error on the monitor | Fix |
+|---|---|
+| `Docker socket /var/run/docker.sock not found` | Socket not mounted: run the commands above (a restart is not enough) |
+| `Permission denied` | Add `--group-add $(stat -c %g /var/run/docker.sock)` |
+| Still not found, mount is listed | Remove any `--tmpfs /run` or `--tmpfs /var/run` option |
+| Rootless Docker | Mount its socket: `-v /run/user/1000/docker.sock:/var/run/docker.sock:ro` |
+| Monitor runs on a private location | Add the same two options to the probe container |
+
+The socket gives full control of Docker, even with `:ro`. Add it only if you use Docker monitors. Compose example: [docs/USAGE.md](docs/USAGE.md#0-install-without-building).
+
+### Images
 | Image | What |
 |---|---|
 | `ghcr.io/thangaduraiponnusamy/myappsuptime` | Server (UI + API) |
