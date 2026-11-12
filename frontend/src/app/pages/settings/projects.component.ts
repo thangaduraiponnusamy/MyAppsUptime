@@ -3,7 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { forkJoin, of, switchMap } from 'rxjs';
 import { ApiService, errorText } from '../../core/api.service';
 import { ConfirmService } from '../../core/confirm.service';
-import { Project, User } from '../../core/models';
+import { Channel, Project, User } from '../../core/models';
 import { MonitorStore } from '../../core/monitor-store.service';
 
 @Component({
@@ -37,6 +37,23 @@ import { MonitorStore } from '../../core/monitor-store.service';
           <label class="check full"><input type="checkbox" name="em" [(ngModel)]="p.email_members" /> Email members when a monitor in this team goes down or recovers</label>
 
           <div class="full">
+            <span class="field-label">Alert channels</span>
+            <label class="check"><input type="radio" name="chmode" [checked]="p.channel_ids == null" (change)="p.channel_ids = null" />
+              Default: channels set in Notifications for all teams or this team</label>
+            <label class="check"><input type="radio" name="chmode" [checked]="p.channel_ids != null" (change)="p.channel_ids = []" />
+              Only the channels picked below</label>
+            @if (p.channel_ids != null) {
+              <div class="check-list">
+                @for (c of channels(); track c.id) {
+                  <label class="check"><input type="checkbox" [checked]="p.channel_ids.includes(c.id!)" (change)="toggle(p.channel_ids, c.id!)" />
+                    {{ c.name }} <small class="muted">({{ c.type }})</small> @if (!c.active) { <small class="muted">off</small> }</label>
+                } @empty { <span class="muted small">No channels yet. Add them in Notifications.</span> }
+              </div>
+              <small class="muted">None picked = no channel alerts for this team (member emails above still apply).</small>
+            }
+          </div>
+
+          <div class="full">
             <span class="field-label">Monitors ({{ picked().size }} selected)</span>
             <input class="search" name="q" [(ngModel)]="query" placeholder="Search monitors..." />
             <div class="check-list tall">
@@ -58,7 +75,7 @@ import { MonitorStore } from '../../core/monitor-store.service';
       }
 
       <table>
-        <thead><tr><th>Team</th><th>Monitors</th><th class="hide-sm">Members</th><th class="hide-sm">Email</th><th></th></tr></thead>
+        <thead><tr><th>Team</th><th>Monitors</th><th class="hide-sm">Members</th><th class="hide-sm">Email</th><th class="hide-sm">Alerts</th><th></th></tr></thead>
         <tbody>
           @for (p of projects(); track p.id) {
             <tr>
@@ -66,13 +83,14 @@ import { MonitorStore } from '../../core/monitor-store.service';
               <td>{{ p.monitor_count }} @if (p.down_count) { <span class="pill down">{{ p.down_count }} down</span> }</td>
               <td class="hide-sm">{{ memberNames(p) || '-' }}</td>
               <td class="hide-sm">{{ p.email_members ? 'On' : 'Off' }}</td>
+              <td class="hide-sm">{{ channelNames(p) }}</td>
               <td class="row nowrap">
                 <button class="btn sm" (click)="edit(p)">Edit</button>
                 <button class="btn sm danger" (click)="remove(p)">Delete</button>
               </td>
             </tr>
           } @empty {
-            <tr><td colspan="5" class="muted">No teams yet.</td></tr>
+            <tr><td colspan="6" class="muted">No teams yet.</td></tr>
           }
         </tbody>
       </table>
@@ -85,6 +103,7 @@ export class ProjectSettingsComponent {
   private confirm = inject(ConfirmService);
   projects = signal<Project[]>([]);
   users = signal<User[]>([]);
+  channels = signal<Channel[]>([]);
   editing = signal<Project | null>(null);
   picked = signal(new Set<number>());
   error = signal('');
@@ -95,6 +114,7 @@ export class ProjectSettingsComponent {
   constructor() {
     this.load();
     this.api.users().subscribe((u) => this.users.set(u));
+    this.api.channels().subscribe((c) => this.channels.set(c));
   }
 
   load(): void {
@@ -114,8 +134,16 @@ export class ProjectSettingsComponent {
     return p.member_ids.map((id) => this.userById().get(id)).filter(Boolean).join(', ');
   }
 
+  channelNames(p: Project): string {
+    if (p.channel_ids == null) return 'Default';
+    const names = this.channels().filter((c) => p.channel_ids!.includes(c.id!)).map((c) => c.name);
+    return names.join(', ') || 'None';
+  }
+
   edit(p: Project | null): void {
-    const copy: Project = p ? { ...p, member_ids: [...p.member_ids] } : { name: '', description: null, member_ids: [], email_members: true };
+    const copy: Project = p
+      ? { ...p, member_ids: [...p.member_ids], channel_ids: p.channel_ids ? [...p.channel_ids] : null }
+      : { name: '', description: null, member_ids: [], email_members: true, channel_ids: null };
     this.original = new Set(p ? this.store.monitors().filter((m) => m.project_id === p.id).map((m) => m.id) : []);
     this.picked.set(new Set(this.original));
     this.query = '';

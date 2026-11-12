@@ -269,6 +269,16 @@ def _check_members(db: Session, member_ids: list[int]) -> list[int]:
     return ids
 
 
+def _check_channels(db: Session, channel_ids: list[int] | None) -> list[int] | None:
+    if channel_ids is None:
+        return None
+    ids = sorted(set(channel_ids))
+    found = set(db.scalars(select(NotificationChannel.id).where(NotificationChannel.id.in_(ids))).all())
+    if found != set(ids):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Unknown notification channel")
+    return ids
+
+
 @admin.get("/projects", response_model=list[ProjectOut])
 def list_projects(db: Session = Depends(get_db), user: Principal = Depends(require_user)):
     projects = db.scalars(select(Project).order_by(Project.name)).all()
@@ -282,7 +292,8 @@ def list_projects(db: Session = Depends(get_db), user: Principal = Depends(requi
 def create_project(body: ProjectIn, db: Session = Depends(get_db)):
     if db.scalar(select(Project).where(Project.name == body.name)):
         raise HTTPException(status.HTTP_409_CONFLICT, "Team name already exists")
-    project = Project(**body.model_dump(exclude={"member_ids"}), member_ids=_check_members(db, body.member_ids))
+    project = Project(**body.model_dump(exclude={"member_ids", "channel_ids"}), member_ids=_check_members(db, body.member_ids),
+                      channel_ids=_check_channels(db, body.channel_ids))
     db.add(project)
     db.commit()
     return _project_out(db, project)
@@ -296,6 +307,7 @@ def update_project(project_id: int, body: ProjectIn, db: Session = Depends(get_d
         raise HTTPException(status.HTTP_409_CONFLICT, "Team name already exists")
     project.name, project.description, project.email_members = body.name, body.description, body.email_members
     project.member_ids = _check_members(db, body.member_ids)
+    project.channel_ids = _check_channels(db, body.channel_ids)
     db.commit()
     return _project_out(db, project)
 

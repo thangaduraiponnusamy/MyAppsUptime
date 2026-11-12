@@ -57,11 +57,18 @@ def tenant_config(db, tenant: str) -> tuple[dict, dict]:
     return general, smtp
 
 
+def channel_for(channel: NotificationChannel, m: Monitor, project: Project | None) -> bool:
+    if project and project.channel_ids is not None:
+        # The team picked its channels: the channel's team filter is ignored, tags still apply
+        return channel.id in project.channel_ids and notifier.channel_matches(channel, m, any_project=True)
+    return notifier.channel_matches(channel, m)
+
+
 def build_alert(db, tenant: str, m: Monitor, status: str, message: str, headline: str = ""):
     """Channels, alert, project e-mails and SMTP settings for one monitor alert."""
     active = db.scalars(select(NotificationChannel).where(NotificationChannel.active.is_(True))).all()
-    channels = [c for c in active if notifier.channel_matches(c, m)]
     project = db.get(Project, m.project_id) if m.project_id else None
+    channels = [c for c in active if channel_for(c, m, project)]
     emails: list[str] = []
     if project and project.email_members and project.member_ids:
         emails = [u.email for u in db.scalars(select(User).where(
@@ -152,7 +159,8 @@ def probe_alert(db, tenant: str, probe: Probe, status: str, message: str):
     """One alert for a private location, sent to the channels of its monitors."""
     monitors = db.scalars(select(Monitor).where(Monitor.probe_id == probe.id, Monitor.active.is_(True))).all()
     active = db.scalars(select(NotificationChannel).where(NotificationChannel.active.is_(True))).all()
-    channels = [c for c in active if any(notifier.channel_matches(c, m) for m in monitors)]
+    projects = {p.id: p for p in db.scalars(select(Project)).all()}
+    channels = [c for c in active if any(channel_for(c, m, projects.get(m.project_id)) for m in monitors)]
     general, smtp = tenant_config(db, tenant)
     app_url = notifier.server_url(general)
     alert = notifier.Alert(

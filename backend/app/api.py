@@ -474,6 +474,9 @@ def update_channel(channel_id: int, body: ChannelIn, db: Session = Depends(get_d
 @router.delete("/notifications/{channel_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_channel(channel_id: int, db: Session = Depends(get_db)):
     db.delete(_get(db, NotificationChannel, channel_id))
+    for project in db.scalars(select(Project)).all():
+        if channel_id in (project.channel_ids or []):
+            project.channel_ids = [i for i in project.channel_ids if i != channel_id]
     db.commit()
 
 

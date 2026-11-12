@@ -309,6 +309,7 @@ class ProjectIn(BaseModel):
     description: str | None = Field(default=None, max_length=500)
     member_ids: list[int] = Field(default_factory=list)
     email_members: bool = True
+    channel_ids: list[int] | None = None
 
 
 class ProjectOut(ProjectIn):

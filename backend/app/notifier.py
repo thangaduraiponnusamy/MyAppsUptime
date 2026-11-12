@@ -83,9 +83,9 @@ class Alert:
         return out
 
 
-def channel_matches(channel: NotificationChannel, monitor: Monitor) -> bool:
+def channel_matches(channel: NotificationChannel, monitor: Monitor, any_project: bool = False) -> bool:
     tags_ok = not channel.tags or bool(set(channel.tags) & set(monitor.tags or []))
-    projects_ok = not channel.project_ids or monitor.project_id in channel.project_ids
+    projects_ok = any_project or not channel.project_ids or monitor.project_id in channel.project_ids
     return tags_ok and projects_ok
 
 

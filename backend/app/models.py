@@ -140,6 +140,7 @@ class Project(Base):
     description: Mapped[str | None] = mapped_column(String(500))
     member_ids: Mapped[list] = mapped_column(JSON, default=list)  # user ids: see the project and get its alerts
     email_members: Mapped[bool] = mapped_column(default=True)
+    channel_ids: Mapped[list | None] = mapped_column(JSON, nullable=True)  # None = channels decide
 
 
 class User(Base):

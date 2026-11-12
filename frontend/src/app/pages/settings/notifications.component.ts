@@ -79,7 +79,7 @@ const emptyChannel = (): Channel => ({
                 <label class="check"><input type="checkbox" [checked]="c.project_ids.includes(p.id!)" (change)="toggleProject(c, p.id!)" /> {{ p.name }}</label>
               } @empty { <span class="muted small">No teams yet.</span> }
             </div>
-            <small class="muted">None selected = all projects.</small>
+            <small class="muted">None selected = all projects. A team can also pick its own channels in Teams.</small>
           </div>
           <label class="full">Only for tags (optional, comma separated)
             <input name="tags" [(ngModel)]="tagsText" placeholder="prod, critical" />

@@ -172,6 +172,7 @@ export interface Project {
   description: string | null;
   member_ids: number[];
   email_members: boolean;
+  channel_ids?: number[] | null;
   monitor_count?: number;
   down_count?: number;
 }

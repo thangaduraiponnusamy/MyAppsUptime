@@ -26,6 +26,27 @@ def monitor(client, su, monitor_id):
     return client.get(f"/api/monitors/{monitor_id}", headers=su).json()
 
 
+def test_team_picks_its_channels(client, su):
+    def add(name):
+        body = {"name": name, "type": "ntfy", "url": f"https://ntfy.sh/{name}"}
+        r = client.post("/api/notifications", json=body, headers=su)
+        assert r.status_code == 201, r.text
+        return r.json()["id"]
+
+    mail, tg = add("team-mail"), add("team-tg")
+    team = client.post("/api/projects", json={"name": "Picky", "channel_ids": [tg]}, headers=su).json()
+    assert team["channel_ids"] == [tg]
+    m = make_monitor(client, su, project_id=team["id"])
+    with tenancy.session_for(tenancy.DEFAULT) as db:
+        channels, *_ = scheduler.build_alert(db, tenancy.DEFAULT, db.get(Monitor, m["id"]), "down", "x")
+    assert [c.id for c in channels] == [tg]
+    assert client.post("/api/projects", json={"name": "Bad", "channel_ids": [99999]}, headers=su).status_code == 422
+    client.delete(f"/api/notifications/{tg}", headers=su)
+    team = next(p for p in client.get("/api/projects", headers=su).json() if p["id"] == team["id"])
+    assert team["channel_ids"] == []
+    client.delete(f"/api/notifications/{mail}", headers=su)
+
+
 def test_down_only_after_n_failed_checks(client, su):
     m = make_monitor(client, su, down_after=3)
     record(m["id"], "up")
