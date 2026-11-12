@@ -37,12 +37,15 @@ def db_path(slug: str) -> Path:
     return DATA_DIR / f"{slug}.db"
 
 
-def _maker(slug: str) -> sessionmaker:
+def _maker(slug: str, create: bool = False) -> sessionmaker:
     maker = _makers.get(slug)
     if maker is None:
         with _lock:
             maker = _makers.get(slug)
             if maker is None:
+                # only create_tenant may make a new file; stops deleted tenants coming back
+                if not SLUG.match(slug) or not (create or db_path(slug).exists()):
+                    raise LookupError(f"Unknown tenant: {slug}")
                 DATA_DIR.mkdir(parents=True, exist_ok=True)
                 engine = make_engine(f"sqlite:///{db_path(slug).as_posix()}")
                 upgrade_schema(engine)
@@ -50,10 +53,14 @@ def _maker(slug: str) -> sessionmaker:
     return maker
 
 
-def session_for(slug: str) -> Session:
-    db = _maker(slug)()
+def session_for(slug: str, create: bool = False) -> Session:
+    db = _maker(slug, create)()
     db.info["tenant"] = slug
     return db
+
+
+def engine_for(slug: str):
+    return _maker(slug).kw["bind"]
 
 
 def tenant_of(db: Session) -> str:

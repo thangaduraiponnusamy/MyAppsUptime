@@ -49,8 +49,10 @@ import { duration } from '../shared/time';
                     <input [(ngModel)]="note" placeholder="Note (optional)" />
                     <button class="btn sm primary" [disabled]="!by" (click)="ack(i)">Save</button>
                   </div>
+                  <input [(ngModel)]="publicNote" maxlength="1000" placeholder="Public note (shown on status pages)" style="margin-top: 6px" />
                 } @else if (i.acknowledged_by) {
                   <b>{{ i.acknowledged_by }}</b> <span class="muted">{{ i.note }}</span>
+                  @if (i.public_note) { <div class="hint">Public: {{ i.public_note }}</div> }
                   <button class="btn sm" (click)="startAck(i)">Edit</button>
                 } @else {
                   <button class="btn sm" (click)="startAck(i)">Acknowledge</button>
@@ -81,6 +83,7 @@ export class IncidentsComponent {
   editing = signal<number | null>(null);
   by = localStorage.getItem('ackName') ?? '';
   note = '';
+  publicNote = '';
   duration = duration;
 
   constructor() {
@@ -99,12 +102,13 @@ export class IncidentsComponent {
 
   startAck(i: Incident): void {
     this.note = i.note ?? '';
+    this.publicNote = i.public_note ?? '';
     this.editing.set(i.id);
   }
 
   ack(i: Incident): void {
     localStorage.setItem('ackName', this.by);
-    this.api.acknowledge(i.id, this.by, this.note || null).subscribe(() => {
+    this.api.acknowledge(i.id, this.by, this.note || null, this.publicNote.trim() || null).subscribe(() => {
       this.editing.set(null);
       this.load(this.openOnly());
       this.store.refresh();

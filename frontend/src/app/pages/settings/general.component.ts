@@ -2,7 +2,8 @@ import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ApiService, errorText } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
-import { GeneralSettings } from '../../core/models';
+import { ConfirmService } from '../../core/confirm.service';
+import { DatabaseInfo, GeneralSettings, ServerSettings } from '../../core/models';
 import { LIMITS, PrefsService } from '../../core/prefs.service';
 
 // Browsers still use some old zone names; show the current ones
@@ -59,6 +60,19 @@ const modernZone = (z: string) => RENAMED[z] ?? z;
           <small class="muted">Older check results and closed incidents are deleted. Max 10 years. Default 1 year.</small>
         </label>
       </div>
+      <h3>Alerts</h3>
+      <div class="s-fields">
+        <label>Alert after N failed checks in a row
+          <input type="number" min="1" max="20" [(ngModel)]="form.down_after_checks" [disabled]="!auth.isAdmin()" />
+          <small class="muted">1 to 20. Default 3. A monitor can override it.</small>
+        </label>
+        <label>Warn before SSL / domain expiry (days)
+          <input [(ngModel)]="warnDays" placeholder="30, 14, 7" [disabled]="!auth.isAdmin()" />
+          <small class="muted">Comma separated, up to 5 values. One alert per step.</small>
+        </label>
+        <label class="inline"><input type="checkbox" [(ngModel)]="form.domain_expiry" [disabled]="!auth.isAdmin()" />
+          Check domain expiry (RDAP) for website monitors</label>
+      </div>
       @if (auth.isAdmin()) {
         <div class="row"><button class="btn primary" (click)="save()">Save</button>
           @if (notice()) { <span class="muted">{{ notice() }}</span> }</div>
@@ -79,6 +93,41 @@ const modernZone = (z: string) => RENAMED[z] ?? z;
       </div>
       <div class="row"><button class="btn" (click)="prefs.reset()">Reset to defaults</button></div>
     </section>
+
+    @if (auth.isAdmin() && db(); as d) {
+      <section class="s-section">
+        <h3>Monitor history</h3>
+        <p class="muted">Database size {{ d.size_kb }} KB &middot; {{ d.heartbeats }} check results &middot; {{ d.incidents }} incidents</p>
+        <div class="row">
+          <button class="btn" (click)="shrink()">Shrink database</button>
+          <button class="btn danger" (click)="clearStats()">Clear all statistics</button>
+          @if (dbNotice()) { <span class="muted">{{ dbNotice() }}</span> }
+        </div>
+      </section>
+    }
+
+    @if (auth.isSuper() && server(); as s) {
+      <section class="s-section">
+        <h3>Server</h3>
+        <p class="muted">Applies to the whole server (all tenants).</p>
+        <div class="s-fields">
+          <label class="inline"><input type="checkbox" [(ngModel)]="s.backup_enabled" /> Daily database backup</label>
+          <label>Keep backups for (days)
+            <input type="number" min="1" max="365" [(ngModel)]="s.backup_keep_days" />
+            <small class="muted">Saved in {{ s.backup_dir }}. Default 7.</small>
+          </label>
+          <label class="inline"><input type="checkbox" [(ngModel)]="s.dns_cache" /> DNS cache (60 seconds)</label>
+        </div>
+        <div class="row">
+          <button class="btn primary" (click)="saveServer(s)">Save</button>
+          <button class="btn" (click)="backupNow()">Backup now</button>
+          @if (serverNotice()) { <span class="muted">{{ serverNotice() }}</span> }
+        </div>
+        @if (s.backups?.length) {
+          <p class="muted">Backups: @for (b of s.backups; track b.name) { <span class="tag">{{ b.name }} ({{ b.size_kb }} KB)</span> }</p>
+        }
+      </section>
+    }
   `,
 })
 export class GeneralSettingsComponent {
@@ -89,24 +138,83 @@ export class GeneralSettingsComponent {
   readonly origin = location.origin;
   readonly localZone = modernZone(Intl.DateTimeFormat().resolvedOptions().timeZone);
   zones: string[] = [...new Set(['UTC', this.localZone, ...((Intl as any).supportedValuesOf?.('timeZone') ?? []).map(modernZone)])].sort();
-  form: GeneralSettings = { app_url: '', timezone: '', refresh_sec: 5, retention_value: 1, retention_unit: 'years' };
+  form: GeneralSettings = {
+    app_url: '', timezone: '', refresh_sec: 5, retention_value: 1, retention_unit: 'years',
+    down_after_checks: 3, expiry_warn_days: [30, 14, 7], domain_expiry: true,
+  };
+  warnDays = '30, 14, 7';
   notice = signal('');
+  db = signal<DatabaseInfo | null>(null);
+  dbNotice = signal('');
+  server = signal<ServerSettings | null>(null);
+  serverNotice = signal('');
+  private confirm = inject(ConfirmService);
 
   constructor() {
     this.api.general().subscribe((g) => {
-      this.form = { ...g };
+      this.setForm(g);
       if (g.timezone && !this.zones.includes(g.timezone)) this.zones = [g.timezone, ...this.zones];
     });
+    if (this.auth.isAdmin()) this.api.database().subscribe((d) => this.db.set(d));
+    if (this.auth.isSuper()) this.api.server().subscribe((s) => this.server.set(s));
+  }
+
+  private setForm(g: GeneralSettings): void {
+    this.form = { ...g };
+    this.warnDays = g.expiry_warn_days.join(', ');
   }
 
   save(): void {
-    this.api.saveGeneral({ ...this.form, refresh_sec: Number(this.form.refresh_sec), retention_value: Number(this.form.retention_value) }).subscribe({
+    const days = this.warnDays.split(',').map((d) => Number(d.trim())).filter((d) => d > 0);
+    this.api.saveGeneral({
+      ...this.form, refresh_sec: Number(this.form.refresh_sec), retention_value: Number(this.form.retention_value),
+      down_after_checks: Number(this.form.down_after_checks), expiry_warn_days: days,
+    }).subscribe({
       next: (g) => {
-        this.form = { ...g };
+        this.setForm(g);
         this.notice.set('Saved.');
         this.auth.reload();
       },
       error: (e) => this.notice.set(errorText(e)),
+    });
+  }
+
+  shrink(): void {
+    this.dbNotice.set('Shrinking...');
+    this.api.shrinkDatabase().subscribe({
+      next: (d) => { this.db.set(d); this.dbNotice.set('Done.'); },
+      error: (e) => this.dbNotice.set(errorText(e)),
+    });
+  }
+
+  async clearStats(): Promise<void> {
+    const ok = await this.confirm.ask({
+      title: 'Clear all statistics?',
+      message: 'All check results and incidents of this tenant are deleted.',
+      details: ['Monitors, channels and settings are kept.', 'This cannot be undone.'],
+      typeToConfirm: 'clear',
+      action: 'Clear statistics',
+    });
+    if (!ok) return;
+    this.api.clearStats().subscribe({
+      next: (d) => { this.db.set(d); this.dbNotice.set('Statistics cleared.'); },
+      error: (e) => this.dbNotice.set(errorText(e)),
+    });
+  }
+
+  saveServer(s: ServerSettings): void {
+    const body = { backup_enabled: s.backup_enabled, backup_keep_days: Number(s.backup_keep_days), dns_cache: s.dns_cache };
+    this.api.saveServer(body).subscribe({
+      next: (r) => { this.server.set(r); this.serverNotice.set('Saved.'); },
+      error: (e) => this.serverNotice.set(errorText(e)),
+    });
+  }
+
+  backupNow(): void {
+    this.serverNotice.set('Backing up...');
+    this.api.backupNow().subscribe({
+      next: (r) => { this.server.set(r); this.serverNotice.set('Backup done.'); },
+      error: (e) => this.serverNotice.set(errorText(e)),
     });
   }
 }

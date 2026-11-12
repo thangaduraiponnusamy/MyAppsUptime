@@ -64,7 +64,7 @@ def create_tenant(body: TenantCreate):
         if db.scalar(select(Tenant).where(Tenant.slug == body.slug)) or tenancy.db_path(body.slug).exists():
             raise HTTPException(status.HTTP_409_CONFLICT, "Tenant ID already exists")
         _unique_username(db, body.admin_username, None)
-    with tenancy.session_for(body.slug) as tdb:  # creates the database file
+    with tenancy.session_for(body.slug, create=True) as tdb:
         tdb.add(User(username=body.admin_username, name="Tenant admin", email=body.admin_email, role="admin",
                      password_hash=hash_password(body.admin_password), must_change_password=True))
         tdb.commit()

@@ -1,8 +1,8 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import {
-  Channel, DashboardData, ExportData, GeneralSettings, Heartbeat, Incident, Maintenance, Monitor, MonitorInput, Project,
-  PublicStatus, SmtpSettings, Stats, StatusPage, Summary, Tenant, TenantCreate, User,
+  Channel, DashboardData, DatabaseInfo, ExportData, GeneralSettings, Heartbeat, Incident, Maintenance, Monitor, MonitorInput,
+  Project, PublicStatus, ServerSettings, SmtpSettings, Stats, StatusPage, Summary, Tenant, TenantCreate, User,
 } from './models';
 
 type Range = { hours?: number; start?: string; end?: string; project_id?: number };
@@ -26,8 +26,9 @@ export class ApiService {
   pause(id: number) { return this.http.post<Monitor>(`${this.base}/monitors/${id}/pause`, {}); }
   resume(id: number) { return this.http.post<Monitor>(`${this.base}/monitors/${id}/resume`, {}); }
   checkNow(id: number) { return this.http.post<{ queued: boolean }>(`${this.base}/monitors/${id}/check`, {}); }
-  heartbeats(id: number, hours: number) {
-    return this.http.get<Heartbeat[]>(`${this.base}/monitors/${id}/heartbeats`, { params: { hours } });
+  heartbeats(id: number, range: Range) {
+    const params = Object.fromEntries(Object.entries(range).filter(([, v]) => v !== undefined)) as Record<string, string | number>;
+    return this.http.get<Heartbeat[]>(`${this.base}/monitors/${id}/heartbeats`, { params });
   }
   stats(id: number) { return this.http.get<Stats>(`${this.base}/monitors/${id}/stats`); }
 
@@ -37,8 +38,8 @@ export class ApiService {
     for (const [k, v] of Object.entries(range)) if (v !== undefined) params = params.set(k, v);
     return this.http.get<Incident[]>(`${this.base}/incidents`, { params });
   }
-  acknowledge(id: number, by: string, note: string | null) {
-    return this.http.post<Incident>(`${this.base}/incidents/${id}/ack`, { by, note });
+  acknowledge(id: number, by: string, note: string | null, publicNote: string | null) {
+    return this.http.post<Incident>(`${this.base}/incidents/${id}/ack`, { by, note, public_note: publicNote });
   }
 
   channels() { return this.http.get<Channel[]>(`${this.base}/notifications`); }
@@ -75,6 +76,12 @@ export class ApiService {
   smtp() { return this.http.get<SmtpSettings>(`${this.base}/settings/smtp`); }
   saveSmtp(body: SmtpSettings) { return this.http.put<SmtpSettings>(`${this.base}/settings/smtp`, body); }
   testSmtp(to: string) { return this.http.post<{ sent: boolean }>(`${this.base}/settings/smtp/test`, { to }); }
+  database() { return this.http.get<DatabaseInfo>(`${this.base}/settings/database`); }
+  shrinkDatabase() { return this.http.post<DatabaseInfo>(`${this.base}/settings/database/shrink`, {}); }
+  clearStats() { return this.http.post<DatabaseInfo>(`${this.base}/settings/database/clear-stats`, {}); }
+  server() { return this.http.get<ServerSettings>(`${this.base}/settings/server`); }
+  saveServer(body: ServerSettings) { return this.http.put<ServerSettings>(`${this.base}/settings/server`, body); }
+  backupNow() { return this.http.post<ServerSettings>(`${this.base}/settings/server/backup`, {}); }
 
   maintenance() { return this.http.get<Maintenance[]>(`${this.base}/maintenance`); }
   createMaintenance(body: Maintenance) { return this.http.post<Maintenance>(`${this.base}/maintenance`, body); }
@@ -82,6 +89,7 @@ export class ApiService {
 
   statusPages() { return this.http.get<StatusPage[]>(`${this.base}/status-pages`); }
   createStatusPage(body: StatusPage) { return this.http.post<StatusPage>(`${this.base}/status-pages`, body); }
+  updateStatusPage(id: number, body: StatusPage) { return this.http.put<StatusPage>(`${this.base}/status-pages/${id}`, body); }
   deleteStatusPage(id: number) { return this.http.delete<void>(`${this.base}/status-pages/${id}`); }
 
   exportConfig() { return this.http.get<ExportData>(`${this.base}/export`); }

@@ -26,6 +26,7 @@ export interface MonitorInput {
   interval_sec: number;
   timeout_sec: number;
   retries: number;
+  down_after: number | null;
   latency_threshold_ms: number | null;
   ssl_expiry_warn_days: number;
   sla_target: number;
@@ -46,6 +47,8 @@ export interface Monitor extends MonitorInput {
   last_latency_ms: number | null;
   last_message: string | null;
   ssl_expires_at: string | null;
+  domain_expires_at: string | null;
+  fail_count: number;
   created_at: string;
   uptime_24h: number | null;
   status_since: string | null;
@@ -84,6 +87,7 @@ export interface Incident {
   acknowledged_at: string | null;
   acknowledged_by: string | null;
   note: string | null;
+  public_note: string | null;
 }
 
 export interface Channel {
@@ -164,6 +168,23 @@ export interface GeneralSettings {
   refresh_sec: number;
   retention_value: number;
   retention_unit: 'days' | 'months' | 'years';
+  down_after_checks: number;
+  expiry_warn_days: number[];
+  domain_expiry: boolean;
+}
+
+export interface ServerSettings {
+  backup_enabled: boolean;
+  backup_keep_days: number;
+  dns_cache: boolean;
+  backup_dir?: string;
+  backups?: { name: string; size_kb: number }[];
+}
+
+export interface DatabaseInfo {
+  size_kb: number;
+  heartbeats: number;
+  incidents: number;
 }
 
 export interface SmtpSettings {
@@ -190,14 +211,17 @@ export interface StatusPage {
   title: string;
   description: string | null;
   monitor_ids: number[];
+  domain: string | null;
+  logo: string | null;
 }
 
 export interface PublicStatus {
   title: string;
   description: string | null;
+  logo: string | null;
   overall: MonitorStatus;
-  monitors: { id: number; name: string; status: MonitorStatus; uptime_30d: number | null; bars: MonitorStatus[] }[];
-  incidents: { monitor_name: string; started_at: string; resolved_at: string | null }[];
+  monitors: { id: number; name: string; status: MonitorStatus; uptime_30d: number | null; bars: MonitorStatus[]; times: string[] }[];
+  incidents: { monitor_name: string; started_at: string; resolved_at: string | null; note: string | null }[];
 }
 
 export interface Summary {

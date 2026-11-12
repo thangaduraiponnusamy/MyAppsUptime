@@ -18,7 +18,7 @@ from .models import Monitor, NotificationChannel
 
 log = logging.getLogger(__name__)
 
-COLORS = {"up": "#16a34a", "down": "#dc2626", "degraded": "#d97706", "maintenance": "#2563eb"}
+COLORS = {"up": "#16a34a", "down": "#dc2626", "degraded": "#d97706", "warning": "#ea580c", "maintenance": "#2563eb"}
 LOGO_PNG = Path(__file__).with_name("logo.png").read_bytes()
 # Inline image, so it shows even when the server is not reachable from Teams
 LOGO_DATA_URI = "data:image/png;base64," + base64.b64encode(LOGO_PNG).decode()
@@ -46,10 +46,13 @@ class Alert:
     link: str | None = None
     app_url: str = ""
     tz: str = "UTC"
+    headline: str = ""  # replaces the default title, e.g. for expiry warnings
     at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     @property
     def title(self) -> str:
+        if self.headline:
+            return f"{self.monitor}: {self.headline}"
         word = {"up": "is back UP", "down": "is DOWN", "degraded": "is DEGRADED"}.get(self.status, self.status.upper())
         return f"{self.monitor} {word}"
 
@@ -87,8 +90,8 @@ def channel_matches(channel: NotificationChannel, monitor: Monitor) -> bool:
 
 
 def teams_payload(alert: Alert) -> dict:
-    style = {"up": "good", "down": "attention", "degraded": "warning", "maintenance": "accent"}.get(alert.status, "emphasis")
-    color = {"up": "Good", "down": "Attention", "degraded": "Warning", "maintenance": "Accent"}.get(alert.status, "Default")
+    style = {"up": "good", "down": "attention", "degraded": "warning", "warning": "warning", "maintenance": "accent"}.get(alert.status, "emphasis")
+    color = {"up": "Good", "down": "Attention", "degraded": "Warning", "warning": "Warning", "maintenance": "Accent"}.get(alert.status, "Default")
     body = [
         {"type": "Container", "style": style, "bleed": True, "items": [{"type": "ColumnSet", "columns": [
             {"type": "Column", "width": "auto", "verticalContentAlignment": "Center", "items": [
@@ -116,7 +119,7 @@ def teams_payload(alert: Alert) -> dict:
 
 
 def telegram_payload(alert: Alert, chat_id: str) -> dict:
-    dot = {"up": "\U0001F7E2", "down": "\U0001F534", "degraded": "\U0001F7E0", "maintenance": "\U0001F535"}.get(alert.status, "\u26AA")
+    dot = {"up": "\U0001F7E2", "down": "\U0001F534", "degraded": "\U0001F7E0", "warning": "\U0001F7E0", "maintenance": "\U0001F535"}.get(alert.status, "\u26AA")
     lines = [f"{dot} <b>{escape(alert.title)}</b>", ""]
     lines += [f"<b>{escape(k)}:</b> {escape(v)}" for k, v in alert.facts()]
     lines += ["", f"<i>MyAppsUptime{' on ' + escape(alert.server) if alert.server else ''}</i>"]
@@ -151,7 +154,7 @@ async def _send_telegram(client: httpx.AsyncClient, channel: NotificationChannel
 
 
 def discord_payload(alert: Alert) -> dict:
-    color = {"up": 0x22C55E, "down": 0xEF4444, "degraded": 0xF59E0B, "maintenance": 0x3B82F6}.get(alert.status, 0x64748B)
+    color = {"up": 0x22C55E, "down": 0xEF4444, "degraded": 0xF59E0B, "warning": 0xF97316, "maintenance": 0x3B82F6}.get(alert.status, 0x64748B)
     embed = {
         "title": alert.title[:256], "color": color, "timestamp": alert.at.isoformat(),
         "fields": [{"name": k, "value": v[:1024], "inline": k in ("Status", "Team", "Time")} for k, v in alert.facts()],
@@ -163,7 +166,7 @@ def discord_payload(alert: Alert) -> dict:
 
 
 def ntfy_payload(alert: Alert, topic: str) -> dict:
-    tag = {"up": "green_circle", "down": "red_circle", "degraded": "orange_circle",
+    tag = {"up": "green_circle", "down": "red_circle", "degraded": "orange_circle", "warning": "warning",
            "maintenance": "large_blue_circle"}.get(alert.status, "white_circle")
     payload = {"topic": topic, "title": alert.title, "tags": [tag], "priority": 5 if alert.status == "down" else 3,
                "message": "\n".join(f"{k}: {v}" for k, v in alert.facts() if k != "Monitor")}

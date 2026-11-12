@@ -82,6 +82,8 @@ const URL_TYPES: MonitorType[] = ['http', 'keyword', 'json'];
           </select>
         </label>
         <label>Repeat alert while down (minutes, optional) <input type="number" formControlName="notify_repeat_min" placeholder="30" /></label>
+        <label>Alert after N failed checks in a row (optional)
+          <input type="number" formControlName="down_after" placeholder="Default from Settings > General" /></label>
         <label>Tags (comma separated) <input formControlName="tags" placeholder="prod, api, team-payments" /></label>
         <p class="hint full">Team members and the team's channels get the alerts. Tags can narrow a channel further.
           Alerts are suppressed while the parent monitor is down.</p>
@@ -120,6 +122,7 @@ export class MonitorFormComponent {
     interval_sec: [60, [Validators.min(20)]],
     timeout_sec: [10, [Validators.min(1), Validators.max(60)]],
     retries: [0, [Validators.min(0), Validators.max(5)]],
+    down_after: [null as number | null, [Validators.min(1), Validators.max(20)]],
     latency_threshold_ms: [null as number | null],
     ssl_expiry_warn_days: [14],
     sla_target: [99.9, [Validators.min(50), Validators.max(100)]],
@@ -158,6 +161,7 @@ export class MonitorFormComponent {
       port: v.port || null,
       latency_threshold_ms: v.latency_threshold_ms || null,
       notify_repeat_min: v.notify_repeat_min || null,
+      down_after: v.down_after || null,
       tags: v.tags.split(',').map((t) => t.trim()).filter(Boolean),
     };
     this.saving.set(true);

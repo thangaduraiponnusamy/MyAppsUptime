@@ -27,7 +27,7 @@ export function rangeQuery(hours: number, custom: DayRange | null): { hours?: nu
   template: `
     <div class="range-picker">
       <div class="segmented">
-        @for (r of ranges; track r.hours) {
+        @for (r of ranges(); track r.hours) {
           <button class="chip" [class.active]="!custom() && hours() === r.hours" (click)="open.set(false); pick.emit(r.hours)">{{ r.label }}</button>
         }
         <button class="chip" [class.active]="!!custom()" (click)="toggle()">
@@ -56,7 +56,7 @@ export class RangePickerComponent {
   pick = output<number>();
   range = output<DayRange>();
 
-  readonly ranges = RANGES;
+  ranges = input(RANGES);
   readonly today = fmt(Date.now());
   open = signal(false);
   from = signal(fmt(Date.now() - 6 * 86_400_000));

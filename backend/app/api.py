@@ -13,10 +13,9 @@ from sqlalchemy.orm import Session
 from . import notifier, tenancy
 from .auth import Principal, get_db, require_admin, require_user, visible_monitor_ids
 from .checks import CheckResult
-from .config import get_setting
 from .models import (Heartbeat, Incident, MaintenanceWindow, Monitor, NotificationChannel, Project, StatusPage,
                      aware, utcnow)
-from .scheduler import record_result, scheduler
+from .scheduler import record_result, scheduler, tenant_config
 from .schemas import (AckIn, ChannelIn, ChannelOut, DashboardOut, DashboardPoint, ExportData, HeartbeatOut,
                       IncidentOut, MaintenanceIn, MaintenanceOut, MonitorCreate, MonitorExport, MonitorOut,
                       ProjectExport, PublicIncident, PublicMonitor, PublicStatusOut,
@@ -260,12 +259,13 @@ async def check_now(monitor_id: int, db: Session = Depends(get_db), user: Princi
 
 
 @router.get("/monitors/{monitor_id}/heartbeats", response_model=list[HeartbeatOut])
-def heartbeats(monitor_id: int, hours: int = Query(24, ge=1, le=24 * 90), db: Session = Depends(get_db),
-               user: Principal = Depends(require_user)):
+def heartbeats(monitor_id: int, hours: int = Query(24, ge=1, le=24 * 90), start: datetime | None = None,
+               end: datetime | None = None, db: Session = Depends(get_db), user: Principal = Depends(require_user)):
     _get_monitor(db, user, monitor_id)
+    since, until = _window(hours, start, end)
     return db.scalars(
         select(Heartbeat)
-        .where(Heartbeat.monitor_id == monitor_id, Heartbeat.created_at >= utcnow() - timedelta(hours=hours))
+        .where(Heartbeat.monitor_id == monitor_id, Heartbeat.created_at >= since, Heartbeat.created_at <= until)
         .order_by(Heartbeat.created_at)
     ).all()
 
@@ -426,6 +426,7 @@ def acknowledge(incident_id: int, body: AckIn, db: Session = Depends(get_db), us
     incident.acknowledged_at = incident.acknowledged_at or utcnow()
     incident.acknowledged_by = body.by
     incident.note = body.note
+    incident.public_note = body.public_note
     db.commit()
     out = IncidentOut.model_validate(incident)
     out.monitor_name = incident.monitor.name
@@ -472,10 +473,10 @@ def delete_channel(channel_id: int, db: Session = Depends(get_db)):
 @router.post("/notifications/{channel_id}/test")
 async def test_channel(channel_id: int, db: Session = Depends(get_db)):
     channel = _get(db, NotificationChannel, channel_id)
-    general = get_setting(db, "general")
+    general, smtp = tenant_config(db, tenancy.tenant_of(db))
     alert = notifier.Alert(monitor="Test monitor", status="up", message="This is a test alert from MyAppsUptime",
                            project="Test", target="https://example.com", **notifier.alert_context(general))
-    errors = await notifier.send([channel], alert, smtp=get_setting(db, "smtp"))
+    errors = await notifier.send([channel], alert, smtp=smtp)
     if errors:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, "; ".join(errors))
     return {"sent": True}
@@ -511,21 +512,50 @@ def list_status_pages(db: Session = Depends(get_db)):
 
 @router.post("/status-pages", response_model=StatusPageOut, status_code=status.HTTP_201_CREATED)
 def create_status_page(body: StatusPageIn, db: Session = Depends(get_db)):
-    # Public links are /status/<slug>, so slugs are unique across tenants
-    query = select(StatusPage.id).where(StatusPage.slug == body.slug)
-    here = tenancy.tenant_of(db)
-    for slug in tenancy.slugs(active_only=False):
-        if slug == here:
-            taken = db.scalar(query) is not None
-        else:
-            with tenancy.session_for(slug) as other:
-                taken = other.scalar(query) is not None
-        if taken:
-            raise HTTPException(status.HTTP_409_CONFLICT, "Slug already exists")
+    _check_page_unique(db, body, None)
     page = StatusPage(**body.model_dump())
     db.add(page)
     db.commit()
     return page
+
+
+@router.put("/status-pages/{page_id}", response_model=StatusPageOut)
+def update_status_page(page_id: int, body: StatusPageIn, db: Session = Depends(get_db)):
+    page = _get(db, StatusPage, page_id)
+    _check_page_unique(db, body, page_id)
+    for key, value in body.model_dump().items():
+        setattr(page, key, value)
+    db.commit()
+    return page
+
+
+def _check_page_unique(db: Session, body: StatusPageIn, page_id: int | None) -> None:
+    """Slugs (/status/<slug>) and custom domains are unique across tenants."""
+    here = tenancy.tenant_of(db)
+    checks = [(StatusPage.slug == body.slug, "Slug already exists")]
+    if body.domain:
+        checks.append((StatusPage.domain == body.domain, "Domain is already used by another status page"))
+    for slug in tenancy.slugs(active_only=False):
+        with tenancy.session_for(slug) as other:
+            for where, message in checks:
+                query = select(StatusPage.id).where(where)
+                if slug == here and page_id is not None:
+                    query = query.where(StatusPage.id != page_id)
+                if other.scalar(query) is not None:
+                    raise HTTPException(status.HTTP_409_CONFLICT, message)
+
+
+def page_for_host(host: str) -> str | None:
+    """Slug of the status page whose custom domain is this Host header."""
+    host = host.split(":")[0].strip().lower().rstrip(".")
+    if not host or "." not in host:
+        return None
+    for tenant in tenancy.slugs():
+        with tenancy.session_for(tenant) as db:
+            slug = db.scalar(select(StatusPage.slug).where(StatusPage.domain == host))
+            if slug:
+                return slug
+    return None
 
 
 @router.delete("/status-pages/{page_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -643,24 +673,26 @@ def public_status(slug: str):
 def _public_status(db: Session, page: StatusPage) -> PublicStatusOut:
     monitors = db.scalars(select(Monitor).where(Monitor.id.in_(page.monitor_ids))).all()
     uptimes = _uptime_by_monitor(db, utcnow() - timedelta(days=30), [m.id for m in monitors])
-    items = [
-        PublicMonitor(id=m.id, name=m.name, status=m.status, uptime_30d=uptimes.get(m.id),
-                      bars=[s for s, _ in _recent(db, m.id, 60)])
-        for m in monitors
-    ]
+    items = []
+    for m in monitors:
+        beats = list(reversed(db.execute(
+            select(Heartbeat.status, Heartbeat.created_at).where(Heartbeat.monitor_id == m.id)
+            .order_by(Heartbeat.created_at.desc()).limit(60)).all()))
+        items.append(PublicMonitor(id=m.id, name=m.name, status=m.status, uptime_30d=uptimes.get(m.id),
+                                   bars=[b[0] for b in beats], times=[b[1] for b in beats]))
     statuses = {i.status for i in items}
     overall = "down" if "down" in statuses else "degraded" if statuses & {"degraded", "maintenance"} else "up"
 
-    # Internal causes stay private; only name and timing are public
+    # Internal causes and notes stay private; only the public note is shown
     incidents = [
-        PublicIncident(monitor_name=name, started_at=i.started_at, resolved_at=i.resolved_at)
+        PublicIncident(monitor_name=name, started_at=i.started_at, resolved_at=i.resolved_at, note=i.public_note)
         for i, name in db.execute(
             select(Incident, Monitor.name).join(Monitor)
             .where(Incident.monitor_id.in_(page.monitor_ids), Incident.started_at >= utcnow() - timedelta(days=14))
             .order_by(Incident.started_at.desc()).limit(10)
         )
     ]
-    return PublicStatusOut(title=page.title, description=page.description, overall=overall,
+    return PublicStatusOut(title=page.title, description=page.description, logo=page.logo, overall=overall,
                            monitors=items, incidents=incidents)
 
 

@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, DateTime, ForeignKey, String
+from sqlalchemy import JSON, DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .crypto import EncryptedText
@@ -43,6 +43,7 @@ class Monitor(Base):
     project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id", ondelete="SET NULL"), index=True)
     tags: Mapped[list] = mapped_column(JSON, default=list)
     push_token: Mapped[str | None] = mapped_column(String(64), unique=True)
+    down_after: Mapped[int | None]  # failed checks in a row before DOWN; empty = General default
 
     active: Mapped[bool] = mapped_column(default=True)
     status: Mapped[str] = mapped_column(String(12), default="pending")
@@ -52,6 +53,11 @@ class Monitor(Base):
     last_latency_ms: Mapped[float | None]
     last_message: Mapped[str | None] = mapped_column(String(300))
     ssl_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    fail_count: Mapped[int] = mapped_column(default=0)
+    domain_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    expiry_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    ssl_warned_days: Mapped[int | None]  # last expiry warning level sent
+    domain_warned_days: Mapped[int | None]
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     heartbeats: Mapped[list["Heartbeat"]] = relationship(back_populates="monitor", cascade="all, delete-orphan")
@@ -82,6 +88,7 @@ class Incident(Base):
     acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     acknowledged_by: Mapped[str | None] = mapped_column(String(120))
     note: Mapped[str | None] = mapped_column(String(1000))
+    public_note: Mapped[str | None] = mapped_column(String(1000))  # shown on status pages
 
     monitor: Mapped[Monitor] = relationship(back_populates="incidents")
 
@@ -117,6 +124,8 @@ class StatusPage(Base):
     title: Mapped[str] = mapped_column(String(120))
     description: Mapped[str | None] = mapped_column(String(500))
     monitor_ids: Mapped[list] = mapped_column(JSON, default=list)
+    domain: Mapped[str | None] = mapped_column(String(200))  # custom domain that opens this page
+    logo: Mapped[str | None] = mapped_column(Text)  # data:image/... URL
 
 
 class Project(Base):

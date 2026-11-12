@@ -28,6 +28,11 @@ Python (FastAPI) backend + Angular frontend, shipped as **one Docker image**.
 | Prometheus `/metrics` | Yes | Yes |
 | Badges (SVG) | Yes | Yes |
 | Backup / restore (JSON) | Yes | Yes |
+| Daily database backup (kept 7 days) | No | Yes |
+| Alert only after N failed checks in a row | Retries | Yes |
+| SSL and domain expiry warnings (30, 14, 7 days) | SSL only | Yes |
+| Status page: custom domain, logo, incident notes | Yes | Yes |
+| Shrink database, clear statistics, DNS cache | Yes | Yes |
 | Light and dark theme | Yes | Yes |
 | REST API with OpenAPI docs | Limited | Yes (`/docs`) |
 
@@ -49,7 +54,7 @@ Data is stored in the `myappsuptime-data` Docker volume.
 | Settings page | What you set |
 |---|---|
 | Tenants | Super admin only: add, rename, disable or delete tenants |
-| General | Auto refresh (default 5 seconds), app URL for links in alerts, how long to keep logs (default 1 year) |
+| General | Auto refresh (default 5 seconds), app URL for links in alerts, how long to keep logs (default 1 year), alert after N failed checks (default 3), expiry warning days (default 30, 14, 7), database shrink / clear, server backup and DNS cache (super admin) |
 | Notifications | Teams, email, Telegram, Discord, Google Chat, ntfy, Slack or webhook channels, and the email (SMTP) server |
 | Teams | Teams, their members and their services (monitors) |
 | Users | Add users, set role, reset a password |
@@ -102,6 +107,20 @@ In Docker: `docker exec -it myappsuptime python -m app.reset_password admin 'New
 
 To add a migration for a new feature: append a step with the next number. Never change a released step.
 
+**Database backup**
+
+- Daily, on by default. Kept 7 days (Settings > General > Server).
+- Saved in `backups/YYYY-MM-DD/` next to the main database (change with `BACKUP_DIR`).
+- Restore: stop the app, copy `main.db`, `tenants/*.db` and `secret.key` back, start the app.
+
+**Status page on your own domain**
+
+1. Settings > Status pages > Edit > set "Custom domain" (for example `status.example.com`).
+2. Point the domain's DNS to this server.
+3. Put HTTPS on your reverse proxy (nginx, Traefik, Caddy). Visitors to the domain see the status page.
+
+**Public incident note**: on the Incidents page, "Acknowledge" has a public note. It is shown on status pages. The internal note stays private.
+
 ### Without compose
 
 ```bash
@@ -140,6 +159,7 @@ docker run -d --name myappsuptime -p 8000:8000 -v myappsuptime-data:/data ghcr.i
 | `SESSION_DAYS` | `7` | How long a sign-in lasts |
 | `DATABASE_URL` | `sqlite:////data/myappsuptime.db` | SQLAlchemy database URL |
 | `TENANT_DATA_DIR` | `tenants/` next to the main DB | Where tenant database files live |
+| `BACKUP_DIR` | `backups/` next to the main DB | Where daily backups are saved |
 | `CORS_ORIGINS` | `http://localhost:4200` | Only for local dev |
 
 ## Local testing (without Docker)
@@ -174,6 +194,7 @@ Open http://127.0.0.1:8000. Stop with `Ctrl+C`.
 | Local data file | `backend/myappsuptime.db` |
 | Start fresh | Stop the app, delete `backend/myappsuptime.db`, start again |
 | "Port 8000 already in use" | Another copy is running. Stop it, or use `--port 8001` |
+| Run backend tests | `.venv/Scripts/python.exe -m pip install -r requirements-dev.txt && .venv/Scripts/python.exe -m pytest -q` |
 
 On Linux or macOS use `.venv/bin/python` instead of `.venv/Scripts/python.exe`.
 

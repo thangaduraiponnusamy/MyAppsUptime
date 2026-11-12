@@ -44,6 +44,12 @@ jobs:
           python -m compileall -q app
           python -c "import app.main"
 
+      - name: Test API
+        working-directory: backend
+        run: |
+          pip install -r requirements-dev.txt
+          python -m pytest -q -p no:cacheprovider
+
   # Push and v* tags: build the Docker image and publish it
   build:
     if: github.event_name != 'pull_request'

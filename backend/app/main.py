@@ -5,11 +5,11 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 
-from . import admin_api, api, tenancy, tenants_api
+from . import admin_api, api, dnscache, tenancy, tenants_api
 from .auth import ensure_default_admin
-from .config import APP_VERSION
+from .config import APP_VERSION, get_setting
 from .database import upgrade_schema
 from .scheduler import scheduler
 
@@ -21,9 +21,13 @@ async def lifespan(_: FastAPI):
     upgrade_schema()
     tenancy.load()
     for slug in tenancy.slugs(active_only=False):
-        tenancy.session_for(slug).close()  # upgrades every tenant database at start
+        try:
+            tenancy.session_for(slug).close()  # upgrades every tenant database at start
+        except LookupError:
+            logging.getLogger(__name__).error("Database file of tenant %s is missing", slug)
     with tenancy.session_for(tenancy.DEFAULT) as db:
         ensure_default_admin(db)
+        dnscache.enable(get_setting(db, "server")["dns_cache"])
     await scheduler.start()
     yield
     await scheduler.stop()
@@ -74,9 +78,13 @@ STATIC_DIR = Path(os.getenv("STATIC_DIR", Path(__file__).resolve().parent.parent
 
 if STATIC_DIR.is_dir():
     @app.get("/{path:path}", include_in_schema=False)
-    def spa(path: str):
+    def spa(path: str, request: Request):
         if path.startswith("api/"):
             raise HTTPException(status.HTTP_404_NOT_FOUND)
+        if not path:
+            page = api.page_for_host(request.headers.get("host", ""))
+            if page:
+                return RedirectResponse(f"/status/{page}")
         file = (STATIC_DIR / path).resolve()
         if path and file.is_file() and file.is_relative_to(STATIC_DIR):
             return FileResponse(file)

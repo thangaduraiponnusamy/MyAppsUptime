@@ -3,11 +3,14 @@ from sqlalchemy.orm import Session
 from .crypto import decrypt, encrypt
 from .models import AppSetting
 
-APP_VERSION = "16.0.0"
+APP_VERSION = "17.0.0"
 
 DEFAULTS = {
-    "general": {"app_url": "", "timezone": "", "refresh_sec": 5, "retention_value": 1, "retention_unit": "years"},
+    "general": {"app_url": "", "timezone": "", "refresh_sec": 5, "retention_value": 1, "retention_unit": "years",
+                "down_after_checks": 3, "expiry_warn_days": [30, 14, 7], "domain_expiry": True},
     "smtp": {"host": "", "port": 587, "security": "starttls", "username": "", "password": "", "from_addr": ""},
+    # whole server; stored in the admin tenant only
+    "server": {"backup_enabled": True, "backup_keep_days": 7, "dns_cache": True},
 }
 
 UNIT_DAYS = {"days": 1, "months": 30, "years": 365}

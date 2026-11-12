@@ -1,17 +1,20 @@
+import asyncio
 import logging
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
-from . import notifier, tenancy
+from . import backup, dnscache, notifier, tenancy
 from .auth import (RESET_MIN, Principal, bearer, check_lock, clear_fails, create_reset_token, create_session,
                    current_user, end_all_sessions, end_session, get_db, hash_password, record_fail, require_admin,
-                   require_user, token_tenant, use_reset_token, verify_password)
+                   require_super, require_user, token_tenant, use_reset_token, verify_password)
 from .config import APP_VERSION, get_setting, put_setting
-from .models import Monitor, NotificationChannel, Project, User
-from .schemas import (ForgotIn, GeneralSettings, LoginIn, LoginOut, MeOut, PasswordIn, ProjectIn, ProjectOut,
-                      ResetIn, SmtpOut, SmtpSettings, SmtpTestIn, UserCreate, UserOut, UserUpdate)
+from .models import Heartbeat, Incident, Monitor, NotificationChannel, Project, User
+from .schemas import (DatabaseInfo, ForgotIn, GeneralSettings, LoginIn, LoginOut, MeOut, PasswordIn, ProjectIn,
+                      ProjectOut, ResetIn, ServerOut, ServerSettings, SmtpOut, SmtpSettings, SmtpTestIn, UserCreate,
+                      UserOut, UserUpdate)
 
 log = logging.getLogger(__name__)
 
@@ -348,3 +351,65 @@ async def test_smtp(body: SmtpTestIn, db: Session = Depends(get_db)):
     if error:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, error)
     return {"sent": True}
+
+
+# ---------- database (per tenant) ----------
+
+def _db_info(db: Session) -> DatabaseInfo:
+    path = db.get_bind().url.database
+    size = Path(path).stat().st_size if path and Path(path).is_file() else 0
+    return DatabaseInfo(size_kb=round(size / 1024), heartbeats=db.scalar(select(func.count()).select_from(Heartbeat)),
+                        incidents=db.scalar(select(func.count()).select_from(Incident)))
+
+
+@admin.get("/settings/database", response_model=DatabaseInfo, dependencies=[Depends(require_admin)])
+def database_info(db: Session = Depends(get_db)):
+    return _db_info(db)
+
+
+@admin.post("/settings/database/shrink", response_model=DatabaseInfo, dependencies=[Depends(require_admin)])
+def shrink_database(db: Session = Depends(get_db)):
+    if db.get_bind().dialect.name == "sqlite":
+        with db.get_bind().connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+            conn.exec_driver_sql("VACUUM")
+    return _db_info(db)
+
+
+@admin.post("/settings/database/clear-stats", response_model=DatabaseInfo, dependencies=[Depends(require_admin)])
+def clear_stats(db: Session = Depends(get_db)):
+    db.execute(delete(Heartbeat))
+    db.execute(delete(Incident))
+    db.execute(update(Monitor).values(fail_count=0))
+    db.commit()
+    return _db_info(db)
+
+
+# ---------- server (super admin) ----------
+
+def _server_out(value: dict) -> ServerOut:
+    return ServerOut(**value, backup_dir=str(backup.backup_dir()), backups=backup.list_all())
+
+
+@admin.get("/settings/server", response_model=ServerOut, dependencies=[Depends(require_super)])
+def server_settings():
+    with tenancy.session_for(tenancy.DEFAULT) as db:
+        return _server_out(get_setting(db, "server"))
+
+
+@admin.put("/settings/server", response_model=ServerOut, dependencies=[Depends(require_super)])
+def save_server(body: ServerSettings):
+    with tenancy.session_for(tenancy.DEFAULT) as db:
+        value = put_setting(db, "server", body.model_dump())
+    dnscache.enable(value["dns_cache"])
+    return _server_out(value)
+
+
+@admin.post("/settings/server/backup", response_model=ServerOut, dependencies=[Depends(require_super)])
+async def backup_now():
+    if not backup.supported():
+        raise HTTPException(status.HTTP_409_CONFLICT, "Backups work with SQLite databases only")
+    with tenancy.session_for(tenancy.DEFAULT) as db:
+        value = get_setting(db, "server")
+    await asyncio.to_thread(backup.run)
+    await asyncio.to_thread(backup.prune, int(value["backup_keep_days"]))
+    return _server_out(value)

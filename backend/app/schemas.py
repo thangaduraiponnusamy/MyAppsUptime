@@ -18,6 +18,8 @@ CHANNEL_URLS = {
              "ntfy URL must be the server address plus topic, for example https://ntfy.sh/my-alerts"),
 }
 EMAIL_PATTERN = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
+DOMAIN_PATTERN = re.compile(r"^(?=.{4,200}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$")
+LOGO_PATTERN = re.compile(r"^data:image/(png|jpeg|gif|webp|svg\+xml);base64,[A-Za-z0-9+/=]+$")
 
 # SQLite returns naive datetimes; mark them UTC so clients convert correctly
 Utc = Annotated[datetime, AfterValidator(lambda d: d.replace(tzinfo=timezone.utc) if d.tzinfo is None else d)]
@@ -51,6 +53,7 @@ class MonitorBase(BaseModel):
     interval_sec: int = Field(default=60, ge=20, le=86400)
     timeout_sec: int = Field(default=10, ge=1, le=60)
     retries: int = Field(default=0, ge=0, le=5)
+    down_after: int | None = Field(default=None, ge=1, le=20)
     latency_threshold_ms: int | None = Field(default=None, ge=1)
     ssl_expiry_warn_days: int = Field(default=14, ge=1, le=365)
     sla_target: float = Field(default=99.9, ge=50, le=100)
@@ -93,6 +96,8 @@ class MonitorOut(MonitorBase):
     last_latency_ms: float | None
     last_message: str | None
     ssl_expires_at: Utc | None
+    domain_expires_at: Utc | None = None
+    fail_count: int = 0
     created_at: Utc
     uptime_24h: float | None = None
     status_since: Utc | None = None
@@ -135,11 +140,13 @@ class IncidentOut(BaseModel):
     acknowledged_at: Utc | None
     acknowledged_by: str | None
     note: str | None
+    public_note: str | None = None
 
 
 class AckIn(BaseModel):
     by: str = Field(min_length=1, max_length=120)
     note: str | None = Field(default=None, max_length=1000)
+    public_note: str | None = Field(default=None, max_length=1000)
 
 
 class ChannelIn(BaseModel):
@@ -205,6 +212,25 @@ class StatusPageIn(BaseModel):
     title: str = Field(min_length=1, max_length=120)
     description: str | None = Field(default=None, max_length=500)
     monitor_ids: list[int] = Field(default_factory=list)
+    domain: str | None = Field(default=None, max_length=200)
+    logo: str | None = Field(default=None, max_length=300_000)
+
+    @field_validator("logo")
+    @classmethod
+    def check_logo(cls, value: str | None) -> str | None:
+        if value and not LOGO_PATTERN.match(value):
+            raise ValueError("logo must be a PNG, JPEG, GIF, WebP or SVG image")
+        return value or None
+
+    @field_validator("domain")
+    @classmethod
+    def check_domain(cls, value: str | None) -> str | None:
+        value = (value or "").strip().lower().rstrip(".")
+        if not value:
+            return None
+        if not DOMAIN_PATTERN.match(value):
+            raise ValueError("domain must be a host name like status.example.com")
+        return value
 
 
 class StatusPageOut(StatusPageIn):
@@ -218,17 +244,20 @@ class PublicMonitor(BaseModel):
     status: str
     uptime_30d: float | None
     bars: list[str]
+    times: list[Utc] = Field(default_factory=list)
 
 
 class PublicIncident(BaseModel):
     monitor_name: str
     started_at: Utc
     resolved_at: Utc | None
+    note: str | None = None
 
 
 class PublicStatusOut(BaseModel):
     title: str
     description: str | None
+    logo: str | None = None
     overall: str
     monitors: list[PublicMonitor]
     incidents: list[PublicIncident] = Field(default_factory=list)
@@ -393,6 +422,14 @@ class GeneralSettings(BaseModel):
     refresh_sec: int = Field(default=5, ge=5, le=3600)
     retention_value: int = Field(default=1, ge=1, le=3650)
     retention_unit: Literal["days", "months", "years"] = "years"
+    down_after_checks: int = Field(default=3, ge=1, le=20)
+    expiry_warn_days: list[Annotated[int, Field(ge=1, le=365)]] = Field(default_factory=lambda: [30, 14, 7], max_length=5)
+    domain_expiry: bool = True
+
+    @field_validator("expiry_warn_days")
+    @classmethod
+    def sort_days(cls, value: list[int]) -> list[int]:
+        return sorted(set(value), reverse=True)
 
     @model_validator(mode="after")
     def check_retention(self):
@@ -449,6 +486,28 @@ class SmtpOut(BaseModel):
 
 class SmtpTestIn(BaseModel):
     to: str = Field(pattern=EMAIL_PATTERN, max_length=200)
+
+
+class ServerSettings(BaseModel):
+    backup_enabled: bool = True
+    backup_keep_days: int = Field(default=7, ge=1, le=90)
+    dns_cache: bool = True
+
+
+class BackupInfo(BaseModel):
+    name: str
+    size_kb: int
+
+
+class ServerOut(ServerSettings):
+    backup_dir: str
+    backups: list[BackupInfo]
+
+
+class DatabaseInfo(BaseModel):
+    size_kb: int
+    heartbeats: int
+    incidents: int
 
 
 class ExportData(BaseModel):

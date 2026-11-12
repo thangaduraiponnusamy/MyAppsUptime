@@ -5,7 +5,8 @@ import { ActivatedRoute } from '@angular/router';
 import { EMPTY, catchError, map, of, switchMap, tap, timer } from 'rxjs';
 import { ApiService } from '../core/api.service';
 import { AuthService } from '../core/auth.service';
-import { MonitorStatus, PublicStatus } from '../core/models';
+import { PublicStatus } from '../core/models';
+import { BeatDetail, HeartbeatBarComponent } from '../shared/heartbeat-bar.component';
 import { IconComponent } from '../shared/icon.component';
 import { LogoComponent } from '../shared/logo.component';
 
@@ -23,7 +24,7 @@ const STATE_LABEL: Record<string, string> = {
 @Component({
   selector: 'app-public-status',
   standalone: true,
-  imports: [DatePipe, DecimalPipe, IconComponent, LogoComponent],
+  imports: [DatePipe, DecimalPipe, HeartbeatBarComponent, IconComponent, LogoComponent],
   template: `
     <div class="sp">
       <div class="sp-wrap">
@@ -33,9 +34,12 @@ const STATE_LABEL: Record<string, string> = {
         </div>
 
         @if (page(); as p) {
-          <div class="sp-title">
-            <h1>{{ p.title }}</h1>
-            @if (p.description) { <p>{{ p.description }}</p> }
+          <div class="sp-title row">
+            @if (p.logo) { <img class="sp-logo" [src]="p.logo" alt="" /> }
+            <div>
+              <h1>{{ p.title }}</h1>
+              @if (p.description) { <p>{{ p.description }}</p> }
+            </div>
           </div>
 
           <div [class]="'sp-banner ' + p.overall">
@@ -51,13 +55,28 @@ const STATE_LABEL: Record<string, string> = {
                   <div class="name">{{ m.name }}</div>
                   <span [class]="'sp-state ' + m.status">{{ label(m.status) }}</span>
                 </div>
-                <div class="sp-bars">
-                  @for (s of pad(m.bars); track $index) { <span [class]="s" [title]="label(s)"></span> }
-                </div>
+                <app-heartbeat-bar [statuses]="m.bars" [details]="times(m.times)" [max]="bars" [labels]="true" />
                 <div class="sp-uptime">{{ m.uptime_30d === null ? '--' : (m.uptime_30d | number: '1.0-2') + '%' }}</div>
               </div>
             }
           </section>
+
+          @if (p.incidents.length) {
+            <h2 style="margin: 8px 0 0">Recent incidents</h2>
+            <section class="sp-card">
+              @for (i of p.incidents; track $index) {
+                <div class="sp-incident">
+                  <div class="row">
+                    <b>{{ i.monitor_name }}</b>
+                    <span [class]="'pill ' + (i.resolved_at ? 'up' : 'down')">{{ i.resolved_at ? 'Resolved' : 'Ongoing' }}</span>
+                    <span class="spacer"></span>
+                    <span class="muted">{{ i.started_at | date: 'MMM d, HH:mm' }}{{ i.resolved_at ? ' - ' + (i.resolved_at | date: 'MMM d, HH:mm') : '' }}</span>
+                  </div>
+                  @if (i.note) { <div class="sp-note">{{ i.note }}</div> }
+                </div>
+              }
+            </section>
+          }
 
           <div class="sp-foot">
             <div class="sp-legend">
@@ -78,6 +97,7 @@ const STATE_LABEL: Record<string, string> = {
 })
 export class PublicStatusComponent {
   private api = inject(ApiService);
+  readonly bars = BARS;
   page = signal<PublicStatus | null>(null);
   notFound = signal(false);
   updatedAt = signal(new Date());
@@ -124,8 +144,7 @@ export class PublicStatusComponent {
     return STATE_LABEL[status] ?? 'No data';
   }
 
-  pad(bars: MonitorStatus[]): string[] {
-    const recent = bars.slice(-BARS);
-    return [...Array(BARS - recent.length).fill('empty'), ...recent];
+  times(list: string[] | undefined): BeatDetail[] {
+    return (list ?? []).map((time) => ({ time }));
   }
 }
