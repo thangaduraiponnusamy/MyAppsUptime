@@ -34,6 +34,32 @@ Open http://localhost:8000 and sign in with `admin` / `admin`. You must change t
 
 To encrypt the database with a password, see [9. Security](#9-security).
 
+**Docker container monitors**
+
+To check containers on the same host, give the app read access to the Docker socket. Add both options to `docker run`:
+
+```bash
+  -v /var/run/docker.sock:/var/run/docker.sock:ro \
+  --group-add $(stat -c %g /var/run/docker.sock) \
+```
+
+Compose (run `stat -c %g /var/run/docker.sock` and use that number):
+
+```yaml
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    group_add:
+      - "999"
+```
+
+| Error on the monitor | Fix |
+|---|---|
+| `Docker socket /var/run/docker.sock not found` | Add the `-v` line |
+| `Permission denied` | Add the `--group-add` line (the app runs as user 10001) |
+| Rootless Docker | Mount its socket instead, e.g. `-v /run/user/1000/docker.sock:/var/run/docker.sock:ro` |
+
+The socket gives full control of Docker, even with `:ro`. Add it only if you use Docker monitors.
+
 **Pick a version**
 
 | Tag | Meaning |
@@ -68,7 +94,7 @@ Click **+ New monitor** and pick a check type.
 | DNS | `example.com` | Name resolves |
 | SSL Certificate | `example.com` | Days until expiry |
 | Push / Cron | (none) | Your job calls a URL. No call in time = DOWN |
-| Docker container | `nginx` (container name or ID) | Running = UP, unhealthy = DEGRADED, stopped = DOWN. Needs the Docker socket (see 13) |
+| Docker container | `nginx` (container name or ID) | Running = UP, unhealthy = DEGRADED, stopped = DOWN. Needs the Docker socket (see [0. Docker container monitors](#0-install-without-building)) |
 
 Main options:
 
@@ -221,6 +247,7 @@ docker logs myappsuptime   # a missing setting is listed here
 - Keep a copy of `myapps.env` in a password manager. Without `DB_PASSWORD` the data cannot be read.
 - Needs an amd64 server (`DB_PASSWORD` is not available on arm64).
 - If Ping monitors fail, add `--cap-add NET_RAW`.
+- For Docker container monitors, add the two socket options from [0. Install](#0-install-without-building).
 
 ### Database password (encrypts the whole file)
 

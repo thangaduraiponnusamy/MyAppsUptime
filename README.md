@@ -167,6 +167,12 @@ docker run -d --name myappsuptime --restart unless-stopped -p 127.0.0.1:8000:800
 
 Start the line with a space so bash does not save it in history. Safer: `--env-file` (see [docs/USAGE.md](docs/USAGE.md#production-setup)).
 
+Docker container monitors need the Docker socket. Add to either command:
+
+```bash
+-v /var/run/docker.sock:/var/run/docker.sock:ro --group-add $(stat -c %g /var/run/docker.sock)
+```
+
 | Image | What |
 |---|---|
 | `ghcr.io/thangaduraiponnusamy/myappsuptime` | Server (UI + API) |
