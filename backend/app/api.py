@@ -485,7 +485,8 @@ async def test_channel(channel_id: int, db: Session = Depends(get_db)):
                            project="Test", target="https://example.com", **notifier.alert_context(general))
     errors = await notifier.send([channel], alert, smtp=smtp)
     if errors:
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "; ".join(errors))
+        # 400, not 502: proxies like Cloudflare replace 502 bodies with their own page
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "; ".join(errors))
     return {"sent": True}
 
 

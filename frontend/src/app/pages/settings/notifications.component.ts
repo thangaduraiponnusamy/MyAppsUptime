@@ -121,12 +121,13 @@ const emptyChannel = (): Channel => ({
 
     <section class="s-section">
       <h3>Email server (SMTP)</h3>
-      <p class="muted">Needed for email alerts and password reset emails. For Office 365 use smtp.office365.com, port 587, STARTTLS.</p>
+      <p class="muted">Needed for email alerts and password reset emails. Office 365: smtp.office365.com, 587, STARTTLS.
+        Gmail: smtp.gmail.com, 465, SSL/TLS, with an app password (Google account > Security > App passwords).</p>
       <form class="s-fields" (ngSubmit)="saveSmtp()">
         <label>Host <input name="host" [(ngModel)]="smtp.host" placeholder="smtp.office365.com" /></label>
-        <label>Port <input name="port" type="number" [(ngModel)]="smtp.port" /></label>
+        <label>Port <input name="port" type="number" min="1" max="65535" [(ngModel)]="smtp.port" /></label>
         <label>Security
-          <select name="sec" [(ngModel)]="smtp.security">
+          <select name="sec" [ngModel]="smtp.security" (ngModelChange)="smtp.security = $event; smtp.port = SMTP_PORTS[$event]">
             <option value="starttls">STARTTLS</option><option value="ssl">SSL/TLS</option><option value="none">None</option>
           </select>
         </label>
@@ -152,6 +153,7 @@ export class NotificationSettingsComponent {
   readonly types: ChannelType[] = ['teams', 'email', 'telegram', 'discord', 'googlechat', 'ntfy', 'slack', 'webhook'];
   readonly typeLabels = TYPE_LABELS;
   readonly urlHelp = URL_HELP;
+  readonly SMTP_PORTS: Record<string, number> = { starttls: 587, ssl: 465, none: 25 };
   channels = signal<Channel[]>([]);
   projects = signal<Project[]>([]);
   editing = signal<Channel | null>(null);
@@ -247,7 +249,7 @@ export class NotificationSettingsComponent {
     if (ok) this.api.deleteChannel(c.id!).subscribe(() => this.load());
   }
 
-  saveSmtp(): void {
+  saveSmtp(then?: () => void): void {
     const body = { ...this.smtp, port: Number(this.smtp.port), password: this.smtpPassword || null };
     delete body.has_password;
     this.api.saveSmtp(body).subscribe({
@@ -255,16 +257,19 @@ export class NotificationSettingsComponent {
         this.smtp = s;
         this.smtpPassword = '';
         this.smtpNotice.set('Saved.');
+        then?.();
       },
       error: (e) => this.smtpNotice.set(errorText(e)),
     });
   }
 
   testSmtp(): void {
-    this.smtpNotice.set('Sending...');
-    this.api.testSmtp(this.testTo.trim()).subscribe({
-      next: () => this.smtpNotice.set(`Test email sent to ${this.testTo}.`),
-      error: (e) => this.smtpNotice.set(errorText(e)),
+    this.saveSmtp(() => {
+      this.smtpNotice.set('Sending...');
+      this.api.testSmtp(this.testTo.trim()).subscribe({
+        next: () => this.smtpNotice.set(`Test email sent to ${this.testTo}.`),
+        error: (e) => this.smtpNotice.set(errorText(e)),
+      });
     });
   }
 }

@@ -351,7 +351,8 @@ async def test_smtp(body: SmtpTestIn, db: Session = Depends(get_db)):
                            **notifier.alert_context(get_setting(db, "general")))
     error = await notifier.send_email(get_setting(db, "smtp"), alert, [body.to])
     if error:
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, error)
+        # 400, not 502: proxies like Cloudflare replace 502 bodies with their own page
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, error)
     return {"sent": True}
 
 
