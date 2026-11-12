@@ -5,6 +5,14 @@ import { AuthService } from '../../core/auth.service';
 import { GeneralSettings } from '../../core/models';
 import { LIMITS, PrefsService } from '../../core/prefs.service';
 
+// Browsers still use some old zone names; show the current ones
+const RENAMED: Record<string, string> = {
+  'Asia/Calcutta': 'Asia/Kolkata', 'Asia/Saigon': 'Asia/Ho_Chi_Minh', 'Asia/Katmandu': 'Asia/Kathmandu',
+  'Asia/Rangoon': 'Asia/Yangon', 'Europe/Kiev': 'Europe/Kyiv', 'Atlantic/Faeroe': 'Atlantic/Faroe',
+  'America/Godthab': 'America/Nuuk', 'Pacific/Ponape': 'Pacific/Pohnpei', 'Pacific/Truk': 'Pacific/Chuuk',
+};
+const modernZone = (z: string) => RENAMED[z] ?? z;
+
 @Component({
   selector: 'app-settings-general',
   standalone: true,
@@ -29,11 +37,11 @@ import { LIMITS, PrefsService } from '../../core/prefs.service';
           </small>
         </label>
         <label>Time zone for alerts
-          <select [(ngModel)]="form.timezone" [disabled]="!auth.isAdmin()">
-            <option value="">Server default</option>
-            @for (z of zones; track z) { <option [value]="z">{{ z }}</option> }
-          </select>
-          <small class="muted">Times in Teams, Slack and email alerts.
+          <input list="tz-list" [(ngModel)]="form.timezone" placeholder="Server default (type to search, e.g. Kolkata)" [disabled]="!auth.isAdmin()" />
+          <datalist id="tz-list">
+            @for (z of zones; track z) { <option [value]="z"></option> }
+          </datalist>
+          <small class="muted">Times in Teams, Telegram, Slack and email alerts.
             @if (auth.isAdmin() && form.timezone !== localZone) {
               <a href="" (click)="$event.preventDefault(); form.timezone = localZone">Use {{ localZone }}</a>
             }
@@ -79,8 +87,8 @@ export class GeneralSettingsComponent {
   prefs = inject(PrefsService);
   readonly limitList = LIMITS;
   readonly origin = location.origin;
-  readonly localZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  zones: string[] = [...new Set(['UTC', this.localZone, ...((Intl as any).supportedValuesOf?.('timeZone') ?? [])])];
+  readonly localZone = modernZone(Intl.DateTimeFormat().resolvedOptions().timeZone);
+  zones: string[] = [...new Set(['UTC', this.localZone, ...((Intl as any).supportedValuesOf?.('timeZone') ?? []).map(modernZone)])].sort();
   form: GeneralSettings = { app_url: '', timezone: '', refresh_sec: 5, retention_value: 1, retention_unit: 'years' };
   notice = signal('');
 

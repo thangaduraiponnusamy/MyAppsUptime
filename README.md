@@ -50,7 +50,7 @@ Data is stored in the `myappsuptime-data` Docker volume.
 |---|---|
 | Tenants | Super admin only: add, rename, disable or delete tenants |
 | General | Auto refresh (default 5 seconds), app URL for links in alerts, how long to keep logs (default 1 year) |
-| Notifications | Teams, email, Slack or webhook channels, and the email (SMTP) server |
+| Notifications | Teams, email, Telegram, Slack or webhook channels, and the email (SMTP) server |
 | Teams | Teams, their members and their services (monitors) |
 | Users | Add users, set role, reset a password |
 | Security | Your account and password |

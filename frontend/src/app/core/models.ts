@@ -1,6 +1,6 @@
 export type MonitorStatus = 'up' | 'down' | 'degraded' | 'maintenance' | 'paused' | 'pending';
 export type MonitorType = 'http' | 'keyword' | 'json' | 'tcp' | 'ping' | 'dns' | 'ssl' | 'push';
-export type ChannelType = 'webhook' | 'slack' | 'teams' | 'email';
+export type ChannelType = 'webhook' | 'slack' | 'teams' | 'telegram' | 'email';
 
 export const MONITOR_TYPES: { value: MonitorType; label: string }[] = [
   { value: 'http', label: 'HTTP(s)' },

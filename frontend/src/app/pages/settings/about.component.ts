@@ -19,7 +19,7 @@ import { LogoComponent } from '../../shared/logo.component';
       } @else {
         <span class="muted small">GitHub link coming soon</span>
       }
-      <p class="muted small about-note">Self-hosted uptime monitoring with tenants, teams, users and alerts by Teams, email, Slack or webhook.</p>
+      <p class="muted small about-note">Self-hosted uptime monitoring with tenants, teams, users and alerts by Teams, email, Telegram, Slack or webhook.</p>
     </div>
   `,
 })

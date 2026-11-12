@@ -115,10 +115,47 @@ def teams_payload(alert: Alert) -> dict:
         {"contentType": "application/vnd.microsoft.card.adaptive", "contentUrl": None, "content": card}]}
 
 
+def telegram_payload(alert: Alert, chat_id: str) -> dict:
+    dot = {"up": "\U0001F7E2", "down": "\U0001F534", "degraded": "\U0001F7E0", "maintenance": "\U0001F535"}.get(alert.status, "\u26AA")
+    lines = [f"{dot} <b>{escape(alert.title)}</b>", ""]
+    lines += [f"<b>{escape(k)}:</b> {escape(v)}" for k, v in alert.facts()]
+    lines += ["", f"<i>MyAppsUptime{' on ' + escape(alert.server) if alert.server else ''}</i>"]
+    payload = {"chat_id": chat_id, "text": "\n".join(lines), "parse_mode": "HTML",
+               "link_preview_options": {"is_disabled": True}}
+    if alert.buttons():
+        payload["reply_markup"] = {"inline_keyboard": [[{"text": t, "url": u} for t, u in alert.buttons()]]}
+    return payload
+
+
+def split_telegram(url: str) -> tuple[str, str]:
+    """Stored as https://api.telegram.org/bot<token>/sendMessage?chat_id=<id>"""
+    base, _, query = url.partition("?chat_id=")
+    return base, query
+
+
+async def _send_telegram(client: httpx.AsyncClient, channel: NotificationChannel, alert: Alert) -> None:
+    url, chat_id = split_telegram(channel.url)
+    payload = telegram_payload(alert, chat_id)
+    resp = await client.post(url, json=payload)
+    if resp.status_code == 400 and "reply_markup" in payload:
+        # Telegram rejects buttons with local addresses (localhost, IPs); send without them
+        payload.pop("reply_markup")
+        resp = await client.post(url, json=payload)
+    if resp.is_error:
+        try:
+            detail = resp.json().get("description", "")
+        except ValueError:
+            detail = ""
+        # Own message: the httpx error text would include the bot token
+        raise RuntimeError(f"Telegram HTTP {resp.status_code} {detail}".strip())
+
+
 def build_payload(channel: NotificationChannel, alert: Alert) -> dict:
     text = f"[{alert.status.upper()}] {alert.title}: {alert.message}"
     if channel.type == "teams":
         return teams_payload(alert)
+    if channel.type == "telegram":
+        return telegram_payload(alert, split_telegram(channel.url)[1])
     if channel.type == "webhook":
         return {"monitor": alert.monitor, "status": alert.status, "message": alert.message,
                 "project": alert.project, "target": alert.target, "link": alert.link, "server": alert.app_url or None,
@@ -237,9 +274,14 @@ async def send(channels: list[NotificationChannel], alert: Alert, emails: list[s
         async with httpx.AsyncClient(timeout=10) as client:
             for channel in hooks:
                 try:
+                    if channel.type == "telegram":
+                        await _send_telegram(client, channel, alert)
+                        continue
                     resp = await client.post(channel.url, json=build_payload(channel, alert))
                     resp.raise_for_status()
-                except httpx.HTTPError as exc:
+                except (httpx.HTTPError, RuntimeError) as exc:
+                    if channel.type == "telegram" and isinstance(exc, httpx.HTTPError):
+                        exc = type(exc).__name__  # the message would include the bot token
                     log.warning("Notification '%s' failed: %s", channel.name, exc)
                     errors.append(f"{channel.name}: {exc}")
     error = await send_email(smtp, alert, recipients)

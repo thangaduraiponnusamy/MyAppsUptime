@@ -117,11 +117,21 @@ Report a failure with `status=down`. If no call arrives within the interval, the
 
 ## 6. Alerting
 
-Go to **Alerting** and add a channel: Microsoft Teams, Slack or generic webhook.
+Go to **Alerting** and add a channel: Microsoft Teams, email, Telegram, Slack or generic webhook.
 
 - No tags = alerts for all monitors.
 - With tags (for example `team-payments`) = only monitors with that tag.
 - Use **Send test** to check it.
+
+Telegram setup:
+
+| Step | What to do |
+|---|---|
+| 1 | In Telegram, message `@BotFather`, send `/newbot`, copy the **bot token** |
+| 2 | Add the bot to your group (or as admin to your channel) and send a message there |
+| 3 | Open `https://api.telegram.org/bot<token>/getUpdates`, copy `"chat":{"id": ...}` as **Chat ID** |
+
+Tip: Mattermost and Rocket.Chat accept the **Slack** type.
 
 Set these in **Settings > General** so alerts look right:
 

@@ -5,8 +5,10 @@ import { ConfirmService } from '../../core/confirm.service';
 import { Channel, ChannelType, Project, SmtpSettings } from '../../core/models';
 
 const TYPE_LABELS: Record<ChannelType, string> = {
-  teams: 'Microsoft Teams', email: 'Email', slack: 'Slack', webhook: 'Webhook',
+  teams: 'Microsoft Teams', email: 'Email', telegram: 'Telegram', slack: 'Slack', webhook: 'Webhook',
 };
+
+const TG_PREFIX = 'https://api.telegram.org/bot';
 
 const emptyChannel = (): Channel => ({
   name: '', type: 'teams', url: '', recipients: [], tags: [], project_ids: [], active: true,
@@ -39,6 +41,16 @@ const emptyChannel = (): Channel => ({
             <label class="full">Email addresses (comma separated)
               <input name="rcpt" [(ngModel)]="recipientsText" placeholder="ops@example.com, lead@example.com" />
             </label>
+          } @else if (c.type === 'telegram') {
+            <label>Bot token
+              <input name="tgToken" type="password" [(ngModel)]="tgToken" placeholder="123456789:AA..." autocomplete="off" />
+            </label>
+            <label>Chat ID
+              <input name="tgChat" [(ngModel)]="tgChat" placeholder="-1001234567890 or @mychannel" />
+            </label>
+            <small class="muted full">1. In Telegram, message &#64;BotFather, send /newbot and copy the token.
+              2. Add the bot to your group or channel (as admin for channels) and send it a message.
+              3. Open https://api.telegram.org/bot&lt;token&gt;/getUpdates and copy "chat":{{ '{' }}"id": ...{{ '}' }}.</small>
           } @else {
             <label class="full">{{ c.type === 'teams' ? 'Teams workflow / incoming webhook URL' : 'Webhook URL' }}
               <input name="url" [(ngModel)]="c.url" placeholder="https://..." />
@@ -75,7 +87,7 @@ const emptyChannel = (): Channel => ({
             <tr [class.muted]="!c.active">
               <td><b>{{ c.name }}</b> @if (!c.active) { <span class="tag">off</span> }</td>
               <td><span class="type-badge">{{ typeLabels[c.type] }}</span></td>
-              <td class="ellipsis">{{ c.type === 'email' ? c.recipients.join(', ') : host(c.url) }}</td>
+              <td class="ellipsis">{{ sendsTo(c) }}</td>
               <td class="hide-sm">
                 @for (n of projectNames(c); track n) { <span class="tag">{{ n }}</span> } @empty { <span class="muted">All</span> }
                 @for (t of c.tags; track t) { <span class="tag">#{{ t }}</span> }
@@ -124,13 +136,15 @@ const emptyChannel = (): Channel => ({
 export class NotificationSettingsComponent {
   private api = inject(ApiService);
   private confirm = inject(ConfirmService);
-  readonly types: ChannelType[] = ['teams', 'email', 'slack', 'webhook'];
+  readonly types: ChannelType[] = ['teams', 'email', 'telegram', 'slack', 'webhook'];
   readonly typeLabels = TYPE_LABELS;
   channels = signal<Channel[]>([]);
   projects = signal<Project[]>([]);
   editing = signal<Channel | null>(null);
   recipientsText = '';
   tagsText = '';
+  tgToken = '';
+  tgChat = '';
   error = signal('');
   notice = signal('');
   smtp: SmtpSettings = { host: '', port: 587, security: 'starttls', username: '', from_addr: '' };
@@ -161,10 +175,19 @@ export class NotificationSettingsComponent {
     }
   }
 
+  sendsTo(c: Channel): string {
+    if (c.type === 'email') return c.recipients.join(', ');
+    if (c.type === 'telegram') return `Chat ${c.url.split('?chat_id=')[1] ?? ''}`;
+    return this.host(c.url);
+  }
+
   edit(c: Channel | null): void {
     const copy = c ? { ...c, project_ids: [...c.project_ids] } : emptyChannel();
     this.recipientsText = copy.recipients.join(', ');
     this.tagsText = copy.tags.join(', ');
+    const tg = copy.type === 'telegram' ? copy.url.slice(TG_PREFIX.length).split('/sendMessage?chat_id=') : [];
+    this.tgToken = tg[0] ?? '';
+    this.tgChat = tg[1] ?? '';
     this.error.set('');
     this.editing.set(copy);
   }
@@ -177,6 +200,9 @@ export class NotificationSettingsComponent {
     const c = this.editing()!;
     const split = (s: string) => s.split(',').map((t) => t.trim()).filter(Boolean);
     const body: Channel = { ...c, recipients: split(this.recipientsText), tags: split(this.tagsText) };
+    if (c.type === 'telegram') {
+      body.url = `${TG_PREFIX}${this.tgToken.trim()}/sendMessage?chat_id=${encodeURIComponent(this.tgChat.trim()).replace('%40', '@')}`;
+    }
     const call = c.id ? this.api.updateChannel(c.id, body) : this.api.createChannel(body);
     call.subscribe({
       next: () => {

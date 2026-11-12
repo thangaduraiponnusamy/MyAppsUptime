@@ -7,7 +7,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 MonitorType = Literal["http", "keyword", "json", "tcp", "ping", "dns", "ssl", "push"]
-ChannelType = Literal["webhook", "slack", "teams", "email"]
+ChannelType = Literal["webhook", "slack", "teams", "telegram", "email"]
+TELEGRAM_URL = re.compile(r"^https://api\.telegram\.org/bot\d+:[A-Za-z0-9_-]{30,}/sendMessage\?chat_id=(-?\d+|@[A-Za-z0-9_]{5,32})$")
 EMAIL_PATTERN = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
 
 # SQLite returns naive datetimes; mark them UTC so clients convert correctly
@@ -148,6 +149,10 @@ class ChannelIn(BaseModel):
             if not self.recipients:
                 raise ValueError("add at least one email address")
             self.url = ""
+        elif self.type == "telegram":
+            if not TELEGRAM_URL.match(self.url):
+                raise ValueError("Telegram bot token or chat ID is not valid")
+            self.recipients = []
         else:
             _require_http_url(self.url)
             self.recipients = []

@@ -17,7 +17,7 @@ import { LogoComponent } from './logo.component';
           <p>One place to watch your apps, sites and devices, grouped by team, with alerts to the right people.</p>
           <ul>
             <li><app-icon name="check-circle" [size]="18" /> HTTP, TCP, ping, DNS, SSL and push checks</li>
-            <li><app-icon name="check-circle" [size]="18" /> Alerts by Microsoft Teams, email, Slack or webhook</li>
+            <li><app-icon name="check-circle" [size]="18" /> Alerts by Microsoft Teams, email, Telegram, Slack or webhook</li>
             <li><app-icon name="check-circle" [size]="18" /> Tenants and teams with their own members and alerts</li>
           </ul>
         </div>
