@@ -5,17 +5,88 @@ import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine, event, inspect, make_url, text
+from sqlalchemy.exc import DatabaseError
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 log = logging.getLogger(__name__)
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./myappsuptime.db")
+SQLITE_HEADER = b"SQLite format 3\x00"
 
-engine = create_engine(
-    DATABASE_URL,
-    connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {},
-)
+
+def _db_password() -> str:
+    if os.getenv("DB_PASSWORD_FILE"):
+        return Path(os.environ["DB_PASSWORD_FILE"]).read_text().rstrip("\r\n")
+    return os.getenv("DB_PASSWORD", "")
+
+
+DB_PASSWORD = _db_password()
+
+
+def key_pragma(name: str, password: str) -> str:
+    # PRAGMA does not accept bound parameters, so quote the value
+    return f"PRAGMA {name} = '" + password.replace("'", "''") + "'"
+
+
+def sqlcipher():
+    try:
+        from sqlcipher3 import dbapi2
+    except ImportError:
+        raise RuntimeError("DB_PASSWORD is set but SQLCipher is not installed (pip install sqlcipher3-binary)") from None
+    return dbapi2
+
+
+def _is_plain(path: Path) -> bool:
+    with path.open("rb") as f:
+        return f.read(16) == SQLITE_HEADER
+
+
+def _encrypt_file(path: Path) -> None:
+    """Convert a plain SQLite file to SQLCipher in place. The original stays until the copy is complete."""
+    tmp = path.with_name(path.name + ".encrypting")
+    tmp.unlink(missing_ok=True)
+    con = sqlcipher().connect(str(path))
+    try:
+        con.execute("ATTACH DATABASE ? AS encrypted KEY ?", (str(tmp), DB_PASSWORD))
+        con.execute("SELECT sqlcipher_export('encrypted')")
+        con.execute("DETACH DATABASE encrypted")
+    finally:
+        con.close()
+    os.replace(tmp, path)
+    log.warning("Encrypted database %s with DB_PASSWORD. Delete old plain backups (*.bak) next to it.", path)
+
+
+def make_engine(url: str):
+    if not url.startswith("sqlite"):
+        return create_engine(url)
+    db = make_url(url).database
+    path = Path(db) if db and db != ":memory:" else None
+    exists = path is not None and path.is_file() and path.stat().st_size > 0
+    if not DB_PASSWORD:
+        if exists and not _is_plain(path):
+            raise RuntimeError(f"{path} is encrypted. Set DB_PASSWORD or DB_PASSWORD_FILE.")
+        return create_engine(url, connect_args={"check_same_thread": False})
+
+    module = sqlcipher()
+    if exists and _is_plain(path):
+        _encrypt_file(path)
+    eng = create_engine(url, module=module, connect_args={"check_same_thread": False})
+
+    @event.listens_for(eng, "connect", insert=True)
+    def _set_key(dbapi_conn, _record):
+        dbapi_conn.execute(key_pragma("key", DB_PASSWORD))
+
+    try:
+        with eng.connect() as conn:
+            conn.exec_driver_sql("SELECT count(*) FROM sqlite_master")
+    except DatabaseError:
+        eng.dispose()
+        raise RuntimeError(f"Cannot open {path}: wrong DB_PASSWORD") from None
+    return eng
+
+
+engine = make_engine(DATABASE_URL)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
 

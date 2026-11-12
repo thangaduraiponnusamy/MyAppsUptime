@@ -7,10 +7,10 @@ import threading
 from datetime import datetime
 from pathlib import Path
 
-from sqlalchemy import create_engine, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
-from .database import DATABASE_URL, SessionLocal, upgrade_schema
+from .database import DATABASE_URL, SessionLocal, make_engine, upgrade_schema
 from .models import Tenant
 
 log = logging.getLogger(__name__)
@@ -44,8 +44,7 @@ def _maker(slug: str) -> sessionmaker:
             maker = _makers.get(slug)
             if maker is None:
                 DATA_DIR.mkdir(parents=True, exist_ok=True)
-                engine = create_engine(f"sqlite:///{db_path(slug).as_posix()}",
-                                       connect_args={"check_same_thread": False})
+                engine = make_engine(f"sqlite:///{db_path(slug).as_posix()}")
                 upgrade_schema(engine)
                 maker = _makers[slug] = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
     return maker

@@ -32,6 +32,8 @@ volumes:
 
 Open http://localhost:8000 and sign in with `admin` / `admin`. You must change the password right away.
 
+To encrypt the database with a password, see [9. Security](#9-security).
+
 **Pick a version**
 
 | Tag | Meaning |
@@ -149,9 +151,41 @@ What is stored and how:
 | Sign-in and reset tokens | Hashed (SHA-256) |
 | SMTP password | Encrypted (Fernet / AES) |
 | Alert webhook URLs | Encrypted (Fernet / AES) |
-| Monitors, history, settings | Plain SQLite |
+| Monitors, history, settings | Plain SQLite, or fully encrypted with `DB_PASSWORD` |
 
-Encryption key:
+### Database password (encrypts the whole file)
+
+Set `DB_PASSWORD` and the whole database is encrypted (SQLCipher, AES-256). Without it the database is plain.
+
+```bash
+echo "DB_PASSWORD=$(openssl rand -base64 24)" > myapps.env
+echo "SECRET_KEY=$(openssl rand -base64 32)" >> myapps.env
+chmod 600 myapps.env
+
+docker run -d --name myappsuptime -p 8000:8000 \
+  --env-file myapps.env \
+  -v myappsuptime-data:/data --restart unless-stopped \
+  ghcr.io/thangaduraiponnusamy/myappsuptime:latest
+```
+
+- Use `--env-file` (not `-e`). With `-e` the password shows in shell history.
+- Or mount a file and set `DB_PASSWORD_FILE=/run/secrets/db_pw` (Docker or Kubernetes secrets).
+- An existing plain database is encrypted automatically on the next start. Then delete old `*.bak` files in `/data`; they are still plain.
+- Wrong or missing password: the app stops with a clear message. Data is not touched.
+- **If the password is lost, the data cannot be recovered.** Keep a copy in a password manager.
+- Only Linux x86-64 (amd64) images support it.
+
+Change the password (stop the app first):
+
+```bash
+docker stop myappsuptime
+docker run --rm -it --env-file myapps.env -v myappsuptime-data:/data \
+  ghcr.io/thangaduraiponnusamy/myappsuptime:latest python -m app.change_db_password
+# then put the new DB_PASSWORD in myapps.env
+docker rm myappsuptime   # and run the "docker run" command above again
+```
+
+### Secret key (encrypts SMTP password and webhooks)
 
 - Set your own key (recommended):
 
@@ -163,7 +197,7 @@ SECRET_KEY=$(openssl rand -base64 32)   # keep this value safe
 - Back up the key. If it is lost, enter the SMTP password and webhook URLs again.
 - Do not keep the key in the same backup as the database.
 
-The database file itself is not encrypted. Protect it with:
+Without `DB_PASSWORD` the database file is not encrypted. Also protect it with:
 
 - Disk or volume encryption (BitLocker, LUKS, encrypted EBS).
 - The container runs as a non-root user and `/data` is readable only by that user.

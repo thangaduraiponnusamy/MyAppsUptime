@@ -7,6 +7,8 @@ services:
       - "8000:8000"
     environment:
       API_TOKEN: ${API_TOKEN:-}
+      DB_PASSWORD: ${DB_PASSWORD:-}
+      SECRET_KEY: ${SECRET_KEY:-}
     volumes:
       - myappsuptime-data:/data
     restart: unless-stopped

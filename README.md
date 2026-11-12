@@ -131,6 +131,8 @@ docker run -d --name myappsuptime -p 8000:8000 -v myappsuptime-data:/data ghcr.i
 | Variable | Default | Meaning |
 |---|---|---|
 | `API_TOKEN` | empty | Optional token for scripts: `Authorization: Bearer <token>` (acts as admin) |
+| `DB_PASSWORD` | empty | Encrypts the whole database file (SQLCipher). Empty = plain database |
+| `DB_PASSWORD_FILE` | empty | Read `DB_PASSWORD` from this file (Docker/Kubernetes secrets) |
 | `SECRET_KEY` | empty | Key used to encrypt the SMTP password and webhook URLs. If empty, `secret.key` is created next to the DB |
 | `SECRET_KEY_FILE` | `secret.key` next to the DB | Where the key file is kept when `SECRET_KEY` is not set |
 | `SESSION_DAYS` | `7` | How long a sign-in lasts |
