@@ -30,7 +30,8 @@ COPY --from=ui /ui/dist/myappsuptime-ui/browser ./static
 
 RUN useradd --system --uid 10001 appuser \
     && mkdir /data \
-    && chown appuser /data
+    && chown appuser /data \
+    && chmod 700 /data
 USER appuser
 
 VOLUME /data

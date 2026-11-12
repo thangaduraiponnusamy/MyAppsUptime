@@ -141,14 +141,40 @@ Kinds: `status.svg`, `uptime.svg`, `latency.svg`.
 
 ## 9. Security
 
-Start with a token:
+What is stored and how:
+
+| Data | Stored as |
+|---|---|
+| User passwords | Hashed (scrypt), cannot be read back |
+| Sign-in and reset tokens | Hashed (SHA-256) |
+| SMTP password | Encrypted (Fernet / AES) |
+| Alert webhook URLs | Encrypted (Fernet / AES) |
+| Monitors, history, settings | Plain SQLite |
+
+Encryption key:
+
+- Set your own key (recommended):
 
 ```bash
-API_TOKEN=change-me docker compose up -d
+SECRET_KEY=$(openssl rand -base64 32)   # keep this value safe
 ```
 
-Then open **Settings** and save the same token in the browser.
-Status pages, badges and push URLs stay public.
+- If `SECRET_KEY` is not set, a key file `secret.key` is created next to the database (in `/data`).
+- Back up the key. If it is lost, enter the SMTP password and webhook URLs again.
+- Do not keep the key in the same backup as the database.
+
+The database file itself is not encrypted. Protect it with:
+
+- Disk or volume encryption (BitLocker, LUKS, encrypted EBS).
+- The container runs as a non-root user and `/data` is readable only by that user.
+
+Other tips:
+
+- Change the `admin` / `admin` password at first sign-in.
+- Run behind HTTPS (reverse proxy such as nginx, Traefik or Caddy).
+- **Export JSON** contains webhook URLs in plain text. Keep the file safe.
+- `API_TOKEN` is for scripts only: `Authorization: Bearer <token>`. It acts as admin.
+- Status pages, badges and push URLs stay public.
 
 ## 10. Prometheus
 

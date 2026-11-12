@@ -3,6 +3,7 @@ dist/
 .angular/
 __pycache__/
 *.db
+secret.key
 *.db.v*.bak
 backend/tenants/
 .venv/

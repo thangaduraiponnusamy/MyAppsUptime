@@ -21,7 +21,10 @@
             "styles": ["src/styles.css"]
           },
           "configurations": {
-            "production": { "outputHashing": "all" },
+            "production": {
+              "outputHashing": "all",
+              "optimization": { "scripts": true, "fonts": true, "styles": { "minify": true, "inlineCritical": false } }
+            },
             "development": { "optimization": false, "sourceMap": true }
           },
           "defaultConfiguration": "production"

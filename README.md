@@ -131,6 +131,8 @@ docker run -d --name myappsuptime -p 8000:8000 -v myappsuptime-data:/data ghcr.i
 | Variable | Default | Meaning |
 |---|---|---|
 | `API_TOKEN` | empty | Optional token for scripts: `Authorization: Bearer <token>` (acts as admin) |
+| `SECRET_KEY` | empty | Key used to encrypt the SMTP password and webhook URLs. If empty, `secret.key` is created next to the DB |
+| `SECRET_KEY_FILE` | `secret.key` next to the DB | Where the key file is kept when `SECRET_KEY` is not set |
 | `SESSION_DAYS` | `7` | How long a sign-in lasts |
 | `DATABASE_URL` | `sqlite:////data/myappsuptime.db` | SQLAlchemy database URL |
 | `TENANT_DATA_DIR` | `tenants/` next to the main DB | Where tenant database files live |

@@ -3,6 +3,7 @@
 **/.angular
 **/__pycache__
 **/*.db
+**/secret.key
 **/.venv
 preview
 docs

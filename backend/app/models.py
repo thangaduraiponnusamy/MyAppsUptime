@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from sqlalchemy import JSON, DateTime, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from .crypto import EncryptedText
 from .database import Base
 
 
@@ -91,7 +92,7 @@ class NotificationChannel(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(120))
     type: Mapped[str] = mapped_column(String(20))  # webhook | slack | teams | email
-    url: Mapped[str] = mapped_column(String(500), default="")
+    url: Mapped[str] = mapped_column(EncryptedText, default="")  # webhook URLs contain secrets
     recipients: Mapped[list] = mapped_column(JSON, default=list)  # email addresses for email channels
     tags: Mapped[list] = mapped_column(JSON, default=list)  # empty = all monitors
     project_ids: Mapped[list] = mapped_column(JSON, default=list)  # empty = all projects

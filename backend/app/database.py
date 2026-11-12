@@ -79,6 +79,26 @@ def _run_migrations(eng, had_tables: bool) -> None:
         log.info("Applied migration %s: %s", version, name)
 
 
+def _encrypt_existing(eng) -> None:
+    """Encrypt secrets that were saved in plain text by older versions. Safe to run every start."""
+    from .crypto import PREFIX, encrypt
+    with eng.begin() as conn:
+        rows = conn.execute(text("SELECT id, url FROM notification_channels "
+                                 "WHERE url <> '' AND url NOT LIKE 'enc:%'")).all()
+        for row_id, url in rows:
+            conn.execute(text("UPDATE notification_channels SET url = :u WHERE id = :i"),
+                         {"u": encrypt(url), "i": row_id})
+        smtp = conn.scalar(text("SELECT value FROM app_settings WHERE key = 'smtp'"))
+        value = json.loads(smtp) if isinstance(smtp, str) else smtp
+        password = (value or {}).get("password")
+        plain_password = bool(password) and not password.startswith(PREFIX)
+        if plain_password:
+            value["password"] = encrypt(password)
+            conn.execute(text("UPDATE app_settings SET value = :v WHERE key = 'smtp'"), {"v": json.dumps(value)})
+        if rows or plain_password:
+            log.info("Encrypted stored secrets")
+
+
 def schema_version(eng=None) -> int:
     with (eng or engine).connect() as conn:
         return conn.scalar(text("SELECT COALESCE(MAX(version), 0) FROM schema_migrations")) or 0
@@ -101,3 +121,4 @@ def upgrade_schema(eng=None) -> None:
                 conn.execute(text(ddl + _default_sql(column)))
                 log.info("Added column %s.%s", table.name, column.name)
     _run_migrations(eng, had_tables)
+    _encrypt_existing(eng)

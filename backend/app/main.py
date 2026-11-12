@@ -3,7 +3,7 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
@@ -37,6 +37,25 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["Authorization", "Content-Type", "X-Tenant"],
 )
+
+CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
+       "connect-src 'self'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'; object-src 'none'")
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    headers = response.headers
+    headers.setdefault("X-Content-Type-Options", "nosniff")
+    headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    # Swagger UI at /docs loads scripts from a CDN, so it gets no CSP
+    if not request.url.path.startswith(("/docs", "/redoc")):
+        headers.setdefault("Content-Security-Policy", CSP)
+    if request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https":
+        headers.setdefault("Strict-Transport-Security", "max-age=31536000")
+    return response
 
 app.include_router(admin_api.auth)
 app.include_router(admin_api.admin)
