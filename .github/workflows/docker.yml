@@ -1,3 +1,5 @@
+# Pull request -> "check" job (compile only, no image)
+# Push / v* tag -> "build" job (Docker image to ghcr.io)
 name: Build
 
 on:
@@ -9,7 +11,7 @@ on:
 
 permissions:
   contents: read
-  packages: write
+  packages: write # push to ghcr.io with GITHUB_TOKEN
 
 jobs:
   # Pull requests: compile only, no Docker image
@@ -42,6 +44,7 @@ jobs:
           python -m compileall -q app
           python -c "import app.main"
 
+  # Push and v* tags: build the Docker image and publish it
   build:
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
@@ -70,6 +73,8 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository }}
+          # latest = newest build of any branch | main = lts | develop = beta
+          # release/X = X | feature/X = alpha-X | each also gets a UTC time tag
           tags: |
             type=raw,value=latest
             type=raw,value=lts,enable=${{ github.ref == 'refs/heads/main' }}
