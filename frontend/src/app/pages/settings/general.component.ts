@@ -3,7 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { ApiService, errorText } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
 import { ConfirmService } from '../../core/confirm.service';
-import { DatabaseInfo, GeneralSettings, ServerSettings } from '../../core/models';
+import { AdminDefaults, DatabaseInfo, GeneralSettings, ServerSettings } from '../../core/models';
 import { LIMITS, PrefsService } from '../../core/prefs.service';
 
 // Browsers still use some old zone names; show the current ones
@@ -30,19 +30,22 @@ const modernZone = (z: string) => RENAMED[z] ?? z;
           <small class="muted">5 to 3600. Default 5.</small>
         </label>
         <label>App address
-          <input [(ngModel)]="form.app_url" placeholder="https://uptime.example.com" [disabled]="!auth.isAdmin()" />
+          <input [(ngModel)]="form.app_url" [placeholder]="defaults()?.app_url ? 'Admin default: ' + defaults()!.app_url : 'https://uptime.example.com'" [disabled]="!auth.isAdmin()" />
           <small class="muted">Used for links and buttons in alerts and password reset emails.
+            @if (defaults()?.app_url) { Leave empty to use the admin's. }
             @if (auth.isAdmin() && form.app_url !== origin) {
               <a href="" (click)="$event.preventDefault(); form.app_url = origin">Use {{ origin }}</a>
             }
           </small>
         </label>
         <label>Time zone for alerts
-          <input list="tz-list" [(ngModel)]="form.timezone" placeholder="Server default (type to search, e.g. Kolkata)" [disabled]="!auth.isAdmin()" />
+          <input list="tz-list" [(ngModel)]="form.timezone" [disabled]="!auth.isAdmin()"
+                 [placeholder]="defaults()?.timezone ? 'Admin default: ' + defaults()!.timezone : 'Server default (type to search, e.g. Kolkata)'" />
           <datalist id="tz-list">
             @for (z of zones; track z) { <option [value]="z"></option> }
           </datalist>
           <small class="muted">Times shown in all alerts.
+            @if (defaults()?.timezone) { Leave empty to use the admin's. }
             @if (auth.isAdmin() && form.timezone !== localZone) {
               <a href="" (click)="$event.preventDefault(); form.timezone = localZone">Use {{ localZone }}</a>
             }
@@ -148,6 +151,7 @@ export class GeneralSettingsComponent {
   dbNotice = signal('');
   server = signal<ServerSettings | null>(null);
   serverNotice = signal('');
+  defaults = signal<AdminDefaults | null>(null);
   private confirm = inject(ConfirmService);
 
   constructor() {
@@ -155,7 +159,10 @@ export class GeneralSettingsComponent {
       this.setForm(g);
       if (g.timezone && !this.zones.includes(g.timezone)) this.zones = [g.timezone, ...this.zones];
     });
-    if (this.auth.isAdmin()) this.api.database().subscribe((d) => this.db.set(d));
+    if (this.auth.isAdmin()) {
+      this.api.database().subscribe((d) => this.db.set(d));
+      this.api.adminDefaults().subscribe((d) => this.defaults.set(d));
+    }
     if (this.auth.isSuper()) this.api.server().subscribe((s) => this.server.set(s));
   }
 

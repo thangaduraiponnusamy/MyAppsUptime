@@ -326,6 +326,17 @@ def save_general(body: GeneralSettings, db: Session = Depends(get_db)):
     return put_setting(db, "general", body.model_dump())
 
 
+@admin.get("/settings/defaults", dependencies=[Depends(require_admin)])
+def admin_defaults(db: Session = Depends(get_db)):
+    """Admin tenant values used when this tenant leaves a setting empty."""
+    if tenancy.tenant_of(db) == tenancy.DEFAULT:
+        return {"app_url": "", "timezone": "", "smtp": False}
+    with tenancy.session_for(tenancy.DEFAULT) as base:
+        general = get_setting(base, "general")
+        return {"app_url": general["app_url"], "timezone": general["timezone"],
+                "smtp": notifier.smtp_ready(get_setting(base, "smtp"))}
+
+
 def _smtp_out(value: dict) -> SmtpOut:
     return SmtpOut(**{k: value[k] for k in ("host", "port", "security", "username", "from_addr")},
                    has_password=bool(value.get("password")))
@@ -346,10 +357,11 @@ def save_smtp(body: SmtpSettings, db: Session = Depends(get_db)):
 
 @admin.post("/settings/smtp/test", dependencies=[Depends(require_admin)])
 async def test_smtp(body: SmtpTestIn, db: Session = Depends(get_db)):
+    from .scheduler import tenant_config
+    general, smtp = tenant_config(db, tenancy.tenant_of(db))
     alert = notifier.Alert(monitor="Test monitor", status="up", message="Email alerts are working",
-                           project="Test", target="https://example.com",
-                           **notifier.alert_context(get_setting(db, "general")))
-    error = await notifier.send_email(get_setting(db, "smtp"), alert, [body.to])
+                           project="Test", target="https://example.com", **notifier.alert_context(general))
+    error = await notifier.send_email(smtp, alert, [body.to])
     if error:
         # 400, not 502: proxies like Cloudflare replace 502 bodies with their own page
         raise HTTPException(status.HTTP_400_BAD_REQUEST, error)

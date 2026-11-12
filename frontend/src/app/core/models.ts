@@ -201,6 +201,12 @@ export interface DatabaseInfo {
   incidents: number;
 }
 
+export interface AdminDefaults {
+  app_url: string;
+  timezone: string;
+  smtp: boolean;
+}
+
 export interface SmtpSettings {
   host: string;
   port: number;

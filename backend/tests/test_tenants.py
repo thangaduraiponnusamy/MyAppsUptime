@@ -42,6 +42,9 @@ def test_tenant_alerts_fall_back_to_admin_settings(client, su):
     with tenancy.session_for("beta") as db:
         general, _ = tenant_config(db, "beta")
     assert general["app_url"] == "https://up.example.com" and general["timezone"] == "Europe/Berlin"
+    defaults = client.get("/api/settings/defaults", headers=auth(client.token, "beta")).json()
+    assert defaults["app_url"] == "https://up.example.com" and defaults["timezone"] == "Europe/Berlin"
+    assert client.get("/api/settings/defaults", headers=su).json()["app_url"] == ""
 
 
 def test_missing_tenant_file_is_skipped(client, su, data_dir):

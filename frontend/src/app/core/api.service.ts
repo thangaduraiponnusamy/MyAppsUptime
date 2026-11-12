@@ -1,7 +1,7 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import {
-  Channel, DashboardData, DatabaseInfo, ExportData, GeneralSettings, Heartbeat, Incident, Maintenance, Monitor, MonitorInput,
+  AdminDefaults, Channel, DashboardData, DatabaseInfo, ExportData, GeneralSettings, Heartbeat, Incident, Maintenance, Monitor, MonitorInput,
   Probe, Project, PublicStatus, ServerSettings, SmtpSettings, Stats, StatusPage, Summary, Tenant, TenantCreate, User,
 } from './models';
 
@@ -79,6 +79,7 @@ export class ApiService {
 
   general() { return this.http.get<GeneralSettings>(`${this.base}/settings/general`); }
   saveGeneral(body: GeneralSettings) { return this.http.put<GeneralSettings>(`${this.base}/settings/general`, body); }
+  adminDefaults() { return this.http.get<AdminDefaults>(`${this.base}/settings/defaults`); }
   smtp() { return this.http.get<SmtpSettings>(`${this.base}/settings/smtp`); }
   saveSmtp(body: SmtpSettings) { return this.http.put<SmtpSettings>(`${this.base}/settings/smtp`, body); }
   testSmtp(to: string) { return this.http.post<{ sent: boolean }>(`${this.base}/settings/smtp/test`, { to }); }

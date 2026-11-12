@@ -122,7 +122,8 @@ const emptyChannel = (): Channel => ({
     <section class="s-section">
       <h3>Email server (SMTP)</h3>
       <p class="muted">Needed for email alerts and password reset emails. Office 365: smtp.office365.com, 587, STARTTLS.
-        Gmail: smtp.gmail.com, 465, SSL/TLS, with an app password (Google account > Security > App passwords).</p>
+        Gmail: smtp.gmail.com, 465, SSL/TLS, with an app password (Google account > Security > App passwords).
+        @if (adminSmtp() && !smtp.host) { <b>Not set: the admin's email server is used.</b> }</p>
       <form class="s-fields" (ngSubmit)="saveSmtp()">
         <label>Host <input name="host" [(ngModel)]="smtp.host" placeholder="smtp.office365.com" /></label>
         <label>Port <input name="port" type="number" min="1" max="65535" [(ngModel)]="smtp.port" /></label>
@@ -167,12 +168,14 @@ export class NotificationSettingsComponent {
   smtpPassword = '';
   testTo = '';
   smtpNotice = signal('');
+  adminSmtp = signal(false);
   private projectById = computed(() => new Map(this.projects().map((p) => [p.id!, p.name])));
 
   constructor() {
     this.load();
     this.api.projects().subscribe((p) => this.projects.set(p));
     this.api.smtp().subscribe((s) => (this.smtp = s));
+    this.api.adminDefaults().subscribe((d) => this.adminSmtp.set(d.smtp));
   }
 
   load(): void {
