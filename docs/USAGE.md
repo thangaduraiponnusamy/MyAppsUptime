@@ -40,7 +40,8 @@ Open http://localhost:8000 and sign in with `admin` / `admin`. You must change t
 | `lts` | Newest stable build (`main`) |
 | `beta` | Newest test build (`develop`) |
 | `1.2.0` | Release branch `release/1.2.0` |
-| `20261112-1041`, `beta-...`, `1.2.0-...` | One exact build (UTC time) |
+| `alpha-login` | Feature branch `feature/login` (not tested) |
+| `20261112-1041`, `beta-...`, `1.2.0-...`, `alpha-login-...` | One exact build (UTC time) |
 | `v17` etc. | A git tag |
 
 **Update to a new version** (data in the volume is kept)

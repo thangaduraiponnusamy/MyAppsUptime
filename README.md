@@ -111,7 +111,7 @@ docker run -d --name myappsuptime -p 8000:8000 -v myappsuptime-data:/data myapps
 
 ### Ready-made image
 
-Every push to `main`, `develop`, `release/*` and every `v*` tag builds and publishes an image to GitHub Container Registry. Time stamps are UTC.
+Every push to `main`, `develop`, `release/*`, `feature/*` and every `v*` tag builds and publishes an image to GitHub Container Registry. Pull requests do not build images. Time stamps are UTC.
 
 | Branch | Tags |
 |---|---|
@@ -119,6 +119,7 @@ Every push to `main`, `develop`, `release/*` and every `v*` tag builds and publi
 | `main` | `lts`, `20261112-1041` |
 | `develop` | `beta`, `beta-20261112-1041` |
 | `release/1.2.0` | `1.2.0`, `1.2.0-20261112-1041` |
+| `feature/login` | `alpha-login`, `alpha-login-20261112-1041` |
 | git tag `v17` | `v17` |
 
 ```bash
