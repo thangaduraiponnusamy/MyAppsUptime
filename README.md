@@ -88,6 +88,17 @@ Tenant > Team > Service.
 1. Put monitors in a team (Settings > Teams, or the Team field on the monitor).
 2. Add users as team members. With "Email members" on, they get an email when a monitor goes down or recovers.
 3. Optional: add a Teams channel and tick the team, so the alert also goes to that Teams channel.
+4. Optional: in Settings > Teams > Edit > Alert channels, pick "Only the channels picked below" to choose exactly which channels (email, Telegram, Teams...) this team uses.
+
+| Team alert channels | Result |
+|---|---|
+| Default | The channel's own team and tag settings decide |
+| Only picked channels | Only the ticked channels; their tag filter still applies |
+| Picked, none ticked | No channel alerts (member emails still follow "Email members") |
+
+**Tenant defaults**
+
+A tenant that leaves App address, Time zone or the email server empty uses the admin tenant's values. The settings pages show this as "Admin default: ...".
 
 **Forgot password**
 
