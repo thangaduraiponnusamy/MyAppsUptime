@@ -66,8 +66,10 @@ class Alert:
         return urlsplit(self.app_url).netloc if self.app_url else ""
 
     def facts(self) -> list[tuple[str, str]]:
-        return [("Status", self.status.upper()), ("Monitor", self.monitor), ("Team", self.project or "-"),
-                ("Target", self.target or "-"), ("Details", self.message or "-"), ("Time", self.local_time)]
+        rows = [("Status", self.status.upper()), ("Monitor", self.monitor), ("Team", self.project),
+                ("Target", self.target), ("Details", self.message), ("Time", self.local_time)]
+        # Empty rows are left out ("-" shows as a bullet in Teams)
+        return [(k, v) for k, v in rows if v]
 
     def buttons(self) -> list[tuple[str, str]]:
         out = []
