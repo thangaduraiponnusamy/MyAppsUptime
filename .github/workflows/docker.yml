@@ -2,7 +2,7 @@ name: Docker image
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop, "release/**"]
     tags: ["v*"]
   pull_request:
     branches: [main]
@@ -28,15 +28,27 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Version info
+        id: v
+        run: |
+          echo "ts=$(date -u +%Y%m%d-%H%M)" >> "$GITHUB_OUTPUT"
+          echo "release=${GITHUB_REF_NAME#release/}" >> "$GITHUB_OUTPUT"
+
       - name: Image tags
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=latest,enable=${{ github.event_name != 'pull_request' }}
+            type=raw,value=lts,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=${{ steps.v.outputs.ts }},enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=beta,enable=${{ github.ref == 'refs/heads/develop' }}
+            type=raw,value=beta-${{ steps.v.outputs.ts }},enable=${{ github.ref == 'refs/heads/develop' }}
+            type=raw,value=${{ steps.v.outputs.release }},enable=${{ startsWith(github.ref, 'refs/heads/release/') }}
+            type=raw,value=${{ steps.v.outputs.release }}-${{ steps.v.outputs.ts }},enable=${{ startsWith(github.ref, 'refs/heads/release/') }}
             type=ref,event=tag
-            type=sha,format=short
+            type=ref,event=pr
 
       - name: Build and push
         uses: docker/build-push-action@v6

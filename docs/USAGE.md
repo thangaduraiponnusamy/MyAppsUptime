@@ -2,7 +2,7 @@
 
 ## 0. Install without building
 
-A ready-made image is published to GitHub Container Registry on every push to `main`.
+A ready-made image is published to GitHub Container Registry on every push. Use `lts` instead of `latest` if you want only stable builds.
 
 **Docker run**
 
@@ -36,9 +36,12 @@ Open http://localhost:8000 and sign in with `admin` / `admin`. You must change t
 
 | Tag | Meaning |
 |---|---|
-| `latest` | Newest build from `main` |
-| `v17` etc. | A fixed release (each new `v*` git tag) |
-| `sha-<commit>` | One exact commit |
+| `latest` | Newest build of any branch |
+| `lts` | Newest stable build (`main`) |
+| `beta` | Newest test build (`develop`) |
+| `1.2.0` | Release branch `release/1.2.0` |
+| `20261112-1041`, `beta-...`, `1.2.0-...` | One exact build (UTC time) |
+| `v17` etc. | A git tag |
 
 **Update to a new version** (data in the volume is kept)
 
