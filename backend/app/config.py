@@ -2,8 +2,7 @@ from sqlalchemy.orm import Session
 
 from .crypto import decrypt, encrypt
 from .models import AppSetting
-
-APP_VERSION = "17.0.0"
+from .timeutil import APP_VERSION  # noqa: F401  (re-exported)
 
 DEFAULTS = {
     "general": {"app_url": "", "timezone": "", "refresh_sec": 5, "retention_value": 1, "retention_unit": "years",

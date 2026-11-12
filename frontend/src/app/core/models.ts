@@ -1,5 +1,5 @@
 export type MonitorStatus = 'up' | 'down' | 'degraded' | 'maintenance' | 'paused' | 'pending';
-export type MonitorType = 'http' | 'keyword' | 'json' | 'tcp' | 'ping' | 'dns' | 'ssl' | 'push';
+export type MonitorType = 'http' | 'keyword' | 'json' | 'tcp' | 'ping' | 'dns' | 'ssl' | 'push' | 'docker';
 export type ChannelType = 'webhook' | 'slack' | 'teams' | 'telegram' | 'discord' | 'googlechat' | 'ntfy' | 'email';
 
 export const MONITOR_TYPES: { value: MonitorType; label: string }[] = [
@@ -11,6 +11,7 @@ export const MONITOR_TYPES: { value: MonitorType; label: string }[] = [
   { value: 'dns', label: 'DNS' },
   { value: 'ssl', label: 'SSL Certificate' },
   { value: 'push', label: 'Push / Cron heartbeat' },
+  { value: 'docker', label: 'Docker container' },
 ];
 
 export interface MonitorInput {
@@ -34,6 +35,7 @@ export interface MonitorInput {
   notify_repeat_min: number | null;
   parent_id: number | null;
   project_id: number | null;
+  probe_id: number | null;
   tags: string[];
 }
 
@@ -49,11 +51,23 @@ export interface Monitor extends MonitorInput {
   ssl_expires_at: string | null;
   domain_expires_at: string | null;
   fail_count: number;
+  probe_name: string | null;
   created_at: string;
   uptime_24h: number | null;
   status_since: string | null;
   recent: MonitorStatus[];
   recent_latency: (number | null)[];
+}
+
+export interface Probe {
+  id: number;
+  name: string;
+  online: boolean;
+  version: string | null;
+  last_seen_at: string | null;
+  created_at: string;
+  monitors: number;
+  token?: string;
 }
 
 export interface Heartbeat {

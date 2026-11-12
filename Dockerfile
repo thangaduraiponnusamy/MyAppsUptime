@@ -1,5 +1,5 @@
-# ---------- Stage 1: build Angular UI ----------
-FROM node:20-alpine AS ui
+# ---------- Stage 1: build Angular UI (on the build machine, same files for every CPU) ----------
+FROM --platform=$BUILDPLATFORM node:20-alpine AS ui
 WORKDIR /ui
 COPY frontend/package*.json ./
 RUN npm ci --no-audit --no-fund

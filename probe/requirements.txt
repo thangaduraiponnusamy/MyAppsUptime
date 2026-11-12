@@ -1,0 +1,3 @@
+# Only what app/checks.py needs (keep in line with backend/requirements.txt)
+httpx==0.28.0
+dnspython==2.7.0

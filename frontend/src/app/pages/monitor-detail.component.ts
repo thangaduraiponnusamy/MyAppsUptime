@@ -30,6 +30,7 @@ const PAGE = 10;
             <span class="type-badge">{{ m.type }}</span>
             {{ m.type === 'push' ? 'Waiting for pushes' : m.target }}{{ m.port ? ':' + m.port : '' }}
             &middot; every {{ m.interval_sec }}s
+            @if (m.probe_name) { &middot; from {{ m.probe_name }} }
             @if (parent(); as p) { &middot; depends on <a [routerLink]="['/monitors', p.id]" style="color: var(--primary)">{{ p.name }}</a> }
             @if (store.projectName(m.project_id); as pn) { &middot; <a [routerLink]="['/']" [queryParams]="{ project: m.project_id }" style="color: var(--primary)">{{ pn }}</a> }
           </div>

@@ -9,6 +9,7 @@ export const SETTINGS_SECTIONS = [
   { path: 'notifications', label: 'Notifications', icon: 'bell', admin: true },
   { path: 'teams', label: 'Teams', icon: 'folder', admin: true },
   { path: 'users', label: 'Users', icon: 'users', admin: true },
+  { path: 'locations', label: 'Private locations', icon: 'network', admin: true },
   { path: 'security', label: 'Security', icon: 'shield', admin: false },
   { path: 'backup', label: 'Backup', icon: 'database', admin: true },
   { path: 'about', label: 'About', icon: 'info', admin: false },

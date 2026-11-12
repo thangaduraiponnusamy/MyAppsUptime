@@ -10,10 +10,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from . import notifier, tenancy
+from . import notifier, probes, tenancy
 from .auth import Principal, get_db, require_admin, require_user, visible_monitor_ids
 from .checks import CheckResult
-from .models import (Heartbeat, Incident, MaintenanceWindow, Monitor, NotificationChannel, Project, StatusPage,
+from .models import (Heartbeat, Incident, MaintenanceWindow, Monitor, NotificationChannel, Probe, Project, StatusPage,
                      aware, utcnow)
 from .scheduler import record_result, scheduler, tenant_config
 from .schemas import (AckIn, ChannelIn, ChannelOut, DashboardOut, DashboardPoint, ExportData, HeartbeatOut,
@@ -91,6 +91,8 @@ def _monitor_out(db: Session, m: Monitor, uptime: float | None) -> MonitorOut:
     recent = _recent(db, m.id, 30)
     out.recent = [s for s, _ in recent]
     out.recent_latency = [lat for _, lat in recent]
+    if m.probe_id is not None:
+        out.probe_name = db.scalar(select(Probe.name).where(Probe.id == m.probe_id))
     return out
 
 
@@ -200,6 +202,7 @@ def bulk_monitors(body: BulkIn, db: Session = Depends(get_db)):
 def create_monitor(body: MonitorCreate, db: Session = Depends(get_db)):
     _check_parent(db, body.parent_id, None)
     _check_project(db, body.project_id)
+    probes.check_probe(db, body.probe_id)
     m = Monitor(**body.model_dump())
     if m.type == "push":
         m.push_token = secrets.token_urlsafe(16)
@@ -219,6 +222,7 @@ def update_monitor(monitor_id: int, body: MonitorCreate, db: Session = Depends(g
     m = _get(db, Monitor, monitor_id)
     _check_parent(db, body.parent_id, m.id)
     _check_project(db, body.project_id)
+    probes.check_probe(db, body.probe_id)
     for key, value in body.model_dump().items():
         setattr(m, key, value)
     if m.type == "push" and not m.push_token:
@@ -255,6 +259,9 @@ async def check_now(monitor_id: int, db: Session = Depends(get_db), user: Princi
     m = _get_monitor(db, user, monitor_id)
     if not m.active:
         raise HTTPException(status.HTTP_409_CONFLICT, "Monitor is paused")
+    if m.probe_id is not None:
+        probes.run_now(db, m)
+        return {"queued": True}
     return {"queued": scheduler.trigger(tenancy.tenant_of(db), m)}
 
 
@@ -620,7 +627,7 @@ def import_config(body: ExportData, db: Session = Depends(get_db)):
         project_map[item.id] = project.id
     id_map: dict[int, Monitor] = {}
     for item in body.monitors:
-        data = item.model_dump(exclude={"id", "parent_id", "project_id"})
+        data = item.model_dump(exclude={"id", "parent_id", "project_id", "probe_id"})
         m = Monitor(**data, project_id=project_map.get(item.project_id),
                     push_token=secrets.token_urlsafe(16) if item.type == "push" else None)
         db.add(m)

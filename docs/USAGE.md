@@ -68,6 +68,7 @@ Click **+ New monitor** and pick a check type.
 | DNS | `example.com` | Name resolves |
 | SSL Certificate | `example.com` | Days until expiry |
 | Push / Cron | (none) | Your job calls a URL. No call in time = DOWN |
+| Docker container | `nginx` (container name or ID) | Running = UP, unhealthy = DEGRADED, stopped = DOWN. Needs the Docker socket (see 13) |
 
 Main options:
 
@@ -81,6 +82,7 @@ Main options:
 | Anomaly detection | DEGRADED when latency jumps far above normal |
 | Repeat alert | Send again every N minutes while still down |
 | Tags | Filter monitors and route alerts |
+| Run from | This server, or a private location (see 13) |
 
 ## 2. Status colors
 
@@ -267,3 +269,41 @@ curl http://localhost:8000/api/monitors/1/stats
 ```
 
 Full API docs: http://localhost:8000/docs
+
+## 13. Private locations (probes)
+
+Check devices in another network (home LAN, office, factory) that the server cannot reach. A small **probe** runs there, picks up its monitors from the server and sends back the results. Only outgoing HTTPS from the probe is needed.
+
+| Step | What to do |
+|---|---|
+| 1 | **Settings > Private locations > Add**, enter a name (for example `home`) |
+| 2 | Copy the `docker run` command shown (the token is shown only once) and run it on a device in that network (Raspberry Pi, NAS, PC) |
+| 3 | Edit a monitor, set **Run from** to `home` |
+
+```bash
+docker run -d --name myappsuptime-probe --restart unless-stopped --network host \
+  -e SERVER_URL=https://uptime.example.com \
+  -e PROBE_TOKEN='<token>' \
+  ghcr.io/thangaduraiponnusamy/myappsuptime-probe:latest
+```
+
+- Works on amd64 and arm64 (Raspberry Pi 3/4/5 with a 64-bit OS).
+- Location shows **online** when it called in during the last 90 seconds. If it goes offline, its monitors become PENDING and one alert is sent; another alert when it is back.
+- **New token** stops the old probe. **Delete** moves its monitors back to this server.
+- Push monitors always run on the server.
+
+Docker container monitors on the probe's host: add the socket to the command above:
+
+```bash
+  -v /var/run/docker.sock:/var/run/docker.sock:ro --group-add $(stat -c %g /var/run/docker.sock) \
+```
+
+The same two options work on the server container for Docker monitors that run from the server.
+
+Without Docker (Python 3.12):
+
+```bash
+git clone https://github.com/thangaduraiponnusamy/MyAppsUptime.git && cd MyAppsUptime
+pip install -r probe/requirements.txt
+SERVER_URL=https://uptime.example.com PROBE_TOKEN='<token>' python -m probe
+```

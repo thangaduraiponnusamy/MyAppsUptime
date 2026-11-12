@@ -10,13 +10,15 @@ from sqlalchemy import delete, select
 from . import backup, expiry, notifier, tenancy
 from .checks import CheckResult, run_check
 from .config import get_setting, retention_days
-from .models import Heartbeat, Incident, MaintenanceWindow, Monitor, NotificationChannel, Project, User, aware, utcnow
+from .models import (Heartbeat, Incident, MaintenanceWindow, Monitor, NotificationChannel, Probe, Project, User, aware,
+                     utcnow)
 
 log = logging.getLogger(__name__)
 
 TICK_SEC = 5
 JOBS_EVERY = timedelta(minutes=10)
 EXPIRY_EVERY = timedelta(hours=12)
+PROBE_OFFLINE = timedelta(seconds=90)  # probes sync every 10 s
 
 
 def in_maintenance(db, monitor_id: int, now) -> bool:
@@ -146,13 +148,47 @@ async def record_result(tenant: str, monitor_id: int, result: CheckResult) -> No
     await notifier.send(channels, alert, emails, smtp)
 
 
+def probe_alert(db, tenant: str, probe: Probe, status: str, message: str):
+    """One alert for a private location, sent to the channels of its monitors."""
+    monitors = db.scalars(select(Monitor).where(Monitor.probe_id == probe.id, Monitor.active.is_(True))).all()
+    active = db.scalars(select(NotificationChannel).where(NotificationChannel.active.is_(True))).all()
+    channels = [c for c in active if any(notifier.channel_matches(c, m) for m in monitors)]
+    general, smtp = tenant_config(db, tenant)
+    app_url = notifier.server_url(general)
+    alert = notifier.Alert(
+        monitor=f"Private location {probe.name}", status=status, message=message,
+        link=f"{app_url}/settings/locations" if app_url else None, **notifier.alert_context(general),
+    )
+    return channels, alert, [], smtp
+
+
+async def check_probes(tenant: str) -> None:
+    """Alert once when a private location stops reporting; its monitors show pending until it is back."""
+    now = utcnow()
+    alerts = []
+    with tenancy.session_for(tenant) as db:
+        for p in db.scalars(select(Probe).where(Probe.offline_notified.is_(False),
+                                                Probe.last_seen_at.is_not(None))).all():
+            if now - aware(p.last_seen_at) < PROBE_OFFLINE:
+                continue
+            p.offline_notified = True
+            text = f"No contact since {int((now - aware(p.last_seen_at)).total_seconds())} s"
+            for m in db.scalars(select(Monitor).where(Monitor.probe_id == p.id, Monitor.active.is_(True))).all():
+                m.status, m.fail_count = "pending", 0
+                m.last_message = f"Private location '{p.name}' is offline"
+            alerts.append(probe_alert(db, tenant, p, "down", text))
+        db.commit()
+    for channels, alert, emails, smtp in alerts:
+        await notifier.send(channels, alert, emails, smtp)
+
+
 async def check_expiry(tenant: str, client: httpx.AsyncClient, domains: dict) -> None:
     """Warn 30/14/7 days (Settings > General) before certificates and domains expire."""
     now = utcnow()
     with tenancy.session_for(tenant) as db:
         general = get_setting(db, "general")
         monitors = [m for m in db.scalars(select(Monitor).where(Monitor.active.is_(True))).all()
-                    if expiry.host_port(m) and not (
+                    if expiry.host_port(m) and m.probe_id is None and not (
                         m.expiry_checked_at and now - aware(m.expiry_checked_at) < EXPIRY_EVERY)]
     warn_days = list(general["expiry_warn_days"])
     for m in monitors:
@@ -202,6 +238,7 @@ class Scheduler:
         self._last_prune = utcnow() - timedelta(days=1)
         self._last_jobs = utcnow() - timedelta(days=1)
         self._jobs: asyncio.Task | None = None
+        self._probes: asyncio.Task | None = None
 
     async def start(self) -> None:
         self._task = asyncio.create_task(self._loop())
@@ -216,9 +253,22 @@ class Scheduler:
                 self._dispatch()
                 self._prune()
                 self._start_jobs()
+                self._watch_probes()
             except Exception:
                 log.exception("Scheduler tick failed")
             await asyncio.sleep(TICK_SEC)
+
+    def _watch_probes(self) -> None:
+        if self._probes and not self._probes.done():
+            return
+        self._probes = asyncio.create_task(self.run_probe_checks())
+
+    async def run_probe_checks(self) -> None:
+        for tenant in tenancy.slugs():
+            try:
+                await check_probes(tenant)
+            except Exception:
+                log.exception("Probe check failed for tenant %s", tenant)
 
     def _start_jobs(self) -> None:
         """Backup and expiry checks run in the background, at most one at a time."""
@@ -249,7 +299,7 @@ class Scheduler:
         now = utcnow()
         for tenant in tenancy.slugs():
             with tenancy.session_for(tenant) as db:
-                monitors = db.scalars(select(Monitor).where(Monitor.active.is_(True))).all()
+                monitors = db.scalars(select(Monitor).where(Monitor.active.is_(True), Monitor.probe_id.is_(None))).all()
             for m in monitors:
                 last = aware(m.last_checked)
                 if (tenant, m.id) in self._running or (last and (now - last).total_seconds() < m.interval_sec):

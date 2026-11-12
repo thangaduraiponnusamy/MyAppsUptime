@@ -7,7 +7,7 @@ from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 
-from . import admin_api, api, dnscache, tenancy, tenants_api
+from . import admin_api, api, dnscache, probes, tenancy, tenants_api
 from .auth import ensure_default_admin
 from .config import APP_VERSION, get_setting
 from .database import upgrade_schema
@@ -64,6 +64,8 @@ async def security_headers(request: Request, call_next):
 app.include_router(admin_api.auth)
 app.include_router(admin_api.admin)
 app.include_router(tenants_api.router)
+app.include_router(probes.admin)
+app.include_router(probes.probe)
 app.include_router(api.router)
 app.include_router(api.public)
 

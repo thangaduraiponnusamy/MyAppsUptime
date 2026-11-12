@@ -35,6 +35,9 @@ Python (FastAPI) backend + Angular frontend, shipped as **one Docker image**.
 | Shrink database, clear statistics, DNS cache | Yes | Yes |
 | Light and dark theme | Yes | Yes |
 | REST API with OpenAPI docs | Limited | Yes (`/docs`) |
+| **Private locations** (probe in your home/office LAN) | No | Yes |
+| Docker container status | Yes | Yes |
+| amd64 and arm64 images (Raspberry Pi) | Yes | Yes |
 
 ## Quick start (Docker)
 
@@ -145,6 +148,13 @@ Every push to `main`, `develop`, `release/*`, `feature/*` and every `v*` tag bui
 docker run -d --name myappsuptime -p 8000:8000 -v myappsuptime-data:/data ghcr.io/thangaduraiponnusamy/myappsuptime:latest
 ```
 
+| Image | What |
+|---|---|
+| `ghcr.io/thangaduraiponnusamy/myappsuptime` | Server (UI + API) |
+| `ghcr.io/thangaduraiponnusamy/myappsuptime-probe` | Probe for private locations. See [docs/USAGE.md](docs/USAGE.md#13-private-locations-probes) |
+
+Both images are built for amd64 and arm64, with the same tags. `DB_PASSWORD` works only on amd64.
+
 ## Environment variables
 
 | Variable | Default | Meaning |
@@ -195,6 +205,8 @@ Open http://127.0.0.1:8000. Stop with `Ctrl+C`.
 | Start fresh | Stop the app, delete `backend/myappsuptime.db`, start again |
 | "Port 8000 already in use" | Another copy is running. Stop it, or use `--port 8001` |
 | Run backend tests | `.venv/Scripts/python.exe -m pip install -r requirements-dev.txt && .venv/Scripts/python.exe -m pytest -q` |
+| Run browser tests (UI built first) | From the repo root: `pip install -r e2e/requirements.txt && python -m playwright install chromium && python -m pytest e2e -q` |
+| Run a probe locally | From the repo root: `SERVER_URL=http://127.0.0.1:8000 PROBE_TOKEN='<token>' python -m probe` |
 
 On Linux or macOS use `.venv/bin/python` instead of `.venv/Scripts/python.exe`.
 
@@ -234,8 +246,11 @@ Screenshots: [ui-overview.png](preview/ui-overview.png), [ui-overview-dark.png](
 | `frontend/` | Angular 18 app |
 | `preview/` | Static sample pages and screenshots |
 | `branding/` | Logo files (SVG) and brand sheet |
+| `probe/` | Probe for private locations |
+| `e2e/` | Browser tests (Playwright) |
 | `docs/USAGE.md` | How to use the app |
 | `Dockerfile` | Builds UI + API into one image |
+| `Dockerfile.probe` | Builds the probe image |
 
 How to use it: [docs/USAGE.md](docs/USAGE.md)
 

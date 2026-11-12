@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import re
 import ssl
 import sys
@@ -7,12 +8,16 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 import dns.asyncresolver
 import httpx
 
-from .models import Monitor, aware, utcnow
+# No database imports: the probe reuses this file
+from .timeutil import aware, utcnow
+
+Monitor = Any  # a Monitor row on the server, a simple namespace on the probe
+DOCKER_SOCKET = os.getenv("DOCKER_SOCKET", "/var/run/docker.sock")
 
 
 @dataclass
@@ -132,6 +137,25 @@ async def check_push(m: Monitor) -> CheckResult:
     return CheckResult("down", None, f"No push received within {m.interval_sec}s")
 
 
+async def check_docker(m: Monitor) -> CheckResult:
+    if not os.path.exists(DOCKER_SOCKET):
+        return CheckResult("down", None, f"Docker socket {DOCKER_SOCKET} not found")
+    transport = httpx.AsyncHTTPTransport(uds=DOCKER_SOCKET)
+    async with httpx.AsyncClient(transport=transport, base_url="http://docker", timeout=m.timeout_sec) as client:
+        resp = await client.get(f"/containers/{quote(m.target, safe='')}/json")
+    if resp.status_code == 404:
+        return CheckResult("down", None, f"Container '{m.target}' not found")
+    resp.raise_for_status()
+    state = resp.json().get("State") or {}
+    run = state.get("Status", "unknown")
+    health = (state.get("Health") or {}).get("Status")
+    if run != "running":
+        return CheckResult("down", None, f"Container is {run} (exit code {state.get('ExitCode', '?')})")
+    if health == "unhealthy":
+        return CheckResult("degraded", None, "Container is running but unhealthy")
+    return CheckResult("up", None, f"Container is running ({health})" if health else "Container is running")
+
+
 CHECKS = {
     "http": check_http,
     "keyword": check_http,
@@ -141,6 +165,7 @@ CHECKS = {
     "dns": check_dns,
     "ssl": check_ssl,
     "push": check_push,
+    "docker": check_docker,
 }
 
 

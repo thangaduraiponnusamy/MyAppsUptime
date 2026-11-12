@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator, model_validator
 
-MonitorType = Literal["http", "keyword", "json", "tcp", "ping", "dns", "ssl", "push"]
+MonitorType = Literal["http", "keyword", "json", "tcp", "ping", "dns", "ssl", "push", "docker"]
 ChannelType = Literal["webhook", "slack", "teams", "telegram", "discord", "googlechat", "ntfy", "email"]
 TELEGRAM_URL = re.compile(r"^https://api\.telegram\.org/bot\d+:[A-Za-z0-9_-]{30,}/sendMessage\?chat_id=(-?\d+|@[A-Za-z0-9_]{5,32})$")
 CHANNEL_URLS = {
@@ -25,6 +25,7 @@ LOGO_PATTERN = re.compile(r"^data:image/(png|jpeg|gif|webp|svg\+xml);base64,[A-Z
 Utc = Annotated[datetime, AfterValidator(lambda d: d.replace(tzinfo=timezone.utc) if d.tzinfo is None else d)]
 
 HOST_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9.\-:]*$"
+CONTAINER_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"
 
 
 def _require_http_url(value: str) -> str:
@@ -61,6 +62,7 @@ class MonitorBase(BaseModel):
     notify_repeat_min: int | None = Field(default=None, ge=5, le=1440)
     parent_id: int | None = None
     project_id: int | None = None
+    probe_id: int | None = None
     tags: list[str] = Field(default_factory=list, max_length=20)
 
     @model_validator(mode="after")
@@ -71,6 +73,10 @@ class MonitorBase(BaseModel):
             _require_host(self.target)
         elif self.type == "ssl":
             _require_host(urlparse(self.target).hostname or self.target)
+        elif self.type == "docker" and not re.fullmatch(CONTAINER_PATTERN, self.target):
+            raise ValueError("target must be a container name or ID")
+        if self.type == "push" and self.probe_id is not None:
+            raise ValueError("push monitors cannot run from a private location")
         if self.type == "keyword" and not self.keyword:
             raise ValueError("keyword is required for keyword monitors")
         if self.type == "json" and not self.json_path:
@@ -98,6 +104,7 @@ class MonitorOut(MonitorBase):
     ssl_expires_at: Utc | None
     domain_expires_at: Utc | None = None
     fail_count: int = 0
+    probe_name: str | None = None
     created_at: Utc
     uptime_24h: float | None = None
     status_since: Utc | None = None
@@ -516,3 +523,34 @@ class ExportData(BaseModel):
     monitors: list[MonitorExport]
     channels: list[ChannelIn]
     projects: list[ProjectExport] = Field(default_factory=list)
+
+
+class ProbeIn(BaseModel):
+    name: str = Field(min_length=1, max_length=60, pattern=r"^[A-Za-z0-9][A-Za-z0-9 _.-]*$")
+
+
+class ProbeOut(BaseModel):
+    id: int
+    name: str
+    online: bool
+    version: str | None
+    last_seen_at: Utc | None
+    created_at: Utc
+    monitors: int
+
+
+class ProbeCreated(ProbeOut):
+    token: str  # shown only once
+
+
+class ProbeResult(BaseModel):
+    monitor_id: int
+    status: Literal["up", "down", "degraded"]
+    latency_ms: float | None = Field(default=None, ge=0)
+    message: str = Field(default="", max_length=300)
+    ssl_expires_at: Utc | None = None
+
+
+class ProbeSyncIn(BaseModel):
+    version: str = Field(default="", max_length=20)
+    results: list[ProbeResult] = Field(default_factory=list, max_length=500)

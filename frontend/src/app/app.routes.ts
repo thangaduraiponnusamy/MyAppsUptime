@@ -20,6 +20,7 @@ import { SecuritySettingsComponent } from './pages/settings/security.component';
 import { BackupSettingsComponent } from './pages/settings/backup.component';
 import { AboutSettingsComponent } from './pages/settings/about.component';
 import { TenantSettingsComponent } from './pages/settings/tenants.component';
+import { LocationSettingsComponent } from './pages/settings/locations.component';
 
 export const routes: Routes = [
   { path: 'status/:slug', component: PublicStatusComponent },
@@ -50,6 +51,7 @@ export const routes: Routes = [
           { path: 'projects', redirectTo: 'teams' },
           { path: 'teams', component: ProjectSettingsComponent, canActivate: [adminGuard] },
           { path: 'users', component: UserSettingsComponent, canActivate: [adminGuard] },
+          { path: 'locations', component: LocationSettingsComponent, canActivate: [adminGuard] },
           { path: 'tenants', component: TenantSettingsComponent, canActivate: [superGuard] },
           { path: 'security', component: SecuritySettingsComponent },
           { path: 'backup', component: BackupSettingsComponent, canActivate: [adminGuard] },

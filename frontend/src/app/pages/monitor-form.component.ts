@@ -3,7 +3,7 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ApiService, errorText } from '../core/api.service';
-import { MONITOR_TYPES, MonitorInput, MonitorType } from '../core/models';
+import { MONITOR_TYPES, MonitorInput, MonitorType, Probe } from '../core/models';
 import { MonitorStore } from '../core/monitor-store.service';
 
 const URL_TYPES: MonitorType[] = ['http', 'keyword', 'json'];
@@ -28,8 +28,22 @@ const URL_TYPES: MonitorType[] = ['http', 'keyword', 'json'];
           </select>
         </label>
         <label>Friendly name <input formControlName="name" placeholder="Payments API" /></label>
-
         @if (type() !== 'push') {
+          <label>Run from
+            <select formControlName="probe_id">
+              <option [ngValue]="null">This server</option>
+              @for (p of probes(); track p.id) { <option [ngValue]="p.id">{{ p.name }}{{ p.online ? '' : ' (offline)' }}</option> }
+            </select>
+          </label>
+        }
+
+        @if (type() === 'docker') {
+          <label class="full">Container name or ID
+            <input formControlName="target" placeholder="pihole" />
+          </label>
+          <p class="hint full">Up = running, Degraded = unhealthy, Down = stopped or missing. Needs the Docker socket on the machine that runs the check
+            (usually a private location; see Settings &gt; Private locations).</p>
+        } @else if (type() !== 'push') {
           <label class="full">{{ isUrl() ? 'URL' : 'Hostname or IP' }}
             <input formControlName="target" [placeholder]="isUrl() ? 'https://example.com/health' : 'example.com'" />
           </label>
@@ -130,14 +144,17 @@ export class MonitorFormComponent {
     notify_repeat_min: [null as number | null, [Validators.min(5)]],
     parent_id: [null as number | null],
     project_id: [(Number(this.route.snapshot.queryParamMap.get('project')) || null) as number | null],
+    probe_id: [null as number | null],
     tags: [''],
   });
 
   type = toSignal(this.form.controls.type.valueChanges, { initialValue: 'http' as MonitorType });
   isUrl = computed(() => URL_TYPES.includes(this.type()));
   parents = computed(() => this.store.monitors().filter((m) => m.id !== this.id));
+  probes = signal<Probe[]>([]);
 
   constructor() {
+    this.api.probes().subscribe((p) => this.probes.set(p));
     if (this.id) {
       this.api.monitor(this.id).subscribe((m) =>
         this.form.patchValue({
@@ -162,6 +179,7 @@ export class MonitorFormComponent {
       latency_threshold_ms: v.latency_threshold_ms || null,
       notify_repeat_min: v.notify_repeat_min || null,
       down_after: v.down_after || null,
+      probe_id: v.type === 'push' ? null : v.probe_id,
       tags: v.tags.split(',').map((t) => t.trim()).filter(Boolean),
     };
     this.saving.set(true);

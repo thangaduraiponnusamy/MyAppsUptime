@@ -1,5 +1,5 @@
-# Pull request -> "check" job (compile only, no image)
-# Push / v* tag -> "build" job (Docker image to ghcr.io)
+# Pull request -> "check" job (compile and test, no image)
+# Push / v* tag -> "build" job (server and probe images to ghcr.io, amd64 + arm64)
 name: Build
 
 on:
@@ -50,12 +50,30 @@ jobs:
           pip install -r requirements-dev.txt
           python -m pytest -q -p no:cacheprovider
 
-  # Push and v* tags: build the Docker image and publish it
+      - name: Check probe
+        run: python -c "from probe.__main__ import Probe"
+
+      - name: Browser tests (sign-in, dashboard, monitor detail)
+        run: |
+          pip install -r e2e/requirements.txt
+          python -m playwright install --with-deps chromium
+          python -m pytest e2e -q -p no:cacheprovider
+
+  # Push and v* tags: build the Docker images and publish them
   build:
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - image: "" # ghcr.io/<owner>/myappsuptime
+            file: Dockerfile
+          - image: "-probe" # ghcr.io/<owner>/myappsuptime-probe
+            file: Dockerfile.probe
     steps:
       - uses: actions/checkout@v4
+
+      - uses: docker/setup-qemu-action@v3
 
       - uses: docker/setup-buildx-action@v3
 
@@ -78,7 +96,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository }}
+          images: ghcr.io/${{ github.repository }}${{ matrix.image }}
           # latest = newest build of any branch | main = lts | develop = beta
           # release/X = X | feature/X = alpha-X | each also gets a UTC time tag
           tags: |
@@ -97,8 +115,10 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
+          file: ${{ matrix.file }}
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=build${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=build${{ matrix.image }}

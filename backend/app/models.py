@@ -1,21 +1,11 @@
-from datetime import datetime, timezone
+from datetime import datetime
 
 from sqlalchemy import JSON, DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .crypto import EncryptedText
 from .database import Base
-
-
-def utcnow() -> datetime:
-    return datetime.now(timezone.utc)
-
-
-def aware(dt: datetime | None) -> datetime | None:
-    # SQLite drops tzinfo on read
-    if dt is not None and dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt
+from .timeutil import aware, utcnow  # noqa: F401  (re-exported)
 
 
 class Monitor(Base):
@@ -23,7 +13,7 @@ class Monitor(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(120))
-    type: Mapped[str] = mapped_column(String(20))  # http | keyword | json | tcp | ping | dns | ssl | push
+    type: Mapped[str] = mapped_column(String(20))  # http | keyword | json | tcp | ping | dns | ssl | push | docker
     target: Mapped[str] = mapped_column(String(500), default="")
     port: Mapped[int | None]
     keyword: Mapped[str | None] = mapped_column(String(200))
@@ -44,6 +34,7 @@ class Monitor(Base):
     tags: Mapped[list] = mapped_column(JSON, default=list)
     push_token: Mapped[str | None] = mapped_column(String(64), unique=True)
     down_after: Mapped[int | None]  # failed checks in a row before DOWN; empty = General default
+    probe_id: Mapped[int | None] = mapped_column(index=True)  # private location; empty = this server
 
     active: Mapped[bool] = mapped_column(default=True)
     status: Mapped[str] = mapped_column(String(12), default="pending")
@@ -62,6 +53,19 @@ class Monitor(Base):
 
     heartbeats: Mapped[list["Heartbeat"]] = relationship(back_populates="monitor", cascade="all, delete-orphan")
     incidents: Mapped[list["Incident"]] = relationship(back_populates="monitor", cascade="all, delete-orphan")
+
+
+class Probe(Base):
+    """Private location: a small program on another network that runs checks and reports back."""
+    __tablename__ = "probes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(60), unique=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    version: Mapped[str | None] = mapped_column(String(20))
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    offline_notified: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class Heartbeat(Base):

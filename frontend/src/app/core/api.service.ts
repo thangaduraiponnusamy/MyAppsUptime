@@ -2,7 +2,7 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import {
   Channel, DashboardData, DatabaseInfo, ExportData, GeneralSettings, Heartbeat, Incident, Maintenance, Monitor, MonitorInput,
-  Project, PublicStatus, ServerSettings, SmtpSettings, Stats, StatusPage, Summary, Tenant, TenantCreate, User,
+  Probe, Project, PublicStatus, ServerSettings, SmtpSettings, Stats, StatusPage, Summary, Tenant, TenantCreate, User,
 } from './models';
 
 type Range = { hours?: number; start?: string; end?: string; project_id?: number };
@@ -52,6 +52,12 @@ export class ApiService {
   createProject(body: Project) { return this.http.post<Project>(`${this.base}/projects`, body); }
   updateProject(id: number, body: Project) { return this.http.put<Project>(`${this.base}/projects/${id}`, body); }
   deleteProject(id: number) { return this.http.delete<void>(`${this.base}/projects/${id}`); }
+
+  probes() { return this.http.get<Probe[]>(`${this.base}/probes`); }
+  createProbe(name: string) { return this.http.post<Probe>(`${this.base}/probes`, { name }); }
+  renameProbe(id: number, name: string) { return this.http.put<Probe>(`${this.base}/probes/${id}`, { name }); }
+  probeToken(id: number) { return this.http.post<Probe>(`${this.base}/probes/${id}/token`, {}); }
+  deleteProbe(id: number) { return this.http.delete<void>(`${this.base}/probes/${id}`); }
   bulk(ids: number[], action: 'pause' | 'resume' | 'delete' | 'project', projectId: number | null = null) {
     return this.http.post<{ updated: number }>(`${this.base}/monitors/bulk`, { ids, action, project_id: projectId });
   }
