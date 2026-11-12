@@ -109,6 +109,20 @@ docker build -t myappsuptime:latest .
 docker run -d --name myappsuptime -p 8000:8000 -v myappsuptime-data:/data myappsuptime:latest
 ```
 
+### Ready-made image
+
+Every push to `main` and every `v*` tag builds and publishes an image to GitHub Container Registry.
+
+| Tag | When |
+|---|---|
+| `latest` | Last push to `main` |
+| `v16-tenants` etc. | Git tag |
+| `sha-<commit>` | Every build |
+
+```bash
+docker run -d --name myappsuptime -p 8000:8000 -v myappsuptime-data:/data ghcr.io/thangaduraiponnusamy/myappsuptime:latest
+```
+
 ## Environment variables
 
 | Variable | Default | Meaning |
