@@ -1,11 +1,16 @@
 import asyncio
+import base64
 import logging
+import os
 import smtplib
 import ssl
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from email.message import EmailMessage
 from html import escape
+from pathlib import Path
+from urllib.parse import urlsplit
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
 
@@ -14,6 +19,21 @@ from .models import Monitor, NotificationChannel
 log = logging.getLogger(__name__)
 
 COLORS = {"up": "#16a34a", "down": "#dc2626", "degraded": "#d97706", "maintenance": "#2563eb"}
+LOGO_PNG = Path(__file__).with_name("logo.png").read_bytes()
+# Inline image, so it shows even when the server is not reachable from Teams
+LOGO_DATA_URI = "data:image/png;base64," + base64.b64encode(LOGO_PNG).decode()
+
+
+def server_url(general: dict) -> str:
+    return (general.get("app_url") or os.getenv("APP_URL", "")).rstrip("/")
+
+
+def server_tz(general: dict) -> str:
+    return general.get("timezone") or os.getenv("TZ") or "UTC"
+
+
+def alert_context(general: dict) -> dict:
+    return {"app_url": server_url(general), "tz": server_tz(general)}
 
 
 @dataclass
@@ -24,6 +44,8 @@ class Alert:
     project: str | None = None
     target: str | None = None
     link: str | None = None
+    app_url: str = ""
+    tz: str = "UTC"
     at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     @property
@@ -31,9 +53,29 @@ class Alert:
         word = {"up": "is back UP", "down": "is DOWN", "degraded": "is DEGRADED"}.get(self.status, self.status.upper())
         return f"{self.monitor} {word}"
 
+    @property
+    def local_time(self) -> str:
+        try:
+            zone, name = ZoneInfo(self.tz), self.tz
+        except (ZoneInfoNotFoundError, ValueError):
+            zone, name = timezone.utc, "UTC"
+        return f"{self.at.astimezone(zone):%Y-%m-%d %H:%M:%S} ({name})"
+
+    @property
+    def server(self) -> str:
+        return urlsplit(self.app_url).netloc if self.app_url else ""
+
     def facts(self) -> list[tuple[str, str]]:
-        return [("Status", self.status.upper()), ("Project", self.project or "-"), ("Target", self.target or "-"),
-                ("Details", self.message or "-"), ("Time (UTC)", self.at.strftime("%Y-%m-%d %H:%M:%S"))]
+        return [("Status", self.status.upper()), ("Monitor", self.monitor), ("Team", self.project or "-"),
+                ("Target", self.target or "-"), ("Details", self.message or "-"), ("Time", self.local_time)]
+
+    def buttons(self) -> list[tuple[str, str]]:
+        out = []
+        if self.link and self.link != self.app_url:
+            out.append(("View monitor", self.link))
+        if self.app_url:
+            out.append(("Open MyAppsUptime", self.app_url))
+        return out
 
 
 def channel_matches(channel: NotificationChannel, monitor: Monitor) -> bool:
@@ -43,18 +85,30 @@ def channel_matches(channel: NotificationChannel, monitor: Monitor) -> bool:
 
 
 def teams_payload(alert: Alert) -> dict:
-    color = {"up": "Good", "down": "Attention", "degraded": "Warning"}.get(alert.status, "Default")
+    style = {"up": "good", "down": "attention", "degraded": "warning", "maintenance": "accent"}.get(alert.status, "emphasis")
+    color = {"up": "Good", "down": "Attention", "degraded": "Warning", "maintenance": "Accent"}.get(alert.status, "Default")
+    body = [
+        {"type": "Container", "style": style, "bleed": True, "items": [{"type": "ColumnSet", "columns": [
+            {"type": "Column", "width": "auto", "verticalContentAlignment": "Center", "items": [
+                {"type": "Image", "url": LOGO_DATA_URI, "width": "40px", "height": "40px", "altText": "MyAppsUptime"}]},
+            {"type": "Column", "width": "stretch", "verticalContentAlignment": "Center", "items": [
+                {"type": "TextBlock", "text": alert.title, "size": "Large", "weight": "Bolder", "color": color, "wrap": True},
+                {"type": "TextBlock", "text": "MyAppsUptime alert", "isSubtle": True, "spacing": "None", "wrap": True}]},
+        ]}]},
+        {"type": "FactSet", "spacing": "Medium", "facts": [{"title": k, "value": v} for k, v in alert.facts()]},
+    ]
+    if alert.app_url:
+        body.append({"type": "TextBlock", "text": f"Sent by MyAppsUptime on [{alert.server}]({alert.app_url})",
+                     "size": "Small", "isSubtle": True, "wrap": True, "separator": True, "spacing": "Medium"})
     card = {
         "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
         "type": "AdaptiveCard",
         "version": "1.4",
-        "body": [
-            {"type": "TextBlock", "size": "Medium", "weight": "Bolder", "color": color, "text": alert.title, "wrap": True},
-            {"type": "FactSet", "facts": [{"title": k, "value": v} for k, v in alert.facts()]},
-        ],
+        "msteams": {"width": "Full"},
+        "body": body,
     }
-    if alert.link:
-        card["actions"] = [{"type": "Action.OpenUrl", "title": "Open in MyAppsUptime", "url": alert.link}]
+    if alert.buttons():
+        card["actions"] = [{"type": "Action.OpenUrl", "title": t, "url": u} for t, u in alert.buttons()]
     return {"type": "message", "attachments": [
         {"contentType": "application/vnd.microsoft.card.adaptive", "contentUrl": None, "content": card}]}
 
@@ -65,8 +119,10 @@ def build_payload(channel: NotificationChannel, alert: Alert) -> dict:
         return teams_payload(alert)
     if channel.type == "webhook":
         return {"monitor": alert.monitor, "status": alert.status, "message": alert.message,
-                "project": alert.project, "link": alert.link, "text": text}
-    return {"text": text + (f"\n{alert.link}" if alert.link else "")}  # Slack
+                "project": alert.project, "target": alert.target, "link": alert.link, "server": alert.app_url or None,
+                "time": alert.at.isoformat(), "time_local": alert.local_time, "text": text}
+    lines = [f"*{alert.title}*", alert.message, alert.local_time] + [f"<{u}|{t}>" for t, u in alert.buttons()]
+    return {"text": "\n".join(x for x in lines if x)}  # Slack
 
 
 def _one_line(value: str) -> str:
@@ -79,21 +135,40 @@ def build_email(alert: Alert, sender: str, recipients: list[str]) -> EmailMessag
     msg["From"] = sender
     msg["To"] = ", ".join(recipients)
     lines = [alert.title, ""] + [f"{k}: {v}" for k, v in alert.facts()]
-    if alert.link:
-        lines += ["", alert.link]
+    lines += [""] + [f"{t}: {u}" for t, u in alert.buttons()]
     msg.set_content("\n".join(lines))
+
+    color = COLORS.get(alert.status, "#475569")
     rows = "".join(
-        f'<tr><td style="padding:4px 12px 4px 0;color:#64748b">{escape(k)}</td><td style="padding:4px 0">{escape(v)}</td></tr>'
+        f'<tr><td style="padding:6px 16px 6px 0;color:#64748b;white-space:nowrap;vertical-align:top">{escape(k)}</td>'
+        f'<td style="padding:6px 0;color:#0f172a">{escape(v)}</td></tr>'
         for k, v in alert.facts()
     )
-    button = (f'<p><a href="{escape(alert.link)}" style="background:#2563eb;color:#fff;padding:8px 14px;'
-              f'border-radius:6px;text-decoration:none">Open in MyAppsUptime</a></p>') if alert.link else ""
+    buttons = "".join(
+        f'<a href="{escape(u)}" style="display:inline-block;margin:0 8px 8px 0;padding:9px 16px;border-radius:6px;'
+        f'text-decoration:none;font-weight:600;{"background:#2563eb;color:#ffffff" if i == 0 else "border:1px solid #cbd5e1;color:#0f172a"}">'
+        f'{escape(t)}</a>'
+        for i, (t, u) in enumerate(alert.buttons())
+    )
+    footer = (f'Sent by MyAppsUptime on <a href="{escape(alert.app_url)}" style="color:#64748b">{escape(alert.server)}</a>'
+              if alert.app_url else "Sent by MyAppsUptime")
     msg.add_alternative(
-        f'<div style="font-family:Segoe UI,Arial,sans-serif;font-size:14px;color:#0f172a">'
-        f'<h2 style="margin:0 0 12px;color:{COLORS.get(alert.status, "#0f172a")}">{escape(alert.title)}</h2>'
-        f'<table style="border-collapse:collapse">{rows}</table>{button}</div>',
+        f'<div style="background:#f1f5f9;padding:24px 12px;font-family:Segoe UI,Arial,sans-serif;font-size:14px">'
+        f'<table role="presentation" width="100%" style="max-width:560px;margin:0 auto;background:#ffffff;'
+        f'border:1px solid #e2e8f0;border-radius:8px;border-collapse:separate;overflow:hidden">'
+        f'<tr><td style="border-top:4px solid {color};padding:20px 24px 8px">'
+        f'<table role="presentation"><tr>'
+        f'<td style="padding-right:12px"><img src="cid:mau-logo" width="40" height="40" alt="MyAppsUptime" '
+        f'style="display:block;border-radius:8px"></td>'
+        f'<td><div style="font-size:18px;font-weight:700;color:{color}">{escape(alert.title)}</div>'
+        f'<div style="color:#64748b;font-size:12px">MyAppsUptime alert</div></td></tr></table></td></tr>'
+        f'<tr><td style="padding:8px 24px"><table role="presentation" style="border-collapse:collapse">{rows}</table></td></tr>'
+        f'<tr><td style="padding:8px 24px 12px">{buttons}</td></tr>'
+        f'<tr><td style="padding:12px 24px;border-top:1px solid #e2e8f0;color:#64748b;font-size:12px">{footer}</td></tr>'
+        f'</table></div>',
         subtype="html",
     )
+    msg.get_payload()[1].add_related(LOGO_PNG, "image", "png", cid="<mau-logo>")
     return msg
 
 

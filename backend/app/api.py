@@ -472,9 +472,9 @@ def delete_channel(channel_id: int, db: Session = Depends(get_db)):
 @router.post("/notifications/{channel_id}/test")
 async def test_channel(channel_id: int, db: Session = Depends(get_db)):
     channel = _get(db, NotificationChannel, channel_id)
-    app_url = get_setting(db, "general")["app_url"]
+    general = get_setting(db, "general")
     alert = notifier.Alert(monitor="Test monitor", status="up", message="This is a test alert from MyAppsUptime",
-                           project="Test", link=app_url or None)
+                           project="Test", target="https://example.com", **notifier.alert_context(general))
     errors = await notifier.send([channel], alert, smtp=get_setting(db, "smtp"))
     if errors:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, "; ".join(errors))

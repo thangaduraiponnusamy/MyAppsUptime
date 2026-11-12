@@ -5,4 +5,5 @@ httpx==0.28.0
 dnspython==2.7.0
 pydantic==2.10.2
 cryptography==43.0.3
+tzdata==2025.2
 sqlcipher3-binary==0.6.0; sys_platform == "linux" and platform_machine == "x86_64"

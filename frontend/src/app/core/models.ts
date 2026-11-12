@@ -160,6 +160,7 @@ export interface Project {
 
 export interface GeneralSettings {
   app_url: string;
+  timezone: string;
   refresh_sec: number;
   retention_value: number;
   retention_unit: 'days' | 'months' | 'years';

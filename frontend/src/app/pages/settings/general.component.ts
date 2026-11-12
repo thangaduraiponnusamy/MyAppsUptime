@@ -22,7 +22,22 @@ import { LIMITS, PrefsService } from '../../core/prefs.service';
         </label>
         <label>App address
           <input [(ngModel)]="form.app_url" placeholder="https://uptime.example.com" [disabled]="!auth.isAdmin()" />
-          <small class="muted">Used for links in alerts and password reset emails.</small>
+          <small class="muted">Used for links and buttons in alerts and password reset emails.
+            @if (auth.isAdmin() && form.app_url !== origin) {
+              <a href="" (click)="$event.preventDefault(); form.app_url = origin">Use {{ origin }}</a>
+            }
+          </small>
+        </label>
+        <label>Time zone for alerts
+          <select [(ngModel)]="form.timezone" [disabled]="!auth.isAdmin()">
+            <option value="">Server default</option>
+            @for (z of zones; track z) { <option [value]="z">{{ z }}</option> }
+          </select>
+          <small class="muted">Times in Teams, Slack and email alerts.
+            @if (auth.isAdmin() && form.timezone !== localZone) {
+              <a href="" (click)="$event.preventDefault(); form.timezone = localZone">Use {{ localZone }}</a>
+            }
+          </small>
         </label>
         <label>Keep logs for
           <span class="row nowrap">
@@ -63,11 +78,17 @@ export class GeneralSettingsComponent {
   auth = inject(AuthService);
   prefs = inject(PrefsService);
   readonly limitList = LIMITS;
-  form: GeneralSettings = { app_url: '', refresh_sec: 5, retention_value: 1, retention_unit: 'years' };
+  readonly origin = location.origin;
+  readonly localZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  zones: string[] = [...new Set(['UTC', this.localZone, ...((Intl as any).supportedValuesOf?.('timeZone') ?? [])])];
+  form: GeneralSettings = { app_url: '', timezone: '', refresh_sec: 5, retention_value: 1, retention_unit: 'years' };
   notice = signal('');
 
   constructor() {
-    this.api.general().subscribe((g) => (this.form = { ...g }));
+    this.api.general().subscribe((g) => {
+      this.form = { ...g };
+      if (g.timezone && !this.zones.includes(g.timezone)) this.zones = [g.timezone, ...this.zones];
+    });
   }
 
   save(): void {

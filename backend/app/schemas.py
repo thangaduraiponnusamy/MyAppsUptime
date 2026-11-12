@@ -2,6 +2,7 @@ import re
 from datetime import datetime, timezone
 from typing import Annotated, Literal
 from urllib.parse import urlparse
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -370,6 +371,7 @@ class TenantOut(BaseModel):
 
 class GeneralSettings(BaseModel):
     app_url: str = Field(default="", max_length=300)
+    timezone: str = Field(default="", max_length=60)  # empty = TZ env or UTC
     refresh_sec: int = Field(default=5, ge=5, le=3600)
     retention_value: int = Field(default=1, ge=1, le=3650)
     retention_unit: Literal["days", "months", "years"] = "years"
@@ -385,6 +387,16 @@ class GeneralSettings(BaseModel):
     @classmethod
     def check_url(cls, value: str) -> str:
         return _require_http_url(value).rstrip("/") if value else ""
+
+    @field_validator("timezone")
+    @classmethod
+    def check_timezone(cls, value: str) -> str:
+        if value:
+            try:
+                ZoneInfo(value)
+            except (ZoneInfoNotFoundError, ValueError):
+                raise ValueError(f"Unknown time zone: {value}") from None
+        return value
 
 
 class SmtpSettings(BaseModel):

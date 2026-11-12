@@ -123,7 +123,16 @@ Go to **Alerting** and add a channel: Microsoft Teams, Slack or generic webhook.
 - With tags (for example `team-payments`) = only monitors with that tag.
 - Use **Send test** to check it.
 
-Webhook JSON body: `monitor`, `status`, `message`, `text`.
+Set these in **Settings > General** so alerts look right:
+
+| Setting | Used for |
+|---|---|
+| App address | **View monitor** and **Open MyAppsUptime** buttons, server link at the bottom |
+| Time zone for alerts | Time shown in alerts, for example `2026-11-12 16:38:56 (Asia/Kolkata)` |
+
+Without them, the `APP_URL` and `TZ` environment variables are used (default: no buttons, UTC).
+
+Webhook JSON body: `monitor`, `status`, `message`, `project`, `target`, `link`, `server`, `time` (UTC), `time_local`, `text`.
 
 ## 7. Maintenance windows
 

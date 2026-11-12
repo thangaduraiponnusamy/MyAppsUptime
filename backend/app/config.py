@@ -6,7 +6,7 @@ from .models import AppSetting
 APP_VERSION = "16.0.0"
 
 DEFAULTS = {
-    "general": {"app_url": "", "refresh_sec": 5, "retention_value": 1, "retention_unit": "years"},
+    "general": {"app_url": "", "timezone": "", "refresh_sec": 5, "retention_value": 1, "retention_unit": "years"},
     "smtp": {"host": "", "port": 587, "security": "starttls", "username": "", "password": "", "from_addr": ""},
 }
 

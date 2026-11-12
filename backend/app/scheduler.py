@@ -101,12 +101,13 @@ async def record_result(tenant: str, monitor_id: int, result: CheckResult) -> No
                 User.id.in_(project.member_ids), User.active.is_(True))).all() if u.email]
         general = get_setting(db, "general")
         smtp = get_setting(db, "smtp")
-        app_url = (general.get("app_url") or "").rstrip("/")
+        app_url = notifier.server_url(general)
         alert = notifier.Alert(
             monitor=m.name, status=status,
             message=("Still down: " if repeat and not changed else "") + result.message,
             project=project.name if project else None, target=m.target or None,
             link=f"{app_url}/monitors/{m.id}" if app_url else None,
+            **notifier.alert_context(general),
         )
 
     await notifier.send(channels, alert, emails, smtp)

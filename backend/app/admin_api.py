@@ -75,7 +75,7 @@ def me(user: Principal = Depends(current_user), db: Session = Depends(get_db)):
 
 def _email_reset_ready(db: Session) -> bool:
     # The link must use the configured address, never the request Host header
-    return notifier.smtp_ready(get_setting(db, "smtp")) and bool(get_setting(db, "general")["app_url"])
+    return notifier.smtp_ready(get_setting(db, "smtp")) and bool(notifier.server_url(get_setting(db, "general")))
 
 
 @auth.get("/options")
@@ -100,7 +100,7 @@ async def forgot_password(body: ForgotIn, request: Request):
             config = next((c for c in (slug, tenancy.DEFAULT) if _mail_ready(c)), None)
             if user.email and config:
                 with tenancy.session_for(config) as cfg:
-                    smtp, app_url = get_setting(cfg, "smtp"), get_setting(cfg, "general")["app_url"]
+                    smtp, app_url = get_setting(cfg, "smtp"), notifier.server_url(get_setting(cfg, "general"))
                 token = create_reset_token(db, user)
                 error = await notifier.send_text(
                     smtp, [user.email], "Reset your MyAppsUptime password",
@@ -342,7 +342,8 @@ def save_smtp(body: SmtpSettings, db: Session = Depends(get_db)):
 @admin.post("/settings/smtp/test", dependencies=[Depends(require_admin)])
 async def test_smtp(body: SmtpTestIn, db: Session = Depends(get_db)):
     alert = notifier.Alert(monitor="Test monitor", status="up", message="Email alerts are working",
-                           project="Test", link=get_setting(db, "general")["app_url"] or None)
+                           project="Test", target="https://example.com",
+                           **notifier.alert_context(get_setting(db, "general")))
     error = await notifier.send_email(get_setting(db, "smtp"), alert, [body.to])
     if error:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, error)
