@@ -1,4 +1,4 @@
-"""Tenant management for the super admin. Each tenant has its own database file and one admin."""
+"""Tenant management for the super admin. Each tenant has its own database file and one or more admins."""
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -100,7 +100,7 @@ def reset_admin(slug: str, body: ResetAdminIn):
     if slug == tenancy.DEFAULT or not tenancy.exists(slug):
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"Tenant {slug} not found")
     with tenancy.session_for(slug) as db:
-        admin = db.scalar(select(User).where(User.role == "admin"))
+        admin = db.scalar(select(User).where(User.role == "admin").order_by(User.id).limit(1))
         if admin is None:
             raise HTTPException(status.HTTP_409_CONFLICT, "This tenant has no admin")
         admin.password_hash = hash_password(body.password)

@@ -25,6 +25,34 @@ def test_tenant_lifecycle(client, su, data_dir):
     assert client.get("/api/monitors", headers=auth(token)).status_code == 401
 
 
+def test_tenant_allows_multiple_admins(client, su):
+    body = {"slug": "multi", "name": "Multi", "admin_username": "multi-admin", "admin_password": "Multi12345"}
+    assert client.post("/api/tenants", json=body, headers=su).status_code == 201
+    as_su = auth(client.token, "multi")
+    second = {"username": "multi-admin2", "role": "admin", "password": "Multi12345"}
+    r = client.post("/api/users", json=second, headers=as_su)
+    assert r.status_code == 201
+    member = client.post("/api/users", json={"username": "multi-member", "password": "Multi12345"}, headers=as_su)
+    assert client.put(f"/api/users/{member.json()['id']}", json={"username": "multi-member", "role": "admin"},
+                      headers=as_su).status_code == 200
+    listed = {t["slug"]: t for t in client.get("/api/tenants", headers=su).json()}
+    assert listed["multi"]["admins"] == ["multi-admin", "multi-admin2", "multi-member"]
+
+
+def test_tenant_admin_resets_password(client, su):
+    body = {"slug": "rst", "name": "Rst", "admin_username": "rst-admin", "admin_password": "Rst123456"}
+    assert client.post("/api/tenants", json=body, headers=su).status_code == 201
+    token = client.post("/api/auth/login", json={"username": "rst-admin", "password": "Rst123456"}).json()["token"]
+    client.post("/api/auth/password", json={"current": "Rst123456", "new": "Rst1234567"}, headers=auth(token))
+    user = client.post("/api/users", json={"username": "rst-user", "password": "User12345"}, headers=auth(token))
+    uid = user.json()["id"]
+    r = client.put(f"/api/users/{uid}", json={"username": "rst-user", "password": "NewPass123"}, headers=auth(token))
+    assert r.status_code == 200
+    assert client.post("/api/auth/login", json={"username": "rst-user", "password": "User12345"}).status_code == 401
+    login = client.post("/api/auth/login", json={"username": "rst-user", "password": "NewPass123"})
+    assert login.status_code == 200 and login.json()["must_change_password"] is True
+
+
 def test_deleted_tenant_is_not_recreated():
     with pytest.raises(LookupError):
         tenancy.session_for("ghost")

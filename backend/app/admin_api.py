@@ -196,11 +196,6 @@ def _check_role(db: Session, me: Principal, role: str, user: User | None) -> Non
         return
     if role == "superadmin":
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Super admins belong to the admin tenant only")
-    if role == "admin":
-        other = db.scalar(select(User).where(User.role == "admin", User.id != (user.id if user else 0)))
-        if other is not None:
-            raise HTTPException(status.HTTP_409_CONFLICT,
-                                f"This tenant already has an admin ({other.username}). Make them a member first.")
 
 
 @admin.get("/users", response_model=list[UserOut], dependencies=[Depends(require_admin)])

@@ -72,7 +72,7 @@ Tenant > Project > Service.
 - The default tenant is `admin`. Its first user is the super admin.
 - The super admin manages all tenants and can open any tenant from the sidebar.
 - Each tenant has its own database file: `tenants/<tenant>.db`, next to the main database (change with `TENANT_DATA_DIR`).
-- Each tenant can have one admin. User names are unique across all tenants.
+- Each tenant can have one or more admins. User names are unique across all tenants.
 - A deleted tenant's file is moved to `tenants/deleted/`.
 
 **Roles**

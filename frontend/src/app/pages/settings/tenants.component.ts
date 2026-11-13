@@ -12,7 +12,7 @@ import { Tenant, TenantCreate } from '../../core/models';
   imports: [FormsModule, DatePipe],
   template: `
     <h2 class="s-title">Tenants</h2>
-    <p class="muted">Each tenant has its own database file, one admin, and its own projects, services and users. Only you (super admin) see this page.</p>
+    <p class="muted">Each tenant has its own database file, one or more admins, and its own projects, services and users. Only you (super admin) see this page.</p>
 
     <section class="s-section">
       <div class="s-head">

@@ -32,7 +32,7 @@ import { User } from '../../core/models';
                 @if (auth.isSuper()) { <option value="superadmin">Super admin</option> }
                 @if (u.role === 'admin') { <option value="admin">Admin</option> }
               } @else {
-                <option value="admin">Admin (one per tenant)</option>
+                <option value="admin">Admin</option>
               }
             </select>
           </label>
@@ -45,6 +45,20 @@ import { User } from '../../core/models';
           <div class="row full">
             <button class="btn primary" [disabled]="!u.username || (!u.id && (u.password?.length ?? 0) < 8)">Save</button>
             <button type="button" class="btn" (click)="editing.set(null)">Cancel</button>
+          </div>
+        </form>
+      }
+
+      @if (resetting(); as r) {
+        <form class="s-fields s-box" (ngSubmit)="resetPassword()">
+          <label>New password for <b>{{ r.user.username }}</b>
+            <input name="rpw" type="password" [(ngModel)]="r.password" autocomplete="new-password" required />
+            <small class="muted">At least 8 characters. The user is signed out and must change it at next sign-in.</small>
+          </label>
+          @if (error()) { <p class="error full">{{ error() }}</p> }
+          <div class="row full">
+            <button class="btn primary" [disabled]="r.password.length < 8">Reset password</button>
+            <button type="button" class="btn" (click)="resetting.set(null)">Cancel</button>
           </div>
         </form>
       }
@@ -64,6 +78,9 @@ import { User } from '../../core/models';
               </td>
               <td class="row nowrap">
                 <button class="btn sm" (click)="edit(u)">Edit</button>
+                @if (u.role !== 'superadmin' || auth.isSuper()) {
+                  <button class="btn sm" (click)="startReset(u)">Reset password</button>
+                }
                 @if (u.id !== auth.user()?.id || auth.visiting()) { <button class="btn sm danger" (click)="remove(u)">Delete</button> }
               </td>
             </tr>
@@ -79,6 +96,7 @@ export class UserSettingsComponent {
   private confirm = inject(ConfirmService);
   users = signal<User[]>([]);
   editing = signal<User | null>(null);
+  resetting = signal<{ user: User; password: string } | null>(null);
   error = signal('');
   inAdminTenant = computed(() => this.auth.user()?.active_tenant === 'admin');
 
@@ -90,8 +108,27 @@ export class UserSettingsComponent {
     this.api.users().subscribe((u) => this.users.set(u));
   }
 
+  startReset(u: User): void {
+    this.error.set('');
+    this.editing.set(null);
+    this.resetting.set({ user: u, password: '' });
+  }
+
+  resetPassword(): void {
+    const { user: u, password } = this.resetting()!;
+    const body: User = { username: u.username, name: u.name, email: u.email, role: u.role, active: u.active, password };
+    this.api.updateUser(u.id!, body).subscribe({
+      next: () => {
+        this.resetting.set(null);
+        this.load();
+      },
+      error: (e) => this.error.set(errorText(e)),
+    });
+  }
+
   edit(u: User | null): void {
     this.error.set('');
+    this.resetting.set(null);
     this.editing.set(u ? { ...u, password: '' } : { username: '', name: '', email: '', role: 'member', active: true, password: '' });
   }
 
