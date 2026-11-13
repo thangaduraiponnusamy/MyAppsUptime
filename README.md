@@ -59,7 +59,7 @@ Data is stored in the `myappsuptime-data` Docker volume.
 | Tenants | Super admin only: add, rename, disable or delete tenants |
 | General | Auto refresh (default 5 seconds), app URL for links in alerts, how long to keep logs (default 1 year), alert after N failed checks (default 3), expiry warning days (default 30, 14, 7), database shrink / clear, server backup and DNS cache (super admin) |
 | Notifications | Teams, email, Telegram, Discord, Google Chat, ntfy, Slack or webhook channels, and the email (SMTP) server |
-| Teams | Teams, their members and their services (monitors) |
+| Projects | Projects, their members and their services (monitors) |
 | Users | Add users, set role, reset a password |
 | Security | Your account and password |
 | Backup | Export and import as JSON |
@@ -67,7 +67,7 @@ Data is stored in the `myappsuptime-data` Docker volume.
 
 **Tenants**
 
-Tenant > Team > Service.
+Tenant > Project > Service.
 
 - The default tenant is `admin`. Its first user is the super admin.
 - The super admin manages all tenants and can open any tenant from the sidebar.
@@ -81,18 +81,18 @@ Tenant > Team > Service.
 |---|---|
 | Super admin | Everything, in every tenant |
 | Admin | Everything inside their own tenant |
-| Member | Sees only their teams, can acknowledge incidents and run a check |
+| Member | Sees only their projects, can acknowledge incidents and run a check |
 
 **How alerts reach the right people**
 
-1. Put monitors in a team (Settings > Teams, or the Team field on the monitor).
-2. Add users as team members. With "Email members" on, they get an email when a monitor goes down or recovers.
-3. Optional: add a Teams channel and tick the team, so the alert also goes to that Teams channel.
-4. Optional: in Settings > Teams > Edit > Alert channels, pick "Only the channels picked below" to choose exactly which channels (email, Telegram, Teams...) this team uses.
+1. Put monitors in a project (Settings > Projects, or the Project field on the monitor).
+2. Add users as project members. With "Email members" on, they get an email when a monitor goes down or recovers.
+3. Optional: add a Teams channel and tick the project, so the alert also goes to that Teams channel.
+4. Optional: in Settings > Projects > Edit > Alert channels, pick "Only the channels picked below" to choose exactly which channels (email, Telegram, Teams...) this project uses.
 
-| Team alert channels | Result |
+| Project alert channels | Result |
 |---|---|
-| Default | The channel's own team and tag settings decide |
+| Default | The channel's own project and tag settings decide |
 | Only picked channels | Only the ticked channels; their tag filter still applies |
 | Picked, none ticked | No channel alerts (member emails still follow "Email members") |
 

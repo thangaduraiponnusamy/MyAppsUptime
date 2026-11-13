@@ -12,7 +12,7 @@ import { Tenant, TenantCreate } from '../../core/models';
   imports: [FormsModule, DatePipe],
   template: `
     <h2 class="s-title">Tenants</h2>
-    <p class="muted">Each tenant has its own database file, one admin, and its own teams, services and users. Only you (super admin) see this page.</p>
+    <p class="muted">Each tenant has its own database file, one admin, and its own projects, services and users. Only you (super admin) see this page.</p>
 
     <section class="s-section">
       <div class="s-head">
@@ -64,7 +64,7 @@ import { Tenant, TenantCreate } from '../../core/models';
                 <div class="muted small">{{ t.slug }} · {{ t.is_default ? 'Default' : t.active ? 'Active' : 'Disabled' }} · since {{ t.created_at | date: 'MMM d, y' }}</div>
               </td>
               <td>{{ t.admins.join(', ') || '-' }}</td>
-              <td class="hide-sm">{{ t.users }} users · {{ t.teams }} teams · {{ t.monitors }} services
+              <td class="hide-sm">{{ t.users }} users · {{ t.teams }} projects · {{ t.monitors }} services
                 @if (t.down) { <div class="small error">{{ t.down }} down</div> }
               </td>
               <td class="hide-sm"><code>{{ t.db_file }}</code><div class="muted small">{{ t.db_size_kb }} KB</div></td>
@@ -158,7 +158,7 @@ export class TenantSettingsComponent {
       title: 'Delete tenant?',
       message: `You are about to delete the tenant "${t.name}".`,
       details: [
-        `${t.users} users, ${t.teams} teams and ${t.monitors} services stop working.`,
+        `${t.users} users, ${t.teams} projects and ${t.monitors} services stop working.`,
         'Nobody in this tenant can sign in any more.',
         `The database file ${t.db_file} is moved to tenants/deleted as a backup.`,
       ],

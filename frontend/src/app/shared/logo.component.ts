@@ -22,7 +22,7 @@ let nextId = 0;
     @if (wordmark()) {
       <span class="wordmark">
         <span class="name"><span class="my">My</span><span class="apps">Apps</span><span class="uptime">Uptime</span></span>
-        @if (tagline()) { <span class="tagline">Uptime &middot; SLA &middot; Insights</span> }
+        @if (tagline()) { <span class="tagline">Uptime &middot; Alerts &middot; SLA &middot; Insights</span> }
       </span>
     }
   `,

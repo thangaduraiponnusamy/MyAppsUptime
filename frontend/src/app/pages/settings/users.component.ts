@@ -12,7 +12,7 @@ import { User } from '../../core/models';
   imports: [FormsModule, DatePipe],
   template: `
     <h2 class="s-title">Users</h2>
-    <p class="muted">Admins manage everything. Members see only the teams they belong to and can acknowledge incidents.</p>
+    <p class="muted">Admins manage everything. Members see only the projects they belong to and can acknowledge incidents.</p>
 
     <section class="s-section">
       <div class="s-head">
@@ -50,13 +50,14 @@ import { User } from '../../core/models';
       }
 
       <table>
-        <thead><tr><th>User</th><th>Role</th><th class="hide-sm">Email</th><th class="hide-sm">Status</th><th></th></tr></thead>
+        <thead><tr><th>User</th><th>Role</th><th class="hide-sm">Email</th><th class="hide-sm">Last sign-in</th><th class="hide-sm">Status</th><th></th></tr></thead>
         <tbody>
           @for (u of users(); track u.id) {
             <tr [class.muted]="!u.active">
               <td><b>{{ u.username }}</b> @if (u.name) { <div class="muted small">{{ u.name }}</div> }</td>
               <td class="cap">{{ u.role === 'superadmin' ? 'Super admin' : u.role }}</td>
               <td class="hide-sm">{{ u.email || '-' }}</td>
+              <td class="hide-sm">{{ u.last_login_at ? (u.last_login_at | date: 'MMM d, y, HH:mm') : 'Never' }}</td>
               <td class="hide-sm">
                 {{ !u.active ? 'Disabled' : u.must_change_password ? 'Must change password' : 'Active' }}
                 <div class="muted small">since {{ u.created_at | date: 'MMM d, y' }}</div>
@@ -115,7 +116,7 @@ export class UserSettingsComponent {
     const ok = await this.confirm.ask({
       title: 'Delete user?',
       message: `You are about to delete the user "${u.username}".`,
-      details: ['They can no longer sign in.', 'They are removed from all teams and stop getting alerts.'],
+      details: ['They can no longer sign in.', 'They are removed from all projects and stop getting alerts.'],
       typeToConfirm: u.username,
       action: 'Delete user',
     });

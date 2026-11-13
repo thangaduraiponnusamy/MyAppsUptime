@@ -13,8 +13,8 @@ from sqlalchemy.orm import Session
 from . import notifier, probes, tenancy
 from .auth import Principal, get_db, require_admin, require_user, visible_monitor_ids
 from .checks import CheckResult
-from .models import (Heartbeat, Incident, MaintenanceWindow, Monitor, NotificationChannel, Probe, Project, StatusPage,
-                     aware, utcnow)
+from .models import (Heartbeat, Incident, IncidentAck, MaintenanceWindow, Monitor, NotificationChannel, Probe, Project,
+                     StatusPage, aware, utcnow)
 from .scheduler import record_result, scheduler, tenant_config
 from .schemas import (AckIn, ChannelIn, ChannelOut, DashboardOut, DashboardPoint, ExportData, HeartbeatOut,
                       IncidentOut, MaintenanceIn, MaintenanceOut, MonitorCreate, MonitorExport, MonitorOut,
@@ -431,8 +431,12 @@ def acknowledge(incident_id: int, body: AckIn, db: Session = Depends(get_db), us
     incident = _get(db, Incident, incident_id)
     _get_monitor(db, user, incident.monitor_id)
     incident.acknowledged_at = incident.acknowledged_at or utcnow()
-    incident.acknowledged_by = body.by
-    incident.note = body.note
+    incident.acknowledged_by = incident.acknowledged_by or user.username
+    note = (body.note or "").strip() or None
+    if note or not incident.acks:
+        incident.acks.append(IncidentAck(by=user.username, note=note))
+    if note:
+        incident.note = note
     incident.public_note = body.public_note
     db.commit()
     out = IncidentOut.model_validate(incident)

@@ -20,6 +20,7 @@ const modernZone = (z: string) => RENAMED[z] ?? z;
   imports: [FormsModule],
   template: `
     <h2 class="s-title">General</h2>
+    @if (!auth.isAdmin()) { <p class="muted">Read only. Only an admin can change these settings.</p> }
 
     <section class="s-section">
       <h3>Refresh, links and logs</h3>
@@ -84,17 +85,19 @@ const modernZone = (z: string) => RENAMED[z] ?? z;
 
     <section class="s-section">
       <h3>Display limits</h3>
-      <p class="muted">How many activity rows to show. Saved in this browser only.</p>
+      <p class="muted">How many rows to show in lists. Saved in this browser only.</p>
       <div class="s-fields">
         @for (l of limitList; track l.key) {
           <label>{{ l.label }}
-            <input type="number" [min]="l.min" [max]="l.max" [value]="prefs.limits()[l.key]"
+            <input type="number" [min]="l.min" [max]="l.max" [value]="prefs.limits()[l.key]" [disabled]="!auth.isAdmin()"
                    (change)="prefs.set(l, $any($event.target).value); $any($event.target).value = prefs.limits()[l.key]" />
             <small class="muted">{{ l.hint }} ({{ l.min }}&ndash;{{ l.max }}, default {{ l.def }})</small>
           </label>
         }
       </div>
-      <div class="row"><button class="btn" (click)="prefs.reset()">Reset to defaults</button></div>
+      @if (auth.isAdmin()) {
+        <div class="row"><button class="btn" (click)="prefs.reset()">Reset to defaults</button></div>
+      }
     </section>
 
     @if (auth.isAdmin() && db(); as d) {

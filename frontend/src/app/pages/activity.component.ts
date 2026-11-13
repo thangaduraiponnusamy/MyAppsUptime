@@ -20,17 +20,17 @@ import { MonitorStore } from '../core/monitor-store.service';
   template: `
     <div class="page-head">
       <div>
-        <h1>Activity</h1>
+        <h1>Alerts</h1>
         <div class="sub">Every time a service went down or came back up &middot; {{ rangeText() }}</div>
       </div>
       <span class="spacer"></span>
-      <app-project-pick [project]="project()" (pick)="setParams({ project: $event === null ? null : '' + $event })" />
+      <app-project-pick [project]="project()" (pick)="store.setProject($event)" />
       <app-range-picker [hours]="hours()" [custom]="custom()" (pick)="pickHours($event)" (range)="applyCustom($event)" />
     </div>
 
     <section class="card panel">
       <div class="toolbar">
-        <h2>All activity <span class="count-badge">{{ filtered().length }}</span></h2>
+        <h2>All alerts <span class="count-badge">{{ filtered().length }}</span></h2>
         <input class="search" placeholder="Search service..." [value]="query()"
                (input)="query.set($any($event.target).value); limit.set(page())" />
         <span class="spacer"></span>
@@ -65,7 +65,7 @@ import { MonitorStore } from '../core/monitor-store.service';
       } @else {
         <div class="empty-state tint-up">
           <span class="empty-ico"><app-icon name="check" [size]="20" /></span>
-          <div><b>No activity</b><div class="muted">No service changed state {{ rangeText() }}.</div></div>
+          <div><b>No alerts</b><div class="muted">No service changed state {{ rangeText() }}.</div></div>
         </div>
       }
     </section>
@@ -77,7 +77,7 @@ export class ActivityComponent {
   private router = inject(Router);
   private prefs = inject(PrefsService);
   private auth = inject(AuthService);
-  private store = inject(MonitorStore);
+  store = inject(MonitorStore);
   readonly kinds = [
     { value: 'all', label: 'All' },
     { value: 'down', label: 'Down' },
@@ -90,7 +90,7 @@ export class ActivityComponent {
   incidents = signal<Incident[]>([]);
   query = signal('');
   kind = signal<'all' | 'up' | 'down'>('all');
-  project = signal<number | null>(null);
+  project = this.store.project;
   limit = signal(this.page());
 
   rangeText = computed(() => {
@@ -127,7 +127,11 @@ export class ActivityComponent {
       const from = p.get('from'), to = p.get('to');
       this.custom.set(from && to && DAY.test(from) && DAY.test(to) && from <= to ? { from, to } : null);
       this.hours.set(RANGES.find((r) => r.label === p.get('range'))?.hours ?? 24);
-      this.project.set(parseProject(p.get('project')));
+      const proj = parseProject(p.get('project'));
+      if (proj !== null) {
+        this.store.setProject(proj);
+        this.setParams({ project: null });
+      }
       this.limit.set(this.page());
     });
     const range = computed(() => rangeQuery(this.hours(), this.custom()));

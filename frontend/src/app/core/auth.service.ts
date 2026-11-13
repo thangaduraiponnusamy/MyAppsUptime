@@ -21,6 +21,8 @@ export class AuthService {
   /** True while a super admin works inside another tenant. */
   readonly visiting = computed(() => !!this.user() && this.user()!.active_tenant !== this.user()!.tenant);
   readonly refreshMs = computed(() => Math.max(5, this.user()?.refresh_sec ?? 5) * 1000);
+  /** Bumped on each sign-in, so per-session UI state (project filter) starts fresh. */
+  readonly signIns = signal(0);
 
   get token(): string | null {
     return localStorage.getItem(KEY);
@@ -43,6 +45,7 @@ export class AuthService {
         localStorage.setItem(KEY, token);
         localStorage.removeItem(TENANT_KEY);
         this.user.set(me);
+        this.signIns.update((n) => n + 1);
       }),
     );
   }

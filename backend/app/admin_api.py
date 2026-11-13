@@ -11,10 +11,10 @@ from .auth import (RESET_MIN, Principal, bearer, check_lock, clear_fails, create
                    current_user, end_all_sessions, end_session, get_db, hash_password, record_fail, require_admin,
                    require_super, require_user, token_tenant, use_reset_token, verify_password)
 from .config import APP_VERSION, get_setting, put_setting
-from .models import Heartbeat, Incident, Monitor, NotificationChannel, Project, User
-from .schemas import (DatabaseInfo, ForgotIn, GeneralSettings, LoginIn, LoginOut, MeOut, PasswordIn, ProjectIn,
-                      ProjectOut, ResetIn, ServerOut, ServerSettings, SmtpOut, SmtpSettings, SmtpTestIn, UserCreate,
-                      UserOut, UserUpdate)
+from .models import Heartbeat, Incident, IncidentAck, LoginEvent, Monitor, NotificationChannel, Project, User, utcnow
+from .schemas import (DatabaseInfo, ForgotIn, GeneralSettings, LoginEventOut, LoginIn, LoginOut, MeOut, PasswordIn,
+                      ProjectIn, ProjectOut, ResetIn, ServerOut, ServerSettings, SmtpOut, SmtpSettings, SmtpTestIn,
+                      UserCreate, UserOut, UserUpdate)
 
 log = logging.getLogger(__name__)
 
@@ -46,6 +46,7 @@ def _me(db: Session, user: Principal) -> MeOut:
 @auth.post("/login", response_model=LoginOut)
 def login(body: LoginIn, request: Request):
     key = f"{body.username.lower()}|{request.client.host if request.client else ''}"
+    ip = (request.client.host if request.client else "")[:64]
     check_lock(key)
     # User names are unique across tenants, so the first match is the account
     for slug in tenancy.slugs(active_only=False):
@@ -54,10 +55,14 @@ def login(body: LoginIn, request: Request):
             if user is None:
                 continue
             if not user.active or not verify_password(body.password, user.password_hash):
+                db.add(LoginEvent(user_id=user.id, username=user.username, ip=ip, success=False))
+                db.commit()
                 break
             clear_fails(key)
             if not tenancy.is_active(slug):
                 raise HTTPException(status.HTTP_403_FORBIDDEN, "Your organization is disabled. Contact the administrator.")
+            user.last_login_at = utcnow()
+            db.add(LoginEvent(user_id=user.id, username=user.username, ip=ip, success=True))
             token = create_session(db, user)
             me = _me(db, Principal(user.id, user.username, user.role, user.must_change_password, slug, slug))
             return LoginOut(**me.model_dump(), token=token)
@@ -203,6 +208,15 @@ def list_users(db: Session = Depends(get_db)):
     return db.scalars(select(User).order_by(User.username)).all()
 
 
+@admin.get("/logins", response_model=list[LoginEventOut])
+def list_logins(limit: int = 20, db: Session = Depends(get_db), me: Principal = Depends(require_user)):
+    """Sign-in history: admins see everyone in the tenant, members only themselves."""
+    query = select(LoginEvent).order_by(LoginEvent.created_at.desc(), LoginEvent.id.desc())
+    if not me.is_admin:
+        query = query.where(LoginEvent.user_id == me.id, LoginEvent.username == me.username)
+    return db.scalars(query.limit(max(1, min(limit, 500)))).all()
+
+
 @admin.post("/users", response_model=UserOut, status_code=status.HTTP_201_CREATED)
 def create_user(body: UserCreate, db: Session = Depends(get_db), me: Principal = Depends(require_admin)):
     _unique_username(db, body.username, None)
@@ -291,7 +305,7 @@ def list_projects(db: Session = Depends(get_db), user: Principal = Depends(requi
             dependencies=[Depends(require_admin)])
 def create_project(body: ProjectIn, db: Session = Depends(get_db)):
     if db.scalar(select(Project).where(Project.name == body.name)):
-        raise HTTPException(status.HTTP_409_CONFLICT, "Team name already exists")
+        raise HTTPException(status.HTTP_409_CONFLICT, "Project name already exists")
     project = Project(**body.model_dump(exclude={"member_ids", "channel_ids"}), member_ids=_check_members(db, body.member_ids),
                       channel_ids=_check_channels(db, body.channel_ids))
     db.add(project)
@@ -304,7 +318,7 @@ def update_project(project_id: int, body: ProjectIn, db: Session = Depends(get_d
     project = _get(db, Project, project_id)
     other = db.scalar(select(Project).where(Project.name == body.name))
     if other and other.id != project.id:
-        raise HTTPException(status.HTTP_409_CONFLICT, "Team name already exists")
+        raise HTTPException(status.HTTP_409_CONFLICT, "Project name already exists")
     project.name, project.description, project.email_members = body.name, body.description, body.email_members
     project.member_ids = _check_members(db, body.member_ids)
     project.channel_ids = _check_channels(db, body.channel_ids)
@@ -405,6 +419,7 @@ def shrink_database(db: Session = Depends(get_db)):
 @admin.post("/settings/database/clear-stats", response_model=DatabaseInfo, dependencies=[Depends(require_admin)])
 def clear_stats(db: Session = Depends(get_db)):
     db.execute(delete(Heartbeat))
+    db.execute(delete(IncidentAck))
     db.execute(delete(Incident))
     db.execute(update(Monitor).values(fail_count=0))
     db.commit()

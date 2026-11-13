@@ -43,19 +43,22 @@ import { duration } from '../shared/time';
                 @else { <span class="pill down">open</span> }
               </td>
               <td>
+                @for (a of i.acks ?? []; track $index) {
+                  <div class="small"><b>{{ a.by }}</b> <span class="muted">{{ a.created_at | date: 'MMM d, HH:mm' }}</span>
+                    @if (a.note) { &middot; {{ a.note }} }</div>
+                } @empty {
+                  @if (i.acknowledged_by) { <div class="small"><b>{{ i.acknowledged_by }}</b> <span class="muted">{{ i.note }}</span></div> }
+                }
+                @if (i.public_note && editing() !== i.id) { <div class="hint">Public: {{ i.public_note }}</div> }
                 @if (editing() === i.id) {
-                  <div class="row" style="flex-wrap: nowrap">
-                    <input [(ngModel)]="by" placeholder="Your name" style="width: 120px" />
-                    <input [(ngModel)]="note" placeholder="Note (optional)" />
-                    <button class="btn sm primary" [disabled]="!by" (click)="ack(i)">Save</button>
+                  <div class="row" style="flex-wrap: nowrap; margin-top: 6px">
+                    <input [(ngModel)]="note" maxlength="1000" [placeholder]="i.acknowledged_at ? 'Add a note' : 'Note (optional)'" />
+                    <button class="btn sm primary" [disabled]="i.acknowledged_at && !note.trim() && publicNote.trim() === (i.public_note ?? '')" (click)="ack(i)">Save</button>
+                    <button class="btn sm" (click)="editing.set(null)">Cancel</button>
                   </div>
                   <input [(ngModel)]="publicNote" maxlength="1000" placeholder="Public note (shown on status pages)" style="margin-top: 6px" />
-                } @else if (i.acknowledged_by) {
-                  <b>{{ i.acknowledged_by }}</b> <span class="muted">{{ i.note }}</span>
-                  @if (i.public_note) { <div class="hint">Public: {{ i.public_note }}</div> }
-                  <button class="btn sm" (click)="startAck(i)">Edit</button>
                 } @else {
-                  <button class="btn sm" (click)="startAck(i)">Acknowledge</button>
+                  <button class="btn sm" style="margin-top: 4px" (click)="startAck(i)">{{ i.acknowledged_at ? 'Add note' : 'Acknowledge' }}</button>
                 }
               </td>
             </tr>
@@ -73,7 +76,7 @@ export class IncidentsComponent {
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   incidents = signal<Incident[]>([]);
-  project = signal<number | null>(null);
+  project = this.store.project;
   shown = computed(() => {
     const p = this.project();
     const of = this.store.projectOf();
@@ -81,18 +84,23 @@ export class IncidentsComponent {
   });
   openOnly = signal(false);
   editing = signal<number | null>(null);
-  by = localStorage.getItem('ackName') ?? '';
   note = '';
   publicNote = '';
   duration = duration;
 
   constructor() {
-    this.route.queryParamMap.pipe(takeUntilDestroyed()).subscribe((p) => this.project.set(parseProject(p.get('project'))));
+    this.route.queryParamMap.pipe(takeUntilDestroyed()).subscribe((p) => {
+      const proj = parseProject(p.get('project'));
+      if (proj !== null) {
+        this.store.setProject(proj);
+        this.router.navigate([], { relativeTo: this.route, queryParams: { project: null }, queryParamsHandling: 'merge', replaceUrl: true });
+      }
+    });
     this.load(false);
   }
 
   pickProject(project: number | null): void {
-    this.router.navigate([], { relativeTo: this.route, queryParams: { project }, queryParamsHandling: 'merge', replaceUrl: true });
+    this.store.setProject(project);
   }
 
   load(openOnly: boolean): void {
@@ -101,14 +109,13 @@ export class IncidentsComponent {
   }
 
   startAck(i: Incident): void {
-    this.note = i.note ?? '';
+    this.note = '';
     this.publicNote = i.public_note ?? '';
     this.editing.set(i.id);
   }
 
   ack(i: Incident): void {
-    localStorage.setItem('ackName', this.by);
-    this.api.acknowledge(i.id, this.by, this.note || null, this.publicNote.trim() || null).subscribe(() => {
+    this.api.acknowledge(i.id, this.note || null, this.publicNote.trim() || null).subscribe(() => {
       this.editing.set(null);
       this.load(this.openOnly());
       this.store.refresh();

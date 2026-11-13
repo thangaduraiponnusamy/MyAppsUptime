@@ -102,6 +102,7 @@ export interface Incident {
   acknowledged_by: string | null;
   note: string | null;
   public_note: string | null;
+  acks?: { by: string; note: string | null; created_at: string }[];
 }
 
 export interface Channel {
@@ -163,7 +164,16 @@ export interface User {
   active: boolean;
   password?: string | null;
   must_change_password?: boolean;
+  last_login_at?: string | null;
   created_at?: string;
+}
+
+export interface LoginEvent {
+  id: number;
+  username: string;
+  ip: string;
+  success: boolean;
+  created_at: string;
 }
 
 export interface Project {

@@ -1,7 +1,7 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import {
-  AdminDefaults, Channel, DashboardData, DatabaseInfo, ExportData, GeneralSettings, Heartbeat, Incident, Maintenance, Monitor, MonitorInput,
+  AdminDefaults, Channel, DashboardData, DatabaseInfo, ExportData, GeneralSettings, Heartbeat, Incident, LoginEvent, Maintenance, Monitor, MonitorInput,
   Probe, Project, PublicStatus, ServerSettings, SmtpSettings, Stats, StatusPage, Summary, Tenant, TenantCreate, User,
 } from './models';
 
@@ -38,8 +38,8 @@ export class ApiService {
     for (const [k, v] of Object.entries(range)) if (v !== undefined) params = params.set(k, v);
     return this.http.get<Incident[]>(`${this.base}/incidents`, { params });
   }
-  acknowledge(id: number, by: string, note: string | null, publicNote: string | null) {
-    return this.http.post<Incident>(`${this.base}/incidents/${id}/ack`, { by, note, public_note: publicNote });
+  acknowledge(id: number, note: string | null, publicNote: string | null) {
+    return this.http.post<Incident>(`${this.base}/incidents/${id}/ack`, { note, public_note: publicNote });
   }
 
   channels() { return this.http.get<Channel[]>(`${this.base}/notifications`); }
@@ -66,6 +66,7 @@ export class ApiService {
   createUser(body: User) { return this.http.post<User>(`${this.base}/users`, body); }
   updateUser(id: number, body: User) { return this.http.put<User>(`${this.base}/users/${id}`, body); }
   deleteUser(id: number) { return this.http.delete<void>(`${this.base}/users/${id}`); }
+  logins(limit: number) { return this.http.get<LoginEvent[]>(`${this.base}/logins`, { params: { limit } }); }
 
   tenants() { return this.http.get<Tenant[]>(`${this.base}/tenants`); }
   createTenant(body: TenantCreate) { return this.http.post<Tenant>(`${this.base}/tenants`, body); }

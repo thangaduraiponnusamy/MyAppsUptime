@@ -69,7 +69,7 @@ class Alert:
         return urlsplit(self.app_url).netloc if self.app_url else ""
 
     def facts(self) -> list[tuple[str, str]]:
-        rows = [("Status", self.status.upper()), ("Monitor", self.monitor), ("Team", self.project),
+        rows = [("Status", self.status.upper()), ("Monitor", self.monitor), ("Project", self.project),
                 ("Target", self.target), ("Details", self.message), ("Time", self.local_time)]
         # Empty rows are left out ("-" shows as a bullet in Teams)
         return [(k, v) for k, v in rows if v]
@@ -157,7 +157,7 @@ def discord_payload(alert: Alert) -> dict:
     color = {"up": 0x22C55E, "down": 0xEF4444, "degraded": 0xF59E0B, "warning": 0xF97316, "maintenance": 0x3B82F6}.get(alert.status, 0x64748B)
     embed = {
         "title": alert.title[:256], "color": color, "timestamp": alert.at.isoformat(),
-        "fields": [{"name": k, "value": v[:1024], "inline": k in ("Status", "Team", "Time")} for k, v in alert.facts()],
+        "fields": [{"name": k, "value": v[:1024], "inline": k in ("Status", "Project", "Time")} for k, v in alert.facts()],
         "footer": {"text": f"MyAppsUptime{' on ' + alert.server if alert.server else ''}"},
     }
     if alert.buttons():

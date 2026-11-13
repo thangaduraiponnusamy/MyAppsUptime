@@ -10,8 +10,8 @@ from sqlalchemy import delete, select
 from . import backup, expiry, notifier, tenancy
 from .checks import CheckResult, run_check
 from .config import get_setting, retention_days
-from .models import (Heartbeat, Incident, MaintenanceWindow, Monitor, NotificationChannel, Probe, Project, User, aware,
-                     utcnow)
+from .models import (Heartbeat, Incident, IncidentAck, LoginEvent, MaintenanceWindow, Monitor, NotificationChannel,
+                     Probe, Project, User, aware, utcnow)
 
 log = logging.getLogger(__name__)
 
@@ -345,7 +345,10 @@ class Scheduler:
                 cutoff = now - timedelta(days=retention_days(get_setting(db, "general")))
                 db.execute(delete(Heartbeat).where(Heartbeat.created_at < cutoff))
                 db.execute(delete(Incident).where(Incident.resolved_at.is_not(None), Incident.resolved_at < cutoff))
+                # SQLite does not enforce ON DELETE CASCADE here, so drop notes of deleted incidents
+                db.execute(delete(IncidentAck).where(IncidentAck.incident_id.not_in(select(Incident.id))))
                 db.execute(delete(MaintenanceWindow).where(MaintenanceWindow.ends_at < cutoff))
+                db.execute(delete(LoginEvent).where(LoginEvent.created_at < cutoff))
                 db.commit()
 
 

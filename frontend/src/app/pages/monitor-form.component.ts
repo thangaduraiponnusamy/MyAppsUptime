@@ -89,17 +89,17 @@ const URL_TYPES: MonitorType[] = ['http', 'keyword', 'json'];
           Smart latency anomaly detection (flags DEGRADED when response time jumps far above the normal baseline)</label>
 
         <div class="section-title">Alerting</div>
-        <label>Team
+        <label>Project
           <select formControlName="project_id">
-            <option [ngValue]="null">No team</option>
+            <option [ngValue]="null">No project</option>
             @for (p of store.projects(); track p.id) { <option [ngValue]="p.id">{{ p.name }}</option> }
           </select>
         </label>
         <label>Repeat alert while down (minutes, optional) <input type="number" formControlName="notify_repeat_min" placeholder="30" /></label>
         <label>Alert after N failed checks in a row (optional)
           <input type="number" formControlName="down_after" placeholder="Default from Settings > General" /></label>
-        <label>Tags (comma separated) <input formControlName="tags" placeholder="prod, api, team-payments" /></label>
-        <p class="hint full">Team members and the team's channels get the alerts. Tags can narrow a channel further.
+        <label>Tags (comma separated) <input formControlName="tags" placeholder="prod, api, payments" /></label>
+        <p class="hint full">Project members and the project's channels get the alerts. Tags can narrow a channel further.
           Alerts are suppressed while the parent monitor is down.</p>
 
         @if (error()) { <p class="error full">{{ error() }}</p> }

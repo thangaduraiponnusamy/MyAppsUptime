@@ -1,13 +1,16 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, effect, inject, signal } from '@angular/core';
+import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
-import { errorText } from '../../core/api.service';
+import { ApiService, errorText } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
+import { LoginEvent } from '../../core/models';
+import { PrefsService } from '../../core/prefs.service';
 
 @Component({
   selector: 'app-settings-security',
   standalone: true,
-  imports: [FormsModule],
+  imports: [FormsModule, DatePipe],
   template: `
     <h2 class="s-title">Security</h2>
 
@@ -19,6 +22,29 @@ import { AuthService } from '../../core/auth.service';
         <dt>Email</dt><dd>{{ auth.user()?.email || '-' }}</dd>
         <dt>Role</dt><dd class="cap">{{ auth.user()?.role }}</dd>
       </dl>
+    </section>
+
+    <section class="s-section">
+      <h3>Sign-in history</h3>
+      <p class="muted">{{ auth.isAdmin() ? 'Latest sign-ins of all users in this tenant.' : 'Your latest sign-ins.' }}
+        Last {{ prefs.limits().logins }} shown (change in General).</p>
+      @if (logins().length) {
+        <table>
+          <thead><tr><th>Time</th>@if (auth.isAdmin()) { <th>User</th> }<th class="hide-sm">IP address</th><th>Result</th></tr></thead>
+          <tbody>
+            @for (l of logins(); track l.id) {
+              <tr>
+                <td>{{ l.created_at | date: 'MMM d, y, HH:mm:ss' }}</td>
+                @if (auth.isAdmin()) { <td>{{ l.username }}</td> }
+                <td class="hide-sm mono">{{ l.ip || '-' }}</td>
+                <td><span class="pill" [class.up]="l.success" [class.down]="!l.success">{{ l.success ? 'Success' : 'Failed' }}</span></td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      } @else {
+        <p class="muted">No sign-ins yet.</p>
+      }
     </section>
 
     <section class="s-section">
@@ -63,11 +89,20 @@ import { AuthService } from '../../core/auth.service';
 })
 export class SecuritySettingsComponent {
   auth = inject(AuthService);
+  prefs = inject(PrefsService);
+  private api = inject(ApiService);
   private router = inject(Router);
+  logins = signal<LoginEvent[]>([]);
   current = '';
   next = '';
   repeat = '';
   notice = signal('');
+
+  constructor() {
+    effect(() => {
+      this.api.logins(this.prefs.limits().logins).subscribe((l) => this.logins.set(l));
+    });
+  }
 
   change(): void {
     this.auth.changePassword(this.current, this.next).subscribe({

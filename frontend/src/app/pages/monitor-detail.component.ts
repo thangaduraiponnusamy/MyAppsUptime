@@ -2,7 +2,7 @@ import { DatePipe, DecimalPipe } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { EMPTY, catchError, combineLatest, forkJoin, switchMap, timer } from 'rxjs';
+import { EMPTY, Subject, catchError, combineLatest, filter, first, forkJoin, merge, switchMap, timeout, timer } from 'rxjs';
 import { ApiService, errorText } from '../core/api.service';
 import { AuthService } from '../core/auth.service';
 import { ConfirmService } from '../core/confirm.service';
@@ -36,7 +36,8 @@ const PAGE = 10;
           </div>
         </div>
         <span class="spacer"></span>
-        <button class="btn" (click)="checkNow(m)" [disabled]="!m.active || m.type === 'push'"><app-icon name="bolt" /> Check now</button>
+        <button class="btn" (click)="checkNow(m)" [disabled]="checking() || !m.active || m.type === 'push'">
+          <app-icon name="bolt" /> {{ checking() ? 'Checking...' : 'Check now' }}</button>
         @if (auth.isAdmin()) {
           <button class="btn" (click)="togglePause(m)">{{ m.active ? 'Pause' : 'Resume' }}</button>
           <a class="btn" [routerLink]="['/monitors', m.id, 'edit']">Edit</a>
@@ -52,7 +53,9 @@ const PAGE = 10;
           <span class="muted">Last check {{ m.last_checked ? (m.last_checked | date: 'HH:mm:ss') : 'never' }}</span>
           @for (t of m.tags; track t) { <span class="tag">#{{ t }}</span> }
         </div>
-        @if (notice()) { <p class="muted">{{ notice() }}</p> }
+        @if (notice()) {
+          <p class="row muted">@if (noticeStatus(); as s) { <span [class]="'pill ' + s">{{ s }}</span> } {{ notice() }}</p>
+        }
         <div style="margin-top: 14px"><app-heartbeat-bar [statuses]="statuses()" [details]="details()" [max]="72" [labels]="true" /></div>
         @if (m.fail_count && m.status !== 'down') {
           <p class="muted">{{ m.fail_count }} failed check(s) in a row - alert after {{ m.down_after ?? 'the default number of' }} checks.</p>
@@ -169,6 +172,9 @@ export class MonitorDetailComponent {
   beats = signal<Heartbeat[]>([]);
   stats = signal<Stats | null>(null);
   notice = signal('');
+  noticeStatus = signal('');
+  checking = signal(false);
+  private reload = new Subject<void>();
   hours = signal(24);
   custom = signal<DayRange | null>(null);
   page = signal(0);
@@ -197,7 +203,7 @@ export class MonitorDetailComponent {
   });
 
   constructor() {
-    const tick = toObservable(this.auth.refreshMs).pipe(switchMap((ms) => timer(0, ms)));
+    const tick = toObservable(this.auth.refreshMs).pipe(switchMap((ms) => merge(timer(0, ms), this.reload)));
     const range = computed(() => rangeQuery(this.hours(), this.custom()));
     combineLatest([this.route.paramMap, toObservable(range), tick])
       .pipe(
@@ -229,6 +235,7 @@ export class MonitorDetailComponent {
   }
 
   copy(text: string): void {
+    this.noticeStatus.set('');
     navigator.clipboard.writeText(text).then(() => this.notice.set('Copied to clipboard.'));
   }
 
@@ -241,10 +248,32 @@ export class MonitorDetailComponent {
   }
 
   checkNow(m: Monitor): void {
-    this.api.checkNow(m.id).subscribe({
-      next: () => this.notice.set('Check queued. Results appear in a few seconds.'),
-      error: (e) => this.notice.set(errorText(e)),
-    });
+    const before = this.monitor()?.last_checked ?? null;
+    this.checking.set(true);
+    this.noticeStatus.set('');
+    this.notice.set(m.probe_name ? `Checking from ${m.probe_name}...` : 'Checking...');
+    this.api.checkNow(m.id)
+      .pipe(
+        switchMap(() => timer(1000, 1000)),
+        switchMap(() => this.api.monitor(m.id)),
+        filter((x) => x.last_checked !== before),
+        first(),
+        timeout(m.probe_name ? 90_000 : 60_000),
+      )
+      .subscribe({
+        next: (x) => {
+          this.monitor.set(x);
+          this.reload.next();
+          this.store.refresh();
+          this.checking.set(false);
+          this.noticeStatus.set(x.status);
+          this.notice.set(`Checked at ${new Date(x.last_checked!).toLocaleTimeString()}${x.last_message ? ' - ' + x.last_message : ''}`);
+        },
+        error: (e) => {
+          this.checking.set(false);
+          this.notice.set(e?.name === 'TimeoutError' ? 'Check is still running. The result shows on the next refresh.' : errorText(e));
+        },
+      });
   }
 
   togglePause(m: Monitor): void {

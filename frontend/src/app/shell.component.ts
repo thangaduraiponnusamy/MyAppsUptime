@@ -101,7 +101,7 @@ export class ShellComponent {
 
   readonly nav: { path: string; label: string; icon: string; admin?: boolean }[] = [
     { path: '/', label: 'Dashboard', icon: 'grid' },
-    { path: '/activity', label: 'Activity', icon: 'history' },
+    { path: '/activity', label: 'Alerts', icon: 'history' },
     { path: '/incidents', label: 'Incidents', icon: 'alert' },
     { path: '/maintenance', label: 'Maintenance', icon: 'wrench', admin: true },
     { path: '/status-pages', label: 'Status pages', icon: 'globe', admin: true },

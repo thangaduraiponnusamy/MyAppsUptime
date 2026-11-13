@@ -135,6 +135,13 @@ class StatsOut(BaseModel):
     budget_remaining_pct: float
 
 
+class IncidentAckOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    by: str
+    note: str | None
+    created_at: Utc
+
+
 class IncidentOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -148,10 +155,11 @@ class IncidentOut(BaseModel):
     acknowledged_by: str | None
     note: str | None
     public_note: str | None = None
+    acks: list[IncidentAckOut] = []
 
 
 class AckIn(BaseModel):
-    by: str = Field(min_length=1, max_length=120)
+    by: str | None = Field(default=None, max_length=120)  # ignored: the signed-in user is recorded
     note: str | None = Field(default=None, max_length=1000)
     public_note: str | None = Field(default=None, max_length=1000)
 
@@ -351,6 +359,16 @@ class UserOut(UserBase):
     model_config = ConfigDict(from_attributes=True)
     id: int
     must_change_password: bool
+    last_login_at: Utc | None = None
+    created_at: Utc
+
+
+class LoginEventOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    username: str
+    ip: str
+    success: bool
     created_at: Utc
 
 

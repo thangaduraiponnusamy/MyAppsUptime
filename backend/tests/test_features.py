@@ -164,7 +164,11 @@ def test_status_page_domain_logo_and_public_note(client, su):
     incident = client.get("/api/incidents", headers=su).json()
     target = next(i for i in incident if i["monitor_id"] == m["id"])
     ack = {"by": "ops", "note": "internal", "public_note": "We are fixing it"}
-    assert client.post(f"/api/incidents/{target['id']}/ack", json=ack, headers=su).status_code == 200
+    acked = client.post(f"/api/incidents/{target['id']}/ack", json=ack, headers=su)
+    assert acked.status_code == 200 and acked.json()["acknowledged_by"] == "admin"
+    more = client.post(f"/api/incidents/{target['id']}/ack",
+                       json={"note": "restarted", "public_note": "We are fixing it"}, headers=su).json()
+    assert [(a["by"], a["note"]) for a in more["acks"]] == [("admin", "internal"), ("admin", "restarted")]
 
     public = client.get("/api/public/status/acme-status").json()
     assert public["logo"] == logo
@@ -209,6 +213,22 @@ def test_server_settings_super_admin_only(client, su):
     client.post("/api/auth/password", json={"current": "Gamma12345", "new": "Gamma123456"}, headers=auth(token))
     assert client.get("/api/settings/server", headers=auth(token)).status_code == 403
     assert client.get("/api/settings/database", headers=auth(token)).status_code == 200
+
+
+def test_sign_in_history(client, su):
+    body = {"username": "hist-user", "password": "Hist12345", "role": "member"}
+    assert client.post("/api/users", json=body, headers=su).status_code == 201
+    assert client.post("/api/auth/login", json={"username": "hist-user", "password": "wrong-pass"}).status_code == 401
+    token = client.post("/api/auth/login", json={"username": "hist-user", "password": "Hist12345"}).json()["token"]
+    client.post("/api/auth/password", json={"current": "Hist12345", "new": "Hist123456"}, headers=auth(token))
+
+    own = client.get("/api/logins", headers=auth(token)).json()
+    assert [e["success"] for e in own] == [True, False] and {e["username"] for e in own} == {"hist-user"}
+    everyone = client.get("/api/logins", params={"limit": 500}, headers=su).json()
+    assert {"admin", "hist-user"} <= {e["username"] for e in everyone}
+    assert len(client.get("/api/logins", params={"limit": 1}, headers=su).json()) == 1
+    user = next(u for u in client.get("/api/users", headers=su).json() if u["username"] == "hist-user")
+    assert user["last_login_at"]
 
 
 def test_push_monitor(client, su):

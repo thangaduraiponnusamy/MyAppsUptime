@@ -10,7 +10,7 @@ import { MonitorStore } from '../core/monitor-store.service';
 import { toEvents } from '../shared/activity';
 import { HeartbeatBarComponent } from '../shared/heartbeat-bar.component';
 import { IconComponent } from '../shared/icon.component';
-import { ProjectPickComponent } from '../shared/project-pick.component';
+import { ProjectPickComponent, parseProject } from '../shared/project-pick.component';
 import { DAY, DayRange, RANGES, RangePickerComponent, rangeLabel, rangeQuery } from '../shared/range-picker.component';
 import { StatusMapComponent } from '../shared/status-map.component';
 import { PrefsService } from '../core/prefs.service';
@@ -124,7 +124,7 @@ const PAGE = 25;
     }
 
     <div class="section-head">
-      <div><h2>History</h2><div class="sub">Uptime, response and activity for {{ rangeText() }}</div></div>
+      <div><h2>History</h2><div class="sub">Uptime, response and alerts for {{ rangeText() }}</div></div>
       <span class="spacer"></span>
       <app-range-picker [hours]="hours()" [custom]="custom()" (pick)="pickHours($event)" (range)="applyCustom($event)" />
     </div>
@@ -153,9 +153,9 @@ const PAGE = 25;
     }
 
     <section class="card panel">
-        <a class="card-head head-link" routerLink="/activity" queryParamsHandling="preserve" title="Open all activity">
+        <a class="card-head head-link" routerLink="/activity" queryParamsHandling="preserve" title="Open all alerts">
           <span class="head-ico tone-indigo"><app-icon name="history" [size]="16" /></span>
-          <div class="grow"><h2>Recent activity</h2><div class="sub">Last {{ prefs.limits().recent }} changes &middot; {{ rangeText() }}</div></div>
+          <div class="grow"><h2>Recent alerts</h2><div class="sub">Last {{ prefs.limits().recent }} changes &middot; {{ rangeText() }}</div></div>
           <span class="view-all">View all <app-icon name="arrow" [size]="14" /></span>
         </a>
         @if (events().length) {
@@ -274,8 +274,8 @@ export class DashboardComponent {
   query = signal('');
   tag = signal<string | null>(null);
   status = signal<Filter>('all');
-  /** null = all projects, 0 = monitors without a project */
-  project = signal<number | null>(null);
+  /** null = all projects */
+  project = this.store.project;
   limit = signal(PAGE);
   private openState = signal(new Map<number, boolean>());
 
@@ -299,7 +299,7 @@ export class DashboardComponent {
       : this.scoped().filter((m) => m.status === 'down').length);
   projectTitle = computed(() => {
     const p = this.project();
-    return p === null ? 'All monitors' : p === 0 ? 'No team' : this.store.projectName(p) || 'Team';
+    return p === null ? 'All monitors' : this.store.projectName(p) || 'Project';
   });
 
   private latencyValues = computed(() =>
@@ -414,8 +414,11 @@ export class DashboardComponent {
       this.hours.set(RANGES.find((r) => r.label === p.get('range'))?.hours ?? 24);
       const s = p.get('status') as Filter | null;
       this.status.set(s && FILTERS.includes(s) ? s : 'all');
-      const proj = p.get('project');
-      this.project.set(proj !== null && /^\d+$/.test(proj) ? Number(proj) : null);
+      const proj = parseProject(p.get('project'));
+      if (proj !== null) {
+        this.store.setProject(proj);
+        this.setParams({ project: null });
+      }
       this.limit.set(PAGE);
       if (!p.keys.length) {
         this.query.set('');
@@ -462,7 +465,7 @@ export class DashboardComponent {
   }
 
   pickProject(value: string): void {
-    this.setParams({ project: value === '' ? null : value });
+    this.store.setProject(value === '' ? null : Number(value));
   }
 
   shortSince(iso: string): string {

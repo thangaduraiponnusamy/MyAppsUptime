@@ -11,7 +11,7 @@ import { MonitorStore } from '../../core/monitor-store.service';
 
     <section class="s-section">
       <h3>Export and import</h3>
-      <p class="muted">Export saves monitors, teams and alert channels to a JSON file.
+      <p class="muted">Export saves monitors, projects and alert channels to a JSON file.
         Import adds them to this server. Users and passwords are not included.</p>
       <div class="row">
         <button class="btn" (click)="exportConfig()">Export JSON</button>
@@ -61,7 +61,7 @@ export class BackupSettingsComponent {
       }
       this.api.importConfig(data).subscribe({
         next: (r) => {
-          this.notice.set(`Imported ${r.monitors} monitors, ${r.projects} teams and ${r.channels} channels.`);
+          this.notice.set(`Imported ${r.monitors} monitors, ${r.projects} projects and ${r.channels} channels.`);
           this.store.refresh();
         },
         error: (e) => this.notice.set(errorText(e)),

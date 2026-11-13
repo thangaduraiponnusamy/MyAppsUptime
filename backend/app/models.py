@@ -95,6 +95,18 @@ class Incident(Base):
     public_note: Mapped[str | None] = mapped_column(String(1000))  # shown on status pages
 
     monitor: Mapped[Monitor] = relationship(back_populates="incidents")
+    acks: Mapped[list["IncidentAck"]] = relationship(
+        cascade="all, delete-orphan", lazy="selectin", order_by="IncidentAck.created_at")
+
+
+class IncidentAck(Base):
+    __tablename__ = "incident_acks"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    incident_id: Mapped[int] = mapped_column(ForeignKey("incidents.id", ondelete="CASCADE"), index=True)
+    by: Mapped[str] = mapped_column(String(120))
+    note: Mapped[str | None] = mapped_column(String(1000))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class NotificationChannel(Base):
@@ -154,7 +166,19 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(200))
     must_change_password: Mapped[bool] = mapped_column(default=False)
     active: Mapped[bool] = mapped_column(default=True)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class LoginEvent(Base):
+    __tablename__ = "login_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(index=True)  # no foreign key: history stays after a user is deleted
+    username: Mapped[str] = mapped_column(String(60))
+    ip: Mapped[str] = mapped_column(String(64), default="")
+    success: Mapped[bool] = mapped_column(default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
 
 
 class AuthToken(Base):
