@@ -177,6 +177,7 @@ class LoginEvent(Base):
     user_id: Mapped[int | None] = mapped_column(index=True)  # no foreign key: history stays after a user is deleted
     username: Mapped[str] = mapped_column(String(60))
     ip: Mapped[str] = mapped_column(String(64), default="")
+    device: Mapped[str] = mapped_column(String(80), default="")
     success: Mapped[bool] = mapped_column(default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
 

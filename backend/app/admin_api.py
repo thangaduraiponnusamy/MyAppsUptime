@@ -43,10 +43,27 @@ def _me(db: Session, user: Principal) -> MeOut:
 
 # ---------- sign in ----------
 
+# Short label like "Chrome on Android"; the full user agent is not stored
+def describe_agent(ua: str) -> str:
+    if not ua:
+        return ""
+    os = next((name for key, name in (
+        ("iPhone", "iPhone"), ("iPad", "iPad"), ("Android", "Android"), ("CrOS", "ChromeOS"),
+        ("Windows", "Windows"), ("Macintosh", "macOS"), ("Linux", "Linux"),
+    ) if key in ua), "")
+    browser = next((name for key, name in (
+        ("Edg", "Edge"), ("OPR/", "Opera"), ("SamsungBrowser", "Samsung Internet"), ("Firefox/", "Firefox"),
+        ("FxiOS", "Firefox"), ("CriOS", "Chrome"), ("Chrome/", "Chrome"), ("Safari/", "Safari"),
+        ("curl/", "curl"), ("python", "Script"),
+    ) if key in ua), "Other")
+    return f"{browser} on {os}" if os else browser
+
+
 @auth.post("/login", response_model=LoginOut)
 def login(body: LoginIn, request: Request):
     key = f"{body.username.lower()}|{request.client.host if request.client else ''}"
     ip = (request.client.host if request.client else "")[:64]
+    device = describe_agent(request.headers.get("user-agent", ""))[:80]
     check_lock(key)
     # User names are unique across tenants, so the first match is the account
     for slug in tenancy.slugs(active_only=False):
@@ -55,14 +72,14 @@ def login(body: LoginIn, request: Request):
             if user is None:
                 continue
             if not user.active or not verify_password(body.password, user.password_hash):
-                db.add(LoginEvent(user_id=user.id, username=user.username, ip=ip, success=False))
+                db.add(LoginEvent(user_id=user.id, username=user.username, ip=ip, device=device, success=False))
                 db.commit()
                 break
             clear_fails(key)
             if not tenancy.is_active(slug):
                 raise HTTPException(status.HTTP_403_FORBIDDEN, "Your organization is disabled. Contact the administrator.")
             user.last_login_at = utcnow()
-            db.add(LoginEvent(user_id=user.id, username=user.username, ip=ip, success=True))
+            db.add(LoginEvent(user_id=user.id, username=user.username, ip=ip, device=device, success=True))
             token = create_session(db, user)
             me = _me(db, Principal(user.id, user.username, user.role, user.must_change_password, slug, slug))
             return LoginOut(**me.model_dump(), token=token)

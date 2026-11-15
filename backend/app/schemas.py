@@ -368,6 +368,7 @@ class LoginEventOut(BaseModel):
     id: int
     username: str
     ip: str
+    device: str = ""
     success: bool
     created_at: Utc
 

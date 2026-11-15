@@ -173,6 +173,7 @@ export interface LoginEvent {
   id: number;
   username: string;
   ip: string;
+  device: string;
   success: boolean;
   created_at: string;
 }

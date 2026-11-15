@@ -14,7 +14,8 @@ LABEL org.opencontainers.image.title="MyAppsUptime"
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     DATABASE_URL=sqlite:////data/myappsuptime.db \
-    STATIC_DIR=/app/static
+    STATIC_DIR=/app/static \
+    FORWARDED_ALLOW_IPS=127.0.0.1,172.16.0.0/12
 
 # iputils-ping is needed for Ping monitors
 RUN apt-get update \

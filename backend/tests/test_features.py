@@ -219,16 +219,31 @@ def test_sign_in_history(client, su):
     body = {"username": "hist-user", "password": "Hist12345", "role": "member"}
     assert client.post("/api/users", json=body, headers=su).status_code == 201
     assert client.post("/api/auth/login", json={"username": "hist-user", "password": "wrong-pass"}).status_code == 401
-    token = client.post("/api/auth/login", json={"username": "hist-user", "password": "Hist12345"}).json()["token"]
+    phone = {"User-Agent": "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/131.0 Mobile Safari/537.36"}
+    token = client.post("/api/auth/login", json={"username": "hist-user", "password": "Hist12345"},
+                        headers=phone).json()["token"]
     client.post("/api/auth/password", json={"current": "Hist12345", "new": "Hist123456"}, headers=auth(token))
 
     own = client.get("/api/logins", headers=auth(token)).json()
     assert [e["success"] for e in own] == [True, False] and {e["username"] for e in own} == {"hist-user"}
+    assert own[0]["device"] == "Chrome on Android"
     everyone = client.get("/api/logins", params={"limit": 500}, headers=su).json()
     assert {"admin", "hist-user"} <= {e["username"] for e in everyone}
     assert len(client.get("/api/logins", params={"limit": 1}, headers=su).json()) == 1
     user = next(u for u in client.get("/api/users", headers=su).json() if u["username"] == "hist-user")
     assert user["last_login_at"]
+
+
+def test_describe_agent():
+    from app.admin_api import describe_agent
+    win = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36 Edg/131.0"
+    iphone = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 Version/17.5 Mobile Safari/604.1"
+    mac = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:132.0) Gecko/20100101 Firefox/132.0"
+    assert describe_agent(win) == "Edge on Windows"
+    assert describe_agent(iphone) == "Safari on iPhone"
+    assert describe_agent(mac) == "Firefox on macOS"
+    assert describe_agent("curl/8.5.0") == "curl"
+    assert describe_agent("") == ""
 
 
 def test_push_monitor(client, su):

@@ -6,11 +6,12 @@ import { ApiService, errorText } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
 import { LoginEvent, ROLE_LABEL } from '../../core/models';
 import { PrefsService } from '../../core/prefs.service';
+import { IconComponent } from '../../shared/icon.component';
 
 @Component({
   selector: 'app-settings-security',
   standalone: true,
-  imports: [FormsModule, DatePipe],
+  imports: [FormsModule, DatePipe, IconComponent],
   template: `
     <h2 class="s-title">Security</h2>
 
@@ -29,19 +30,22 @@ import { PrefsService } from '../../core/prefs.service';
       <p class="muted">{{ auth.isAdmin() ? 'Latest sign-ins of all users in this tenant.' : 'Your latest sign-ins.' }}
         Last {{ prefs.limits().logins }} shown (change in General).</p>
       @if (logins().length) {
-        <table>
-          <thead><tr><th>Time</th>@if (auth.isAdmin()) { <th>User</th> }<th class="hide-sm">IP address</th><th>Result</th></tr></thead>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Time</th>@if (auth.isAdmin()) { <th>User</th> }<th>Device</th><th class="hide-sm">IP address</th><th>Result</th></tr></thead>
           <tbody>
             @for (l of logins(); track l.id) {
               <tr>
                 <td>{{ l.created_at | date: 'MMM d, y, HH:mm:ss' }}</td>
                 @if (auth.isAdmin()) { <td>{{ l.username }}</td> }
+                <td>@if (l.device) {
+                  <span class="device"><app-icon [name]="isPhone(l.device) ? 'phone' : 'monitor'" [size]="15" />{{ l.device }}</span>
+                } @else { - }</td>
                 <td class="hide-sm mono">{{ l.ip || '-' }}</td>
                 <td><span class="pill" [class.up]="l.success" [class.down]="!l.success">{{ l.success ? 'Success' : 'Failed' }}</span></td>
               </tr>
             }
           </tbody>
-        </table>
+        </table></div>
       } @else {
         <p class="muted">No sign-ins yet.</p>
       }
@@ -103,6 +107,10 @@ export class SecuritySettingsComponent {
     effect(() => {
       this.api.logins(this.prefs.limits().logins).subscribe((l) => this.logins.set(l));
     });
+  }
+
+  isPhone(device: string): boolean {
+    return /Android|iPhone|iPad/.test(device);
   }
 
   change(): void {

@@ -916,6 +916,8 @@ label.check input { width: auto; }
 .um-item.danger, .um-item.danger svg { color: var(--down); }
 .um-item.danger:hover, .um-item.danger:focus-visible { background: var(--down-soft); }
 .um-sep { height: 1px; margin: 4px 0; background: var(--border); }
+.device { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.device app-icon { color: var(--muted); }
 .um-switch {
   margin-left: auto; position: relative; width: 30px; height: 18px; border-radius: 999px; background: var(--border); transition: background .15s;
 }
