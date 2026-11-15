@@ -56,7 +56,7 @@ const IMAGE = 'ghcr.io/thangaduraiponnusamy/myappsuptime-probe:latest';
       }
 
       <table>
-        <thead><tr><th>Location</th><th>Status</th><th>Monitors</th><th class="hide-sm">Last contact</th><th class="hide-sm">Version</th><th></th></tr></thead>
+        <thead><tr><th>Location</th><th>Status</th><th>Monitors</th><th class="hide-sm">Last contact</th><th class="hide-sm">IP address</th><th class="hide-sm">Version</th><th></th></tr></thead>
         <tbody>
           @for (p of probes(); track p.id) {
             <tr>
@@ -65,6 +65,7 @@ const IMAGE = 'ghcr.io/thangaduraiponnusamy/myappsuptime-probe:latest';
                 {{ p.online ? 'online' : p.last_seen_at ? 'offline' : 'waiting' }}</span></td>
               <td>{{ p.monitors }}</td>
               <td class="hide-sm">{{ p.last_seen_at ? (p.last_seen_at | date: 'MMM d, HH:mm:ss') : 'never' }}</td>
+              <td class="hide-sm mono">{{ p.last_ip || '-' }}</td>
               <td class="hide-sm">{{ p.version || '-' }}
                 @if (outdated(p)) { <span class="pill degraded" [title]="'Latest is ' + serverVersion()">update available</span> }</td>
               <td class="row nowrap">
@@ -73,7 +74,7 @@ const IMAGE = 'ghcr.io/thangaduraiponnusamy/myappsuptime-probe:latest';
               </td>
             </tr>
           } @empty {
-            <tr><td colspan="6" class="empty">No private locations yet.</td></tr>
+            <tr><td colspan="7" class="empty">No private locations yet.</td></tr>
           }
         </tbody>
       </table>

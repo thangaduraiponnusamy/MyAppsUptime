@@ -2,13 +2,13 @@
 import hashlib
 import secrets
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from . import tenancy
-from .auth import bearer, get_db, require_admin, token_tenant
+from .auth import bearer, client_ip, get_db, require_admin, token_tenant
 from .checks import CheckResult
 from .models import Monitor, Probe, aware, utcnow
 from .scheduler import PROBE_OFFLINE, deliver, probe_alert, record_result
@@ -40,8 +40,8 @@ def is_online(p: Probe) -> bool:
 
 def _out(db: Session, p: Probe) -> ProbeOut:
     count = db.scalar(select(func.count()).select_from(Monitor).where(Monitor.probe_id == p.id)) or 0
-    return ProbeOut(id=p.id, name=p.name, online=is_online(p), version=p.version, last_seen_at=p.last_seen_at,
-                    created_at=p.created_at, monitors=count)
+    return ProbeOut(id=p.id, name=p.name, online=is_online(p), version=p.version, last_ip=p.last_ip,
+                    last_seen_at=p.last_seen_at, created_at=p.created_at, monitors=count)
 
 
 def _get(db: Session, probe_id: int) -> Probe:
@@ -112,7 +112,7 @@ def delete_probe(probe_id: int, db: Session = Depends(get_db)):
 # ---------- probe (probe token) ----------
 
 @probe.post("/sync")
-async def sync(body: ProbeSyncIn, authorization: str | None = Header(None)):
+async def sync(body: ProbeSyncIn, request: Request, authorization: str | None = Header(None)):
     """Store the probe's results and return the monitors it must check."""
     token = bearer(authorization)
     tenant = token_tenant(token) if token else ""
@@ -126,6 +126,7 @@ async def sync(body: ProbeSyncIn, authorization: str | None = Header(None)):
         if p.offline_notified:
             back_online = probe_alert(db, tenant, p, "up", "Private location is reporting again")
         p.last_seen_at, p.version, p.offline_notified = utcnow(), body.version or None, False
+        p.last_ip = client_ip(request) or None
         monitors = db.scalars(select(Monitor).where(Monitor.probe_id == p.id, Monitor.active.is_(True))).all()
         jobs = [{f: getattr(m, f) for f in JOB_FIELDS} for m in monitors]
         name, probe_id = p.name, p.id

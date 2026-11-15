@@ -1,7 +1,7 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import {
-  AdminDefaults, AlertEvent, Channel, DashboardData, DatabaseInfo, ExportData, GeneralSettings, Heartbeat, Incident, LoginEvent, Maintenance, Monitor, MonitorInput,
+  AdminDefaults, AlertEvent, AuditEvent, Channel, DashboardData, DatabaseInfo, ExportData, GeneralSettings, Heartbeat, Incident, LoginEvent, Maintenance, Monitor, MonitorInput,
   Probe, Project, PublicStatus, ServerSettings, SmtpSettings, Stats, StatusPage, Summary, Tenant, TenantCreate, User,
 } from './models';
 
@@ -71,6 +71,7 @@ export class ApiService {
   updateUser(id: number, body: User) { return this.http.put<User>(`${this.base}/users/${id}`, body); }
   deleteUser(id: number) { return this.http.delete<void>(`${this.base}/users/${id}`); }
   logins(limit: number) { return this.http.get<LoginEvent[]>(`${this.base}/logins`, { params: { limit } }); }
+  audit(limit: number, q = '') { return this.http.get<AuditEvent[]>(`${this.base}/audit`, { params: { limit, q } }); }
 
   tenants() { return this.http.get<Tenant[]>(`${this.base}/tenants`); }
   createTenant(body: TenantCreate) { return this.http.post<Tenant>(`${this.base}/tenants`, body); }

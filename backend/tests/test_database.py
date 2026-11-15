@@ -71,6 +71,24 @@ def test_alert_history_from_old_incidents(tmp_path):
     engine.dispose()
 
 
+def test_monitors_without_project_go_to_general(tmp_path):
+    path = tmp_path / "no-project.db"
+    con = sqlite3.connect(path)
+    con.execute("CREATE TABLE projects (id INTEGER PRIMARY KEY, name VARCHAR(120) UNIQUE)")
+    con.execute("INSERT INTO projects VALUES (1, 'Shop')")
+    con.execute("CREATE TABLE monitors (id INTEGER PRIMARY KEY, name VARCHAR(120), project_id INTEGER)")
+    con.executemany("INSERT INTO monitors VALUES (?, ?, ?)", [(1, 'a', None), (2, 'b', 1), (3, 'c', None)])
+    con.commit()
+    con.close()
+    engine = make_engine(f"sqlite:///{path.as_posix()}")
+    upgrade_schema(engine)
+    raw = sqlite3.connect(path)
+    general = raw.execute("SELECT id FROM projects WHERE name = 'General'").fetchone()[0]
+    assert raw.execute("SELECT id, project_id FROM monitors ORDER BY id").fetchall() == [(1, general), (2, 1), (3, general)]
+    raw.close()
+    engine.dispose()
+
+
 def test_retention():
     assert retention_days(GeneralSettings().model_dump()) == 365
     assert retention_days({"retention_value": 6, "retention_unit": "months"}) == 180

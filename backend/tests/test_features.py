@@ -279,6 +279,94 @@ def test_sign_in_history(client, su):
     assert user["last_login_at"]
 
 
+def test_every_monitor_has_a_project(client, su):
+    m = make_monitor(client, su, name="loose")
+    projects = {p["name"]: p["id"] for p in client.get("/api/projects", headers=su).json()}
+    assert m["project_id"] == projects["General"]
+    team = client.post("/api/projects", json={"name": "Short lived"}, headers=su).json()
+    moved = make_monitor(client, su, name="moved", project_id=team["id"])
+    assert client.delete(f"/api/projects/{team['id']}", headers=su).status_code == 204
+    assert monitor(client, su, moved["id"])["project_id"] == projects["General"]
+    assert client.delete(f"/api/projects/{projects['General']}", headers=su).status_code == 409
+
+
+def test_user_access_to_projects_and_single_services(client, su):
+    shop = client.post("/api/projects", json={"name": "Shop", "email_members": True}, headers=su).json()
+    ops = client.post("/api/projects", json={"name": "Ops", "email_members": True}, headers=su).json()
+    cart = make_monitor(client, su, name="cart", project_id=shop["id"])
+    db_mon = make_monitor(client, su, name="db", project_id=ops["id"])
+    other = make_monitor(client, su, name="hidden", project_id=ops["id"])
+    body = {"username": "access-user", "password": "Access12345", "email": "access@example.com",
+            "project_ids": [shop["id"]], "monitor_ids": [db_mon["id"]]}
+    r = client.post("/api/users", json=body, headers=su)
+    assert r.status_code == 201, r.text
+    assert r.json()["project_ids"] == [shop["id"]] and r.json()["monitor_ids"] == [db_mon["id"]]
+    assert client.post("/api/users", json={**body, "username": "bad-access", "project_ids": [99999]},
+                       headers=su).status_code == 422
+
+    token = client.post("/api/auth/login", json={"username": "access-user", "password": "Access12345"}).json()["token"]
+    client.post("/api/auth/password", json={"current": "Access12345", "new": "Access123456"}, headers=auth(token))
+    seen = {x["id"] for x in client.get("/api/monitors", headers=auth(token)).json()}
+    assert cart["id"] in seen and db_mon["id"] in seen and other["id"] not in seen
+    assert {p["name"] for p in client.get("/api/projects", headers=auth(token)).json()} == {"Shop", "Ops"}
+
+    with tenancy.session_for(tenancy.DEFAULT) as db:
+        _, _, emails, _ = scheduler.build_alert(db, tenancy.DEFAULT, db.get(Monitor, db_mon["id"]), "down", "x")
+        assert "access@example.com" in emails
+        _, _, emails, _ = scheduler.build_alert(db, tenancy.DEFAULT, db.get(Monitor, other["id"]), "down", "x")
+        assert "access@example.com" not in emails
+
+    uid = r.json()["id"]
+    user = next(u for u in client.get("/api/users", headers=su).json() if u["id"] == uid)
+    update = {k: user[k] for k in ("username", "name", "email", "role", "active")}
+    r = client.put(f"/api/users/{uid}", json={**update, "project_ids": [], "monitor_ids": []}, headers=su)
+    assert r.status_code == 200 and r.json()["project_ids"] == [] and r.json()["monitor_ids"] == []
+    assert client.get("/api/monitors", headers=auth(token)).json() == []
+
+
+def test_user_alert_channels(client, su):
+    tg = client.post("/api/notifications", json={"name": "my-tg", "type": "ntfy", "url": "https://ntfy.sh/my-tg"},
+                     headers=su).json()["id"]
+    team = client.post("/api/projects", json={"name": "Kinds", "email_members": True}, headers=su).json()
+    m = make_monitor(client, su, name="kinds", project_id=team["id"])
+    r = client.post("/api/users", json={"username": "kinds-user", "password": "Kinds12345", "email": "kinds@example.com",
+                                        "project_ids": [team["id"]]}, headers=su)
+    assert r.json()["alert_channels"] is None
+    token = client.post("/api/auth/login", json={"username": "kinds-user", "password": "Kinds12345"}).json()["token"]
+    me = client.get("/api/auth/me", headers=auth(token)).json()
+    assert {"id": -1, "name": "Email"} in me["alert_options"] and tg in [o["id"] for o in me["alert_options"]]
+
+    def sent():
+        with tenancy.session_for(tenancy.DEFAULT) as db:
+            channels, _, emails, _ = scheduler.build_alert(db, tenancy.DEFAULT, db.get(Monitor, m["id"]), "down", "x")
+        return "kinds@example.com" in emails, tg in [c.id for c in channels]
+
+    assert sent() == (True, True)
+    r = client.put("/api/auth/alerts", json={"alert_channels": [tg]}, headers=auth(token))
+    assert r.status_code == 200 and r.json()["alert_channels"] == [tg]
+    assert sent() == (False, True)
+    client.put("/api/auth/alerts", json={"alert_channels": [-1]}, headers=auth(token))
+    assert sent() == (True, False)
+    client.delete(f"/api/notifications/{tg}", headers=su)
+
+
+def test_audit_log(client, su):
+    m = make_monitor(client, su, name="audited")
+    client.post(f"/api/monitors/{m['id']}/pause", headers=su)
+    client.put("/api/monitors/999999", json={"name": "x", "type": "http", "target": "https://x.example"}, headers=su)
+    client.delete(f"/api/monitors/{m['id']}", headers=su)
+    rows = [e for e in client.get("/api/audit", params={"q": "audited"}, headers=su).json()]
+    assert [(e["action"], e["kind"], e["target"]) for e in rows] == [
+        ("deleted", "monitor", "audited"), ("paused", "monitor", "audited"), ("created", "monitor", "audited")]
+    assert rows[0]["username"] == "admin" and rows[0]["ip"] == "testclient"
+    general = client.get("/api/settings/general", headers=su).json()
+    client.put("/api/settings/general", json=general, headers=su)
+    top = client.get("/api/audit", params={"limit": 1}, headers=su).json()[0]
+    assert (top["action"], top["kind"], top["target"]) == ("updated", "settings", "general")
+    token = client.post("/api/auth/login", json={"username": "hist-user", "password": "Hist123456"}).json()["token"]
+    assert client.get("/api/audit", headers=auth(token)).status_code == 403
+
+
 def test_describe_agent():
     from app.admin_api import describe_agent
     win = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36 Edg/131.0"

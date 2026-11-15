@@ -11,6 +11,8 @@ import { toEvents } from '../shared/activity';
 import { HeartbeatBarComponent } from '../shared/heartbeat-bar.component';
 import { IconComponent } from '../shared/icon.component';
 import { ProjectPickComponent, parseProject } from '../shared/project-pick.component';
+import { Option } from '../shared/multi-select.component';
+import { SelectComponent } from '../shared/select.component';
 import { DAY, DayRange, RANGES, RangePickerComponent, rangeLabel, rangeQuery } from '../shared/range-picker.component';
 import { StatusMapComponent } from '../shared/status-map.component';
 import { PrefsService } from '../core/prefs.service';
@@ -26,7 +28,7 @@ const PAGE = 25;
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [DatePipe, DecimalPipe, NgTemplateOutlet, RouterLink, HeartbeatBarComponent, IconComponent, RangePickerComponent, StatusMapComponent, ProjectPickComponent],
+  imports: [DatePipe, DecimalPipe, NgTemplateOutlet, RouterLink, HeartbeatBarComponent, IconComponent, RangePickerComponent, StatusMapComponent, ProjectPickComponent, SelectComponent],
   template: `
     <div class="page-head">
       <div>
@@ -90,13 +92,14 @@ const PAGE = 25;
         <div class="sb-map">
           <div class="card-head">
             <span class="head-ico tone-indigo"><app-icon name="map" [size]="16" /></span>
-            <div class="grow"><h2>Status map</h2><div class="sub">How monitors depend on each other</div></div>
+            <div class="grow"><h2>Status map</h2><div class="sub">{{ project() === null ? 'Projects and their services; click a project to open it' : 'How monitors depend on each other' }}</div></div>
             @if (status() !== 'all') {
               <button class="chip active" (click)="filterBy('all')" title="Clear status filter">{{ statusLabel() }} <app-icon name="x" [size]="12" /></button>
             }
           </div>
           @if (scoped().length) {
-            <app-status-map [monitors]="scoped()" [filter]="status()" [title]="projectTitle()" />
+            <app-status-map [monitors]="scoped()" [filter]="status()" [title]="projectTitle()"
+              [projects]="project() === null ? store.projects() : []" (pickProject)="store.setProject($event)" />
           } @else {
             <div class="empty-state">No monitors yet. @if (auth.isAdmin()) { <a routerLink="/monitors/new" class="kpi-link">Create one</a> }</div>
           }
@@ -191,10 +194,7 @@ const PAGE = 25;
         <input class="search" placeholder="Search name or target..." [value]="query()"
                (input)="query.set($any($event.target).value); limit.set(page)" />
         @if (tags().length) {
-          <select class="tag-select" [value]="tag() ?? ''" (change)="tag.set($any($event.target).value || null); limit.set(page)">
-            <option value="">All tags</option>
-            @for (t of tags(); track t) { <option [value]="t">#{{ t }}</option> }
-          </select>
+          <app-select class="tag-select" label="Tag" [options]="tagOptions()" [value]="tag()" (valueChange)="tag.set($event); limit.set(page)" />
         }
         <span class="spacer"></span>
         @if (status() !== 'all') {
@@ -368,6 +368,7 @@ export class DashboardComponent {
   );
 
   tags = computed(() => [...new Set(this.scoped().flatMap((m) => m.tags))].sort());
+  tagOptions = computed<Option<string | null>[]>(() => [{ id: null, label: 'All tags' }, ...this.tags().map((t) => ({ id: t, label: '#' + t }))]);
 
   private matches = computed(() => {
     const q = this.query().toLowerCase();

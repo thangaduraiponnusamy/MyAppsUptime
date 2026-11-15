@@ -355,6 +355,7 @@ docker run -d --name myappsuptime-probe --restart unless-stopped --network host 
 
 - Works on amd64 and arm64 (Raspberry Pi 3/4/5 with a 64-bit OS).
 - Location shows **online** when it called in during the last 90 seconds. If it goes offline, its monitors become PENDING and one alert is sent; another alert when it is back.
+- **IP address** shows where the probe last connected from (public IP of that network).
 - **New token** stops the old probe. **Delete** moves its monitors back to this server.
 - Push monitors always run on the server.
 

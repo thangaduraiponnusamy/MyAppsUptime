@@ -3,6 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { ApiService, errorText } from '../../core/api.service';
 import { ConfirmService } from '../../core/confirm.service';
 import { Channel, ChannelType, Project, SmtpSettings } from '../../core/models';
+import { MultiSelectComponent } from '../../shared/multi-select.component';
 
 const TYPE_LABELS: Record<ChannelType, string> = {
   teams: 'Microsoft Teams', email: 'Email', telegram: 'Telegram', discord: 'Discord', googlechat: 'Google Chat',
@@ -30,7 +31,7 @@ const emptyChannel = (): Channel => ({
 @Component({
   selector: 'app-settings-notifications',
   standalone: true,
-  imports: [FormsModule],
+  imports: [FormsModule, MultiSelectComponent],
   template: `
     <h2 class="s-title">Notifications</h2>
     <p class="muted">Alerts go out when a monitor goes down, becomes degraded or recovers.
@@ -72,15 +73,11 @@ const emptyChannel = (): Channel => ({
               }
             </label>
           }
-          <div class="full">
-            <span class="field-label">Projects</span>
-            <div class="check-list">
-              @for (p of projects(); track p.id) {
-                <label class="check"><input type="checkbox" [checked]="c.project_ids.includes(p.id!)" (change)="toggleProject(c, p.id!)" /> {{ p.name }}</label>
-              } @empty { <span class="muted small">No projects yet.</span> }
-            </div>
+          <label class="full">Projects
+            <app-multi-select [options]="projectOptions()" [picked]="chanProjects()" (pickedChange)="setProjects(c, $event)"
+              placeholder="All projects" empty="No projects yet." />
             <small class="muted">None selected = all projects. A project can also pick its own channels in Projects.</small>
-          </div>
+          </label>
           <label class="full">Only for tags (optional, comma separated)
             <input name="tags" [(ngModel)]="tagsText" placeholder="prod, critical" />
           </label>
@@ -157,6 +154,8 @@ export class NotificationSettingsComponent {
   readonly SMTP_PORTS: Record<string, number> = { starttls: 587, ssl: 465, none: 25 };
   channels = signal<Channel[]>([]);
   projects = signal<Project[]>([]);
+  projectOptions = computed(() => this.projects().map((p) => ({ id: p.id!, label: p.name })));
+  chanProjects = signal(new Set<number>());
   editing = signal<Channel | null>(null);
   recipientsText = '';
   tagsText = '';
@@ -209,11 +208,13 @@ export class NotificationSettingsComponent {
     this.tgToken = tg[0] ?? '';
     this.tgChat = tg[1] ?? '';
     this.error.set('');
+    this.chanProjects.set(new Set(copy.project_ids));
     this.editing.set(copy);
   }
 
-  toggleProject(c: Channel, id: number): void {
-    c.project_ids = c.project_ids.includes(id) ? c.project_ids.filter((p) => p !== id) : [...c.project_ids, id];
+  setProjects(c: Channel, ids: Set<number>): void {
+    c.project_ids = [...ids];
+    this.chanProjects.set(ids);
   }
 
   saveChannel(): void {

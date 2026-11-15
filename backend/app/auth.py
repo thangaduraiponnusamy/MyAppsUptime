@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+import ipaddress
 import logging
 import os
 import re
@@ -21,6 +22,34 @@ API_TOKEN = os.getenv("API_TOKEN")
 SESSION_DAYS = int(os.getenv("SESSION_DAYS", "7"))
 RESET_MIN = 30
 MAX_FAILS, LOCK_SEC = 5, 300
+
+# Published at https://www.cloudflare.com/ips/
+CLOUDFLARE = [ipaddress.ip_network(n) for n in (
+    "173.245.48.0/20", "103.21.244.0/22", "103.22.200.0/22", "103.31.4.0/22", "141.101.64.0/18",
+    "108.162.192.0/18", "190.93.240.0/20", "188.114.96.0/20", "197.234.240.0/22", "198.41.128.0/17",
+    "162.158.0.0/15", "104.16.0.0/13", "104.24.0.0/14", "172.64.0.0/13", "131.0.72.0/22",
+    "2400:cb00::/32", "2606:4700::/32", "2803:f800::/32", "2405:b500::/32", "2405:8100::/32",
+    "2a06:98c0::/29", "2c0f:f248::/32",
+)]
+
+
+def _parse_ip(value: str):
+    try:
+        return ipaddress.ip_address(value.strip())
+    except ValueError:
+        return None
+
+
+def client_ip(request: Request) -> str:
+    """The visitor's address. Behind Cloudflare the peer is a Cloudflare server, so its
+    CF-Connecting-IP header is used, but only when the request really came from Cloudflare."""
+    peer = request.client.host if request.client else ""
+    addr = _parse_ip(peer)
+    if addr is not None and any(addr in net for net in CLOUDFLARE):
+        real = _parse_ip(request.headers.get("cf-connecting-ip", ""))
+        if real is not None:
+            return str(real)
+    return peer[:64]
 
 # Members may only change these (everything else that is not GET needs an admin)
 MEMBER_WRITES = re.compile(r"^/api/(incidents/\d+/ack|monitors/\d+/check)$")
@@ -204,13 +233,15 @@ def require_super(user: Principal = Depends(require_user)) -> Principal:
 
 
 def visible_monitor_ids(db: Session, user: Principal) -> set[int] | None:
-    """None means every monitor; members only see monitors of their projects."""
+    """None means every monitor; members see monitors of their projects plus services given to them."""
     if user.is_admin:
         return None
     projects = [p.id for p in db.scalars(select(Project)).all() if user.id in (p.member_ids or [])]
-    if not projects:
-        return set()
-    return set(db.scalars(select(Monitor.id).where(Monitor.project_id.in_(projects))).all())
+    row = db.get(User, user.id) if user.tenant == user.active else None
+    extra = set(row.monitor_ids or []) if row else set()
+    if projects:
+        extra |= set(db.scalars(select(Monitor.id).where(Monitor.project_id.in_(projects))).all())
+    return extra
 
 
 def ensure_default_admin(db: Session) -> None:

@@ -59,15 +59,55 @@ Data is stored in the `myappsuptime-data` Docker volume.
 | Tenants | Super admin only: add, rename, disable or delete tenants |
 | General | Auto refresh (default 5 seconds), app URL for links in alerts, how long to keep logs (default 1 year), alert after N failed checks (default 3), expiry warning days (default 30, 14, 7), database shrink / clear, server backup and DNS cache (super admin) |
 | Notifications | Teams, email, Telegram, Discord, Google Chat, ntfy, Slack or webhook channels, and the email (SMTP) server |
-| Projects | Projects, their members and their services (monitors) |
-| Users | Add users, set role, reset a password |
-| Security | Your account and password |
+| Projects | Projects, their members and how they send alerts |
+| Users | Add users, set role, projects or single services, how they get alerts, reset a password |
+| Security | Your account, password and how you get alerts (Email, Telegram, ...) |
 | Backup | Export and import as JSON |
 | About | Version and GitHub link |
 
-**Tenants**
+## How it works
 
-Tenant > Project > Service.
+```mermaid
+flowchart LR
+    T[Tenant<br/>company or team] --> P1[Project A]
+    T --> P2[Project B]
+    T --> G[General<br/>services without a project]
+    P1 --> S1[Service 1]
+    P1 --> S2[Service 2]
+    P2 --> S3[Service 3]
+    U1((User Anna)) -. member of .-> P1
+    U2((User Ben)) -. only this service .-> S3
+```
+
+- **Tenant**: one company or team. It has its own users, projects, services and notification channels.
+- **Project**: a group of services, for example "Shop" or "Billing". Every service is in exactly one project. Services without one go to **General**.
+- **Service** (monitor): one thing that is checked, for example a website, API, server or port.
+- **User**: an admin sees everything in the tenant. A member sees only the projects they belong to, plus single services given to them.
+
+### Who gets an alert
+
+```mermaid
+flowchart TD
+    D[Service goes down / recovers / is slow / certificate expires] --> P{Project: send alerts by}
+    P --> U[Project members<br/>and users given this service]
+    U --> K{Each user's choice<br/>Security > My alerts}
+    K -->|Email| E[Email to that user]
+    K -->|Telegram, Teams, ...| C[Channel message<br/>if at least one user wants it]
+```
+
+1. **Project level** (Settings > Projects > Edit > Send alerts by): pick "Email to members" and/or any channels added in Notifications.
+2. **User level** (Settings > Security > My alerts, or an admin in Users > Alerts by): each user picks how they get alerts: Email and/or the tenant's channels (Telegram, Teams, ...). All are on by default. A shared channel is skipped only when every user of that service turned it off.
+3. A service that is down because the service it depends on is down does not send its own alert.
+
+### Set up in 5 steps
+
+1. **Settings > Notifications**: add channels (Telegram, Teams, email server, ...).
+2. **Settings > Projects**: add a project, pick its members and how it sends alerts.
+3. **New monitor**: add a service and choose its project.
+4. **Settings > Users**: add users. Tick whole projects, or open a project and tick single services.
+5. **Dashboard**: the status map shows Your watcher > projects > services. A project turns red when any of its services is down, and shows how long all its services have been up. Click a project to show only that project.
+
+**Tenants**
 
 - The default tenant is `admin`. Its first user is the super admin.
 - The super admin manages all tenants and can open any tenant from the sidebar.
@@ -81,20 +121,21 @@ Tenant > Project > Service.
 |---|---|
 | Super admin | Everything, in every tenant |
 | Admin | Everything inside their own tenant |
-| Member | Sees only their projects, can acknowledge incidents and run a check |
+| Member | Sees only their projects and single services, can acknowledge incidents and run a check |
 
-**How alerts reach the right people**
+Deleting a project moves its services to General.
 
-1. Put monitors in a project (Settings > Projects, or the Project field on the monitor).
-2. Add users as project members. With "Email members" on, they get an email when a monitor goes down or recovers.
-3. Optional: add a Teams channel and tick the project, so the alert also goes to that Teams channel.
-4. Optional: in Settings > Projects > Edit > Alert channels, pick "Only the channels picked below" to choose exactly which channels (email, Telegram, Teams...) this project uses.
+**Audit log**
 
-| Project alert channels | Result |
+Settings > Security > Audit log (admins): who created, changed, paused or deleted services, projects, channels, users and settings, with time and IP. Only names are stored, never passwords or other values. Kept as long as the log retention in General.
+
+**Project alert channels**
+
+| Send alerts by | Result |
 |---|---|
-| Default | The channel's own project and tag settings decide |
-| Only picked channels | Only the ticked channels; their tag filter still applies |
-| Picked, none ticked | No channel alerts (member emails still follow "Email members") |
+| Not changed | The channels set in Notifications for all projects or this project |
+| Picked channels | Only the picked channels; their tag filter still applies |
+| Nothing picked | No alerts for this project |
 
 **Tenant defaults**
 

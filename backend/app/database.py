@@ -127,6 +127,12 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
       "INSERT INTO alert_events (monitor_id, name, status, message, errors, created_at) "
       "SELECT i.monitor_id, m.name, 'up', '', '', i.resolved_at "
       "FROM incidents i JOIN monitors m ON m.id = i.monitor_id WHERE i.resolved_at IS NOT NULL"]),
+    (3, "every monitor belongs to a project",
+     ["INSERT INTO projects (name, description, member_ids, email_members, channel_ids) "
+      "SELECT 'General', 'Services that had no project', '[]', 0, NULL "
+      "WHERE EXISTS (SELECT 1 FROM monitors WHERE project_id IS NULL) "
+      "AND NOT EXISTS (SELECT 1 FROM projects WHERE name = 'General')",
+      "UPDATE monitors SET project_id = (SELECT id FROM projects WHERE name = 'General') WHERE project_id IS NULL"]),
 ]
 
 

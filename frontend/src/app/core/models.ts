@@ -64,6 +64,7 @@ export interface Probe {
   name: string;
   online: boolean;
   version: string | null;
+  last_ip: string | null;
   last_seen_at: string | null;
   created_at: string;
   monitors: number;
@@ -142,7 +143,12 @@ export interface Me {
   tenant_name: string;
   active_tenant: string;
   active_tenant_name: string;
+  alert_channels: number[] | null;
+  alert_options: { id: number; name: string }[];
 }
+
+// "Email" in a user's alert channels; other values are channel ids
+export const ALERT_EMAIL = -1;
 
 export interface Tenant {
   slug: string;
@@ -178,6 +184,20 @@ export interface User {
   must_change_password?: boolean;
   last_login_at?: string | null;
   created_at?: string;
+  project_ids?: number[];
+  monitor_ids?: number[];
+  alert_channels?: number[] | null;
+}
+
+export interface AuditEvent {
+  id: number;
+  username: string;
+  action: string;
+  kind: string;
+  target: string;
+  detail: string;
+  ip: string;
+  created_at: string;
 }
 
 export interface LoginEvent {

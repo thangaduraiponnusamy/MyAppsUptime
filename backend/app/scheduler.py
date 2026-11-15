@@ -10,8 +10,9 @@ from sqlalchemy import delete, select
 from . import backup, expiry, notifier, tenancy
 from .checks import CheckResult, run_check
 from .config import get_setting, retention_days
-from .models import (AlertEvent, Heartbeat, Incident, IncidentAck, LoginEvent, MaintenanceWindow, Monitor,
+from .models import (AlertEvent, AuditEvent, Heartbeat, Incident, IncidentAck, LoginEvent, MaintenanceWindow, Monitor,
                      NotificationChannel, Probe, Project, User, aware, utcnow)
+from .schemas import ALERT_EMAIL
 
 log = logging.getLogger(__name__)
 
@@ -75,9 +76,19 @@ def build_alert(db, tenant: str, m: Monitor, status: str, message: str, headline
     project = db.get(Project, m.project_id) if m.project_id else None
     channels = [c for c in active if channel_for(c, m, project)]
     emails: list[str] = []
-    if project and project.email_members and project.member_ids:
-        emails = [u.email for u in db.scalars(select(User).where(
-            User.id.in_(project.member_ids), User.active.is_(True))).all() if u.email]
+    if project:
+        # Project members, plus users given this one service
+        users = [u for u in db.scalars(select(User).where(User.active.is_(True))).all()
+                 if u.id in (project.member_ids or []) or m.id in (u.monitor_ids or [])]
+
+        def wants(u: User, cid: int) -> bool:
+            return u.alert_channels is None or cid in u.alert_channels
+
+        # A shared channel is skipped only when every one of these users turned it off
+        if users:
+            channels = [c for c in channels if any(wants(u, c.id) for u in users)]
+        if project.email_members:
+            emails = [u.email for u in users if u.email and wants(u, ALERT_EMAIL)]
     general, smtp = tenant_config(db, tenant)
     app_url = notifier.server_url(general)
     alert = notifier.Alert(
@@ -366,6 +377,7 @@ class Scheduler:
                 db.execute(delete(MaintenanceWindow).where(MaintenanceWindow.ends_at < cutoff))
                 db.execute(delete(LoginEvent).where(LoginEvent.created_at < cutoff))
                 db.execute(delete(AlertEvent).where(AlertEvent.created_at < cutoff))
+                db.execute(delete(AuditEvent).where(AuditEvent.created_at < cutoff))
                 db.commit()
 
 

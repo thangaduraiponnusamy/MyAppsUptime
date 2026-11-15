@@ -69,6 +69,10 @@ export class AuthService {
     return this.http.post<Me>('/api/auth/password', { current, new: next }).pipe(tap((me) => this.user.set(me)));
   }
 
+  setAlerts(channels: number[]): Observable<Me> {
+    return this.http.put<Me>('/api/auth/alerts', { alert_channels: channels }).pipe(tap((me) => this.user.set(me)));
+  }
+
   options(): Observable<AuthOptions> {
     return this.http.get<AuthOptions>('/api/auth/options');
   }

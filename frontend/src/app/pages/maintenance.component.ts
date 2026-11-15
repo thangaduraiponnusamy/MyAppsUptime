@@ -1,15 +1,16 @@
 import { DatePipe } from '@angular/common';
-import { Component, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ApiService, errorText } from '../core/api.service';
 import { ConfirmService } from '../core/confirm.service';
 import { Maintenance } from '../core/models';
 import { MonitorStore } from '../core/monitor-store.service';
+import { MultiSelectComponent } from '../shared/multi-select.component';
 
 @Component({
   selector: 'app-maintenance',
   standalone: true,
-  imports: [DatePipe, ReactiveFormsModule],
+  imports: [DatePipe, ReactiveFormsModule, MultiSelectComponent],
   template: `
     <div class="page-head">
       <div>
@@ -23,14 +24,10 @@ import { MonitorStore } from '../core/monitor-store.service';
         <label class="full">Title <input formControlName="title" placeholder="Database upgrade" /></label>
         <label>Start <input type="datetime-local" formControlName="starts_at" /></label>
         <label>End <input type="datetime-local" formControlName="ends_at" /></label>
-        <div class="full">
-          <div class="muted">Monitors (none selected = all monitors)</div>
-          <div class="check-list">
-            @for (m of store.monitors(); track m.id) {
-              <label><input type="checkbox" [checked]="selected().has(m.id)" (change)="toggle(m.id)" /> {{ m.name }}</label>
-            }
-          </div>
-        </div>
+        <label class="full">Monitors
+          <app-multi-select [options]="monitorOptions()" [picked]="selected()" (pickedChange)="selected.set($event)"
+            placeholder="All monitors" />
+        </label>
         @if (error()) { <p class="error full">{{ error() }}</p> }
         <div class="full"><button class="btn primary" [disabled]="form.invalid">Schedule</button></div>
       </form>
@@ -62,6 +59,7 @@ export class MaintenanceComponent {
   private confirm = inject(ConfirmService);
   windows = signal<Maintenance[]>([]);
   selected = signal(new Set<number>());
+  monitorOptions = computed(() => this.store.monitors().map((m) => ({ id: m.id, label: m.name })));
   error = signal('');
 
   form = inject(FormBuilder).nonNullable.group({
@@ -76,12 +74,6 @@ export class MaintenanceComponent {
 
   load(): void {
     this.api.maintenance().subscribe((list) => this.windows.set(list));
-  }
-
-  toggle(id: number): void {
-    const next = new Set(this.selected());
-    next.has(id) ? next.delete(id) : next.add(id);
-    this.selected.set(next);
   }
 
   save(): void {

@@ -109,6 +109,24 @@ def _check_project(db: Session, project_id: int | None) -> None:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Invalid project")
 
 
+DEFAULT_PROJECT = "General"
+
+
+def default_project(db: Session) -> int:
+    """Every monitor belongs to a project; callers that give none get "General"."""
+    project = db.scalar(select(Project).where(Project.name == DEFAULT_PROJECT))
+    if project is None:
+        project = Project(name=DEFAULT_PROJECT, description="Services that had no project", email_members=False)
+        db.add(project)
+        db.flush()
+    return project.id
+
+
+def _project_for(db: Session, project_id: int | None) -> int:
+    _check_project(db, project_id)
+    return project_id if project_id is not None else default_project(db)
+
+
 def _scope(db: Session, user: Principal, project_id: int | None = None) -> list[int] | None:
     """Monitor ids the user may see (None = all), optionally narrowed to one project (0 = no project)."""
     ids = visible_monitor_ids(db, user)
@@ -184,7 +202,7 @@ class BulkIn(BaseModel):
 @router.post("/monitors/bulk")
 def bulk_monitors(body: BulkIn, db: Session = Depends(get_db)):
     if body.action == "project":
-        _check_project(db, body.project_id)
+        body.project_id = _project_for(db, body.project_id)
     monitors = db.scalars(select(Monitor).where(Monitor.id.in_(body.ids))).all()
     for m in monitors:
         if body.action == "pause":
@@ -202,9 +220,9 @@ def bulk_monitors(body: BulkIn, db: Session = Depends(get_db)):
 @router.post("/monitors", response_model=MonitorOut, status_code=status.HTTP_201_CREATED)
 def create_monitor(body: MonitorCreate, db: Session = Depends(get_db)):
     _check_parent(db, body.parent_id, None)
-    _check_project(db, body.project_id)
+    project_id = _project_for(db, body.project_id)
     probes.check_probe(db, body.probe_id)
-    m = Monitor(**body.model_dump())
+    m = Monitor(**body.model_dump(exclude={"project_id"}), project_id=project_id)
     if m.type == "push":
         m.push_token = secrets.token_urlsafe(16)
     db.add(m)
@@ -222,7 +240,7 @@ def get_monitor(monitor_id: int, db: Session = Depends(get_db), user: Principal 
 def update_monitor(monitor_id: int, body: MonitorCreate, db: Session = Depends(get_db)):
     m = _get(db, Monitor, monitor_id)
     _check_parent(db, body.parent_id, m.id)
-    _check_project(db, body.project_id)
+    body.project_id = _project_for(db, body.project_id)
     probes.check_probe(db, body.probe_id)
     for key, value in body.model_dump().items():
         setattr(m, key, value)
@@ -658,7 +676,7 @@ def import_config(body: ExportData, db: Session = Depends(get_db)):
     id_map: dict[int, Monitor] = {}
     for item in body.monitors:
         data = item.model_dump(exclude={"id", "parent_id", "project_id", "probe_id"})
-        m = Monitor(**data, project_id=project_map.get(item.project_id),
+        m = Monitor(**data, project_id=project_map.get(item.project_id) or default_project(db),
                     push_token=secrets.token_urlsafe(16) if item.type == "push" else None)
         db.add(m)
         id_map[item.id] = m

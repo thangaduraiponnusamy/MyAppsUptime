@@ -51,6 +51,7 @@ def test_probe_sync_and_results(client, su):
 
     listed = {x["name"]: x for x in client.get("/api/probes", headers=su).json()}
     assert listed["home-a"]["online"] and listed["home-a"]["monitors"] == 1 and listed["home-a"]["version"] == "test"
+    assert listed["home-a"]["last_ip"] == "testclient"
 
     # Check now is handed to the probe on its next sync
     assert client.post(f"/api/monitors/{mine['id']}/check", headers=su).status_code == 202

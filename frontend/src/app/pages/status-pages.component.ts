@@ -1,15 +1,16 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { ApiService, errorText } from '../core/api.service';
 import { ConfirmService } from '../core/confirm.service';
 import { StatusPage } from '../core/models';
 import { MonitorStore } from '../core/monitor-store.service';
+import { MultiSelectComponent } from '../shared/multi-select.component';
 
 @Component({
   selector: 'app-status-pages',
   standalone: true,
-  imports: [ReactiveFormsModule, RouterLink],
+  imports: [ReactiveFormsModule, RouterLink, MultiSelectComponent],
   template: `
     <div class="page-head">
       <div>
@@ -34,14 +35,10 @@ import { MonitorStore } from '../core/monitor-store.service';
             @if (logo()) { <button type="button" class="btn sm" (click)="logo.set(null)">Remove</button> }
           </div>
         </label>
-        <div class="full">
-          <div class="muted">Monitors (select at least one)</div>
-          <div class="check-list">
-            @for (m of store.monitors(); track m.id) {
-              <label><input type="checkbox" [checked]="selected().has(m.id)" (change)="toggle(m.id)" /> {{ m.name }}</label>
-            }
-          </div>
-        </div>
+        <label class="full">Monitors (at least one)
+          <app-multi-select [options]="monitorOptions()" [picked]="selected()" (pickedChange)="selected.set($event)"
+            placeholder="Pick monitors" empty="No monitors yet." />
+        </label>
         @if (error()) { <p class="error full">{{ error() }}</p> }
         <div class="full row">
           <button class="btn primary" [disabled]="form.invalid || !selected().size">{{ editId() ? 'Save page' : 'Create page' }}</button>
@@ -79,6 +76,7 @@ export class StatusPagesComponent {
   private confirm = inject(ConfirmService);
   pages = signal<StatusPage[]>([]);
   selected = signal(new Set<number>());
+  monitorOptions = computed(() => this.store.monitors().map((m) => ({ id: m.id, label: m.name })));
   error = signal('');
   editId = signal<number | null>(null);
   logo = signal<string | null>(null);
@@ -96,12 +94,6 @@ export class StatusPagesComponent {
 
   load(): void {
     this.api.statusPages().subscribe((list) => this.pages.set(list));
-  }
-
-  toggle(id: number): void {
-    const next = new Set(this.selected());
-    next.has(id) ? next.delete(id) : next.add(id);
-    this.selected.set(next);
   }
 
   edit(p: StatusPage): void {

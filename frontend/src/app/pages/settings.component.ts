@@ -1,4 +1,4 @@
-import { Component, computed, inject } from '@angular/core';
+import { Component, ElementRef, computed, inject } from '@angular/core';
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { AuthService } from '../core/auth.service';
 import { IconComponent } from '../shared/icon.component';
@@ -27,7 +27,7 @@ export const SETTINGS_SECTIONS = [
           <a [routerLink]="s.path" routerLinkActive="active"><app-icon [name]="s.icon" [size]="16" /> {{ s.label }}</a>
         }
       </nav>
-      <div class="settings-body"><router-outlet /></div>
+      <div class="settings-body"><router-outlet (activate)="showActive()" /></div>
     </div>
   `,
 })
@@ -35,4 +35,14 @@ export class SettingsComponent {
   private auth = inject(AuthService);
   sections = computed(() => SETTINGS_SECTIONS.filter((s) =>
     ('super' in s ? this.auth.isSuper() : true) && (!s.admin || this.auth.isAdmin())));
+  private host = inject(ElementRef<HTMLElement>);
+
+  // On phones the tabs scroll sideways; bring the open one into view
+  showActive(): void {
+    setTimeout(() => {
+      const nav = this.host.nativeElement.querySelector('.settings-nav') as HTMLElement | null;
+      const a = nav?.querySelector('a.active') as HTMLElement | null;
+      if (nav && a) nav.scrollLeft = a.offsetLeft - (nav.clientWidth - a.offsetWidth) / 2;
+    });
+  }
 }

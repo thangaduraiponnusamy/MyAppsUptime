@@ -1,17 +1,18 @@
-import { Component, effect, inject, signal } from '@angular/core';
+import { Component, computed, effect, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ApiService, errorText } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
-import { LoginEvent, ROLE_LABEL } from '../../core/models';
+import { AuditEvent, LoginEvent, ROLE_LABEL } from '../../core/models';
 import { PrefsService } from '../../core/prefs.service';
 import { IconComponent } from '../../shared/icon.component';
+import { MultiSelectComponent } from '../../shared/multi-select.component';
 
 @Component({
   selector: 'app-settings-security',
   standalone: true,
-  imports: [FormsModule, DatePipe, IconComponent],
+  imports: [FormsModule, DatePipe, IconComponent, MultiSelectComponent],
   template: `
     <h2 class="s-title">Security</h2>
 
@@ -23,6 +24,14 @@ import { IconComponent } from '../../shared/icon.component';
         <dt>Email</dt><dd>{{ auth.user()?.email || '-' }}</dd>
         <dt>Role</dt><dd>{{ roleLabel[auth.user()?.role ?? ''] }}</dd>
       </dl>
+    </section>
+
+    <section class="s-section">
+      <h3>My alerts</h3>
+      <div class="row">
+        <app-multi-select class="grow" [options]="alertOptions()" [picked]="myAlerts()" (pickedChange)="saveAlerts($event)" placeholder="No alerts" />
+        @if (alertsNotice()) { <span class="muted small">{{ alertsNotice() }}</span> }
+      </div>
     </section>
 
     <section class="s-section">
@@ -50,6 +59,39 @@ import { IconComponent } from '../../shared/icon.component';
         <p class="muted">No sign-ins yet.</p>
       }
     </section>
+
+    @if (auth.isAdmin()) {
+      <section class="s-section">
+        <h3>Audit log</h3>
+        <p class="muted">Who created, changed, paused or deleted services, projects, channels, users and settings.</p>
+        <form class="row" (ngSubmit)="loadAudit()">
+          <input class="search" name="aq" [(ngModel)]="auditQuery" placeholder="Search user, name, action or IP..." />
+          <button class="btn sm">Search</button>
+        </form>
+        @if (audit().length) {
+          <div class="table-wrap"><table>
+            <thead><tr><th>Time</th><th>User</th><th>Action</th><th>What</th><th class="hide-sm">IP address</th></tr></thead>
+            <tbody>
+              @for (a of audit(); track a.id) {
+                <tr>
+                  <td class="nowrap">{{ a.created_at | date: 'MMM d, y, HH:mm:ss' }}</td>
+                  <td>{{ a.username }}</td>
+                  <td>{{ a.action }}</td>
+                  <td>{{ a.kind }} @if (a.target) { <b>{{ a.target }}</b> }
+                    @if (a.detail) { <div class="muted small">{{ a.detail }}</div> }</td>
+                  <td class="hide-sm mono">{{ a.ip || '-' }}</td>
+                </tr>
+              }
+            </tbody>
+          </table></div>
+          @if (audit().length >= auditLimit) {
+            <button class="btn sm" (click)="auditLimit = auditLimit + 50; loadAudit()">Show more</button>
+          }
+        } @else {
+          <p class="muted">Nothing recorded yet.</p>
+        }
+      </section>
+    }
 
     <section class="s-section">
       <h3>Change password</h3>
@@ -98,19 +140,37 @@ export class SecuritySettingsComponent {
   private api = inject(ApiService);
   private router = inject(Router);
   logins = signal<LoginEvent[]>([]);
+  audit = signal<AuditEvent[]>([]);
+  auditQuery = '';
+  auditLimit = 50;
   current = '';
   next = '';
   repeat = '';
   notice = signal('');
+  alertOptions = computed(() => (this.auth.user()?.alert_options ?? []).map((o) => ({ id: o.id, label: o.name })));
+  myAlerts = computed(() => new Set<number>(this.auth.user()?.alert_channels ?? this.alertOptions().map((o) => o.id)));
+  alertsNotice = signal('');
 
   constructor() {
     effect(() => {
       this.api.logins(this.prefs.limits().logins).subscribe((l) => this.logins.set(l));
     });
+    if (this.auth.isAdmin()) this.loadAudit();
+  }
+
+  loadAudit(): void {
+    this.api.audit(this.auditLimit, this.auditQuery.trim()).subscribe((a) => this.audit.set(a));
   }
 
   isPhone(device: string): boolean {
     return /Android|iPhone|iPad/.test(device);
+  }
+
+  saveAlerts(picked: Set<number>): void {
+    this.auth.setAlerts([...picked]).subscribe({
+      next: () => this.alertsNotice.set('Saved.'),
+      error: (e) => this.alertsNotice.set(errorText(e)),
+    });
   }
 
   change(): void {

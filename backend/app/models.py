@@ -63,6 +63,7 @@ class Probe(Base):
     name: Mapped[str] = mapped_column(String(60), unique=True)
     token_hash: Mapped[str] = mapped_column(String(64), unique=True)
     version: Mapped[str | None] = mapped_column(String(20))
+    last_ip: Mapped[str | None] = mapped_column(String(64))
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     offline_notified: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -177,11 +178,27 @@ class User(Base):
     name: Mapped[str] = mapped_column(String(120), default="")
     email: Mapped[str | None] = mapped_column(String(200))
     role: Mapped[str] = mapped_column(String(10), default="member")  # superadmin | admin | member
+    monitor_ids: Mapped[list] = mapped_column(JSON, default=list)  # extra services outside the user's projects
+    alert_channels: Mapped[list | None] = mapped_column(JSON)  # channel ids, -1 = email; None = all
     password_hash: Mapped[str] = mapped_column(String(200))
     must_change_password: Mapped[bool] = mapped_column(default=False)
     active: Mapped[bool] = mapped_column(default=True)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class AuditEvent(Base):
+    """Who changed what."""
+    __tablename__ = "audit_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    username: Mapped[str] = mapped_column(String(60))
+    action: Mapped[str] = mapped_column(String(20))
+    kind: Mapped[str] = mapped_column(String(30))
+    target: Mapped[str] = mapped_column(String(200), default="")
+    detail: Mapped[str] = mapped_column(String(300), default="")
+    ip: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
 
 
 class LoginEvent(Base):

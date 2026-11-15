@@ -1,10 +1,11 @@
-import { Component, ElementRef, HostListener, computed, effect, inject, signal, viewChild } from '@angular/core';
+import { Component, DestroyRef, ElementRef, HostListener, computed, effect, inject, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { IsActiveMatchOptions, NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { filter } from 'rxjs';
 import { ApiService } from './core/api.service';
 import { AuthService } from './core/auth.service';
 import { ROLE_LABEL, Tenant } from './core/models';
+import { SelectComponent } from './shared/select.component';
 import { MonitorStore } from './core/monitor-store.service';
 import { ThemeService } from './core/theme.service';
 import { IconComponent } from './shared/icon.component';
@@ -13,7 +14,7 @@ import { LogoComponent } from './shared/logo.component';
 @Component({
   selector: 'app-shell',
   standalone: true,
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, IconComponent, LogoComponent],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, IconComponent, LogoComponent, SelectComponent],
   template: `
     <div class="app" [class.nav-open]="navOpen()" [class.collapsed]="collapsed()">
       <header class="mobile-bar">
@@ -36,11 +37,8 @@ import { LogoComponent } from './shared/logo.component';
         <div class="tenant-box" [class.visiting]="auth.visiting()" [title]="'Tenant: ' + (auth.user()?.active_tenant_name ?? '')">
           <app-icon name="globe" [size]="16" />
           @if (auth.isSuper() && tenants().length > 1) {
-            <select class="label" (change)="auth.switchTenant($any($event.target).value)" aria-label="Switch tenant">
-              @for (t of tenants(); track t.slug) {
-                <option [value]="t.slug" [selected]="t.slug === auth.user()?.active_tenant">{{ t.name }}{{ t.active ? '' : ' (disabled)' }}</option>
-              }
-            </select>
+            <app-select class="label" [bare]="true" label="Switch tenant" [options]="tenantOptions()"
+              [value]="auth.user()?.active_tenant ?? null" (valueChange)="auth.switchTenant($event)" />
           } @else {
             <span class="label">{{ auth.user()?.active_tenant_name }}</span>
           }
@@ -139,6 +137,7 @@ export class ShellComponent {
   });
   role = computed(() => ROLE_LABEL[this.auth.user()?.role ?? ''] ?? '');
   tenants = signal<Tenant[]>([]);
+  tenantOptions = computed(() => this.tenants().map((t) => ({ id: t.slug as string | null, label: t.name + (t.active ? '' : ' (disabled)') })));
 
   menuOpen = signal(false);
   menuPos = signal({ left: 0, bottom: 0, width: 240 });
@@ -206,6 +205,26 @@ export class ShellComponent {
         this.menuOpen.set(false);
       });
     if (this.auth.isSuper()) this.api.tenants().subscribe((t) => this.tenants.set(t));
+
+    // Phones show table rows as cards; each cell gets its column name as a label (see styles.css)
+    const host = inject(ElementRef<HTMLElement>).nativeElement as HTMLElement;
+    let queued = false;
+    const label = () => {
+      queued = false;
+      for (const table of Array.from(host.querySelectorAll('main table'))) {
+        const heads = Array.from(table.querySelectorAll('thead th')).map((th) => th.textContent?.trim() ?? '');
+        for (const tr of Array.from(table.querySelectorAll('tbody tr'))) {
+          Array.from(tr.children).forEach((td, i) => {
+            if (heads[i] && td.getAttribute('data-label') !== heads[i]) td.setAttribute('data-label', heads[i]);
+          });
+        }
+      }
+    };
+    const watch = new MutationObserver(() => {
+      if (!queued) { queued = true; requestAnimationFrame(label); }
+    });
+    watch.observe(host, { childList: true, subtree: true });
+    inject(DestroyRef).onDestroy(() => watch.disconnect());
   }
 
   toggleCollapsed(): void {

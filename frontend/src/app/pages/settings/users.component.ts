@@ -4,15 +4,18 @@ import { FormsModule } from '@angular/forms';
 import { ApiService, errorText } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
 import { ConfirmService } from '../../core/confirm.service';
-import { ROLE_LABEL, User } from '../../core/models';
+import { ALERT_EMAIL, Project, ROLE_LABEL, User } from '../../core/models';
+import { MonitorStore } from '../../core/monitor-store.service';
+import { MultiSelectComponent } from '../../shared/multi-select.component';
+import { ServiceTreeComponent } from '../../shared/service-tree.component';
 
 @Component({
   selector: 'app-settings-users',
   standalone: true,
-  imports: [FormsModule, DatePipe],
+  imports: [FormsModule, DatePipe, ServiceTreeComponent, MultiSelectComponent],
   template: `
     <h2 class="s-title">Users</h2>
-    <p class="muted">Admins manage everything. Members see only the projects they belong to and can acknowledge incidents.</p>
+    <p class="muted">Admins manage everything. Members see only their projects and any extra services given to them, and can acknowledge incidents.</p>
 
     <section class="s-section">
       <div class="s-head">
@@ -41,6 +44,20 @@ import { ROLE_LABEL, User } from '../../core/models';
             <small class="muted">At least 8 characters. The user must change it at next sign-in.</small>
           </label>
           <label class="check"><input type="checkbox" name="act" [(ngModel)]="u.active" /> Active (can sign in)</label>
+          <label>Alerts by
+            <app-multi-select [options]="alertOptions()" [picked]="alerts()" (pickedChange)="alerts.set($event)" placeholder="No alerts" />
+          </label>
+          @if (u.role === 'member') {
+            <div class="full">
+              <span class="field-label">Access and alerts</span>
+              <app-service-tree [projects]="projects()" [monitors]="store.monitors()" [whole]="whole()" [picked]="extra()"
+                (wholeChange)="whole.set($event)" (pickedChange)="extra.set($event)" />
+              <small class="muted">Tick a project for all its services (also ones added later), or open a project and tick single services.
+                The user sees them and gets their email alerts when the project has "Email members" on.</small>
+            </div>
+          } @else {
+            <p class="muted small full">Admins see every project and service.</p>
+          }
           @if (error()) { <p class="error full">{{ error() }}</p> }
           <div class="row full">
             <button class="btn primary" [disabled]="!u.username || (!u.id && (u.password?.length ?? 0) < 8)">Save</button>
@@ -63,13 +80,17 @@ import { ROLE_LABEL, User } from '../../core/models';
         </form>
       }
 
+      @if (users().length > 8) {
+        <input class="search" [value]="query()" (input)="query.set($any($event.target).value)" placeholder="Search user, name or email..." />
+      }
       <table>
-        <thead><tr><th>User</th><th>Role</th><th class="hide-sm">Email</th><th class="hide-sm">Last sign-in</th><th class="hide-sm">Status</th><th></th></tr></thead>
+        <thead><tr><th>User</th><th>Role</th><th class="hide-sm">Access</th><th class="hide-sm">Email</th><th class="hide-sm">Last sign-in</th><th class="hide-sm">Status</th><th></th></tr></thead>
         <tbody>
-          @for (u of users(); track u.id) {
+          @for (u of shown(); track u.id) {
             <tr [class.muted]="!u.active">
               <td><b>{{ u.username }}</b> @if (u.name) { <div class="muted small">{{ u.name }}</div> }</td>
               <td>{{ roleLabel[u.role] }}</td>
+              <td class="hide-sm">{{ access(u) }}</td>
               <td class="hide-sm">{{ u.email || '-' }}</td>
               <td class="hide-sm">{{ u.last_login_at ? (u.last_login_at | date: 'MMM d, y, HH:mm') : 'Never' }}</td>
               <td class="hide-sm">
@@ -84,6 +105,8 @@ import { ROLE_LABEL, User } from '../../core/models';
                 @if (u.id !== auth.user()?.id || auth.visiting()) { <button class="btn sm danger" (click)="remove(u)">Delete</button> }
               </td>
             </tr>
+          } @empty {
+            <tr><td colspan="7" class="empty">No user matches.</td></tr>
           }
         </tbody>
       </table>
@@ -94,11 +117,22 @@ export class UserSettingsComponent {
   private api = inject(ApiService);
   auth = inject(AuthService);
   private confirm = inject(ConfirmService);
+  store = inject(MonitorStore);
   readonly roleLabel = ROLE_LABEL;
   users = signal<User[]>([]);
+  projects = signal<Project[]>([]);
+  whole = signal<number[]>([]);
+  extra = signal(new Set<number>());
+  alerts = signal(new Set<number>());
+  alertOptions = signal([{ id: ALERT_EMAIL, label: 'Email' }]);
   editing = signal<User | null>(null);
   resetting = signal<{ user: User; password: string } | null>(null);
   error = signal('');
+  query = signal('');
+  shown = computed(() => {
+    const q = this.query().trim().toLowerCase();
+    return q ? this.users().filter((u) => [u.username, u.name ?? '', u.email ?? ''].some((s) => s.toLowerCase().includes(q))) : this.users();
+  });
   inAdminTenant = computed(() => this.auth.user()?.active_tenant === 'admin');
 
   constructor() {
@@ -107,6 +141,21 @@ export class UserSettingsComponent {
 
   load(): void {
     this.api.users().subscribe((u) => this.users.set(u));
+    this.api.projects().subscribe((p) => this.projects.set(p));
+    this.api.channels().subscribe((c) => this.alertOptions.set([{ id: ALERT_EMAIL, label: 'Email' },
+      ...c.filter((x) => x.active).sort((a, b) => a.name.localeCompare(b.name)).map((x) => ({ id: x.id!, label: x.name }))]));
+  }
+
+  projectName(id: number | null): string {
+    return this.projects().find((p) => p.id === id)?.name ?? '-';
+  }
+
+  access(u: User): string {
+    if (u.role !== 'member') return 'Everything';
+    const names = (u.project_ids ?? []).map((id) => this.projectName(id));
+    const extra = (u.monitor_ids ?? []).length;
+    const text = names.join(', ') + (extra ? `${names.length ? ' + ' : ''}${extra} ${extra === 1 ? 'service' : 'services'}` : '');
+    return text || 'Nothing yet';
   }
 
   startReset(u: User): void {
@@ -130,14 +179,19 @@ export class UserSettingsComponent {
   edit(u: User | null): void {
     this.error.set('');
     this.resetting.set(null);
-    this.editing.set(u ? { ...u, password: '' } : { username: '', name: '', email: '', role: 'member', active: true, password: '' });
+    this.whole.set([...(u?.project_ids ?? [])]);
+    this.extra.set(new Set(u?.monitor_ids ?? []));
+    this.alerts.set(new Set(u?.alert_channels ?? this.alertOptions().map((o) => o.id)));
+    this.editing.set(u
+      ? { ...u, password: '' }
+      : { username: '', name: '', email: '', role: 'member', active: true, password: '' });
   }
 
   save(): void {
     const u = this.editing()!;
     const body: User = {
       username: u.username.trim(), name: u.name, email: u.email?.trim() || null, role: u.role, active: u.active,
-      password: u.password || null,
+      password: u.password || null, project_ids: this.whole(), monitor_ids: [...this.extra()], alert_channels: [...this.alerts()],
     };
     const call = u.id ? this.api.updateUser(u.id, body) : this.api.createUser(body);
     call.subscribe({

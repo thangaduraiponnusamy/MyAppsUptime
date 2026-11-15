@@ -5,13 +5,15 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ApiService, errorText } from '../core/api.service';
 import { MONITOR_TYPES, MonitorInput, MonitorType, Probe } from '../core/models';
 import { MonitorStore } from '../core/monitor-store.service';
+import { Option } from '../shared/multi-select.component';
+import { SelectComponent } from '../shared/select.component';
 
 const URL_TYPES: MonitorType[] = ['http', 'keyword', 'json'];
 
 @Component({
   selector: 'app-monitor-form',
   standalone: true,
-  imports: [ReactiveFormsModule, RouterLink],
+  imports: [ReactiveFormsModule, RouterLink, SelectComponent],
   template: `
     <div class="page-head">
       <div>
@@ -30,10 +32,7 @@ const URL_TYPES: MonitorType[] = ['http', 'keyword', 'json'];
         <label>Friendly name <input formControlName="name" placeholder="Payments API" /></label>
         @if (type() !== 'push') {
           <label>Run from
-            <select formControlName="probe_id">
-              <option [ngValue]="null">This server</option>
-              @for (p of probes(); track p.id) { <option [ngValue]="p.id">{{ p.name }}{{ p.online ? '' : ' (offline)' }}</option> }
-            </select>
+            <app-select formControlName="probe_id" [options]="probeOptions()" />
           </label>
         }
 
@@ -76,10 +75,7 @@ const URL_TYPES: MonitorType[] = ['http', 'keyword', 'json'];
         <label>Timeout (seconds, 1-60) <input type="number" min="1" max="60" formControlName="timeout_sec" /></label>
         <label>Retries before DOWN (0-5) <input type="number" min="0" max="5" formControlName="retries" /></label>
         <label>Depends on (parent monitor)
-          <select formControlName="parent_id">
-            <option [ngValue]="null">None</option>
-            @for (p of parents(); track p.id) { <option [ngValue]="p.id">{{ p.name }}</option> }
-          </select>
+          <app-select formControlName="parent_id" [options]="parentOptions()" />
         </label>
 
         <div class="section-title">Performance &amp; SLA</div>
@@ -89,17 +85,15 @@ const URL_TYPES: MonitorType[] = ['http', 'keyword', 'json'];
           Smart latency anomaly detection (flags DEGRADED when response time stays far above the normal baseline for 3 checks in a row)</label>
 
         <div class="section-title">Alerting</div>
-        <label>Project
-          <select formControlName="project_id">
-            <option [ngValue]="null">No project</option>
-            @for (p of store.projects(); track p.id) { <option [ngValue]="p.id">{{ p.name }}</option> }
-          </select>
+        <label>Project (required)
+          <app-select formControlName="project_id" [options]="projectOptions()"
+            [placeholder]="store.projects().length ? 'Pick a project' : 'General (created automatically)'" />
         </label>
         <label>Repeat alert while down (minutes, optional) <input type="number" formControlName="notify_repeat_min" placeholder="30" /></label>
         <label>Alert after N failed checks in a row (optional)
           <input type="number" formControlName="down_after" placeholder="Default from Settings > General" /></label>
         <label>Tags (comma separated) <input formControlName="tags" placeholder="prod, api, payments" /></label>
-        <p class="hint full">Project members and the project's channels get the alerts. Tags can narrow a channel further.
+        <p class="hint full">Every service belongs to a project. Project members and the project's channels get the alerts. Tags can narrow a channel further.
           Alerts are suppressed while the parent monitor is down.</p>
 
         @if (error()) { <p class="error full">{{ error() }}</p> }
@@ -152,6 +146,11 @@ export class MonitorFormComponent {
   isUrl = computed(() => URL_TYPES.includes(this.type()));
   parents = computed(() => this.store.monitors().filter((m) => m.id !== this.id));
   probes = signal<Probe[]>([]);
+  parentOptions = computed<Option<number | null>[]>(() => [{ id: null, label: 'None' },
+    ...this.parents().map((m) => ({ id: m.id, label: m.name }))]);
+  probeOptions = computed<Option<number | null>[]>(() => [{ id: null, label: 'This server' },
+    ...this.probes().map((p) => ({ id: p.id, label: p.name + (p.online ? '' : ' (offline)') }))]);
+  projectOptions = computed<Option<number | null>[]>(() => this.store.projects().map((p) => ({ id: p.id!, label: p.name })));
 
   constructor() {
     this.api.probes().subscribe((p) => this.probes.set(p));
@@ -170,6 +169,10 @@ export class MonitorFormComponent {
 
   save(): void {
     const v = this.form.getRawValue();
+    if (v.project_id == null && this.store.projects().length) {
+      this.error.set('Pick a project.');
+      return;
+    }
     const body: MonitorInput = {
       ...v,
       keyword: v.keyword || null,

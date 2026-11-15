@@ -345,6 +345,7 @@ class ProjectExport(ProjectIn):
 
 
 Role = Literal["superadmin", "admin", "member"]
+ALERT_EMAIL = -1  # "Email" in a user's alert channels; other values are channel ids
 
 
 class UserBase(BaseModel):
@@ -362,10 +363,16 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     password: str = Field(min_length=8, max_length=200)
+    project_ids: list[int] | None = None  # None = leave as is
+    monitor_ids: list[int] | None = None  # extra services outside those projects
+    alert_channels: list[int] | None = None
 
 
 class UserUpdate(UserBase):
     password: str | None = Field(default=None, min_length=8, max_length=200)
+    project_ids: list[int] | None = None
+    monitor_ids: list[int] | None = None
+    alert_channels: list[int] | None = None
 
 
 class UserOut(UserBase):
@@ -373,6 +380,31 @@ class UserOut(UserBase):
     id: int
     must_change_password: bool
     last_login_at: Utc | None = None
+    created_at: Utc
+    project_ids: list[int] = []
+    monitor_ids: list[int] = []
+    alert_channels: list[int] | None = None  # None = all
+
+
+class AlertChannelsIn(BaseModel):
+    alert_channels: list[int]
+
+
+class AlertOption(BaseModel):
+    id: int
+    name: str
+
+
+class AuditEventOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    username: str
+    action: str
+    kind: str
+    target: str
+    detail: str
+    ip: str
     created_at: Utc
 
 
@@ -417,6 +449,8 @@ class MeOut(BaseModel):
     tenant_name: str = ""
     active_tenant: str = "admin"
     active_tenant_name: str = ""
+    alert_channels: list[int] | None = None  # None = all
+    alert_options: list[AlertOption] = []
 
 
 class LoginOut(MeOut):
@@ -567,6 +601,7 @@ class ProbeOut(BaseModel):
     name: str
     online: bool
     version: str | None
+    last_ip: str | None = None
     last_seen_at: Utc | None
     created_at: Utc
     monitors: int

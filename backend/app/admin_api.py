@@ -1,5 +1,4 @@
 import asyncio
-import ipaddress
 import logging
 from pathlib import Path
 
@@ -8,13 +7,15 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
 from . import backup, dnscache, notifier, tenancy
-from .auth import (RESET_MIN, Principal, bearer, check_lock, clear_fails, create_reset_token, create_session,
-                   current_user, end_all_sessions, end_session, get_db, hash_password, record_fail, require_admin,
-                   require_super, require_user, token_tenant, use_reset_token, verify_password)
+from .api import DEFAULT_PROJECT, default_project
+from .auth import (RESET_MIN, Principal, bearer, check_lock, clear_fails, client_ip, create_reset_token,
+                   create_session, current_user, end_all_sessions, end_session, get_db, hash_password, record_fail,
+                   require_admin, require_super, require_user, token_tenant, use_reset_token, verify_password,
+                   visible_monitor_ids)
 from .config import APP_VERSION, get_setting, put_setting
-from .models import (AlertEvent, Heartbeat, Incident, IncidentAck, LoginEvent, Monitor, NotificationChannel, Project,
-                     User, utcnow)
-from .schemas import (DatabaseInfo, ForgotIn, GeneralSettings, LoginEventOut, LoginIn, LoginOut, MeOut, PasswordIn,
+from .models import (AlertEvent, AuditEvent, Heartbeat, Incident, IncidentAck, LoginEvent, Monitor,
+                     NotificationChannel, Project, User, utcnow)
+from .schemas import (ALERT_EMAIL, AlertChannelsIn, AlertOption, AuditEventOut, DatabaseInfo, ForgotIn, GeneralSettings, LoginEventOut, LoginIn, LoginOut, MeOut, PasswordIn,
                       ProjectIn, ProjectOut, ResetIn, ServerOut, ServerSettings, SmtpOut, SmtpSettings, SmtpTestIn,
                       UserCreate, UserOut, UserUpdate)
 
@@ -31,47 +32,34 @@ def _get(db: Session, model, obj_id: int):
     return obj
 
 
+def _alert_options(db: Session) -> list[AlertOption]:
+    """Ways a user of this tenant can get alerts: email plus the tenant's active channels."""
+    channels = db.scalars(select(NotificationChannel).where(NotificationChannel.active.is_(True))
+                          .order_by(NotificationChannel.name)).all()
+    return [AlertOption(id=ALERT_EMAIL, name="Email")] + [AlertOption(id=c.id, name=c.name) for c in channels]
+
+
+def _alert_channels(db: Session, picked: list[int]) -> list[int] | None:
+    """None when everything is picked, so channels added later are included too."""
+    ids = [o.id for o in _alert_options(db)]
+    return None if set(ids) <= set(picked) else [i for i in ids if i in picked]
+
+
 def _me(db: Session, user: Principal) -> MeOut:
     """db is the tenant being worked on; the account itself lives in the user's home tenant."""
     with tenancy.session_for(user.tenant) as home:
         row = home.get(User, user.id) if user.id else None
         name, email = (row.name, row.email) if row else ("", None)
+        picked = row.alert_channels if row else None
+        options = _alert_options(home)
     return MeOut(id=user.id, username=user.username, role=user.role, name=name, email=email,
-                 must_change_password=user.must_change_password,
+                 must_change_password=user.must_change_password, alert_channels=picked, alert_options=options,
                  refresh_sec=get_setting(db, "general")["refresh_sec"],
                  tenant=user.tenant, tenant_name=tenancy.name(user.tenant),
                  active_tenant=user.active, active_tenant_name=tenancy.name(user.active))
 
 
 # ---------- sign in ----------
-
-# Published at https://www.cloudflare.com/ips/
-CLOUDFLARE = [ipaddress.ip_network(n) for n in (
-    "173.245.48.0/20", "103.21.244.0/22", "103.22.200.0/22", "103.31.4.0/22", "141.101.64.0/18",
-    "108.162.192.0/18", "190.93.240.0/20", "188.114.96.0/20", "197.234.240.0/22", "198.41.128.0/17",
-    "162.158.0.0/15", "104.16.0.0/13", "104.24.0.0/14", "172.64.0.0/13", "131.0.72.0/22",
-    "2400:cb00::/32", "2606:4700::/32", "2803:f800::/32", "2405:b500::/32", "2405:8100::/32",
-    "2a06:98c0::/29", "2c0f:f248::/32",
-)]
-
-
-def _parse_ip(value: str):
-    try:
-        return ipaddress.ip_address(value.strip())
-    except ValueError:
-        return None
-
-
-def client_ip(request: Request) -> str:
-    """The visitor's address. Behind Cloudflare the peer is a Cloudflare server, so its
-    CF-Connecting-IP header is used, but only when the request really came from Cloudflare."""
-    peer = request.client.host if request.client else ""
-    addr = _parse_ip(peer)
-    if addr is not None and any(addr in net for net in CLOUDFLARE):
-        real = _parse_ip(request.headers.get("cf-connecting-ip", ""))
-        if real is not None:
-            return str(real)
-    return peer[:64]
 
 # Short label like "Chrome on Android"; the full user agent is not stored
 def describe_agent(ua: str) -> str:
@@ -209,6 +197,18 @@ def change_password(body: PasswordIn, user: Principal = Depends(current_user), d
     return _me(db, user)
 
 
+@auth.put("/alerts", response_model=MeOut)
+def my_alerts(body: AlertChannelsIn, user: Principal = Depends(current_user), db: Session = Depends(get_db)):
+    """How the signed-in user wants to get alerts (email, Telegram, ...)."""
+    with tenancy.session_for(user.tenant) as home:
+        row = home.get(User, user.id) if user.id else None
+        if row is None:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "This account has no settings")
+        row.alert_channels = _alert_channels(home, body.alert_channels)
+        home.commit()
+    return _me(db, user)
+
+
 # ---------- users ----------
 
 def _active_admins(db: Session, exclude: int) -> int:
@@ -247,7 +247,33 @@ def _check_role(db: Session, me: Principal, role: str, user: User | None) -> Non
 
 @admin.get("/users", response_model=list[UserOut], dependencies=[Depends(require_admin)])
 def list_users(db: Session = Depends(get_db)):
-    return db.scalars(select(User).order_by(User.username)).all()
+    projects = db.scalars(select(Project)).all()
+    return [_user_out(u, projects) for u in db.scalars(select(User).order_by(User.username)).all()]
+
+
+def _user_out(user: User, projects) -> UserOut:
+    out = UserOut.model_validate(user)
+    out.project_ids = [p.id for p in projects if user.id in (p.member_ids or [])]
+    out.monitor_ids = user.monitor_ids or []
+    return out
+
+
+def _set_access(db: Session, user: User, project_ids: list[int] | None, monitor_ids: list[int] | None) -> None:
+    """Projects the user is a member of, plus single services from other projects."""
+    if project_ids is not None:
+        wanted = set(project_ids)
+        projects = db.scalars(select(Project)).all()
+        if not wanted <= {p.id for p in projects}:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Unknown project")
+        for p in projects:
+            members = set(p.member_ids or [])
+            if (user.id in members) != (p.id in wanted):
+                p.member_ids = sorted(members ^ {user.id})
+    if monitor_ids is not None:
+        ids = sorted(set(monitor_ids))
+        if len(db.scalars(select(Monitor.id).where(Monitor.id.in_(ids))).all()) != len(ids):
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Unknown service")
+        user.monitor_ids = ids
 
 
 @admin.get("/logins", response_model=list[LoginEventOut])
@@ -259,15 +285,30 @@ def list_logins(limit: int = 20, db: Session = Depends(get_db), me: Principal = 
     return db.scalars(query.limit(max(1, min(limit, 500)))).all()
 
 
+@admin.get("/audit", response_model=list[AuditEventOut], dependencies=[Depends(require_admin)])
+def list_audit(limit: int = 50, q: str = "", db: Session = Depends(get_db)):
+    """Who created, changed, paused or deleted what, newest first."""
+    query = select(AuditEvent).order_by(AuditEvent.created_at.desc(), AuditEvent.id.desc())
+    if q.strip():
+        like = f"%{q.strip()}%"
+        query = query.where(AuditEvent.username.ilike(like) | AuditEvent.target.ilike(like) |
+                            AuditEvent.kind.ilike(like) | AuditEvent.action.ilike(like) | AuditEvent.ip.ilike(like))
+    return db.scalars(query.limit(max(1, min(limit, 1000)))).all()
+
+
 @admin.post("/users", response_model=UserOut, status_code=status.HTTP_201_CREATED)
 def create_user(body: UserCreate, db: Session = Depends(get_db), me: Principal = Depends(require_admin)):
     _unique_username(db, body.username, None)
     _check_role(db, me, body.role, None)
-    user = User(**body.model_dump(exclude={"password"}), password_hash=hash_password(body.password),
-                must_change_password=True)
+    user = User(**body.model_dump(exclude={"password", "project_ids", "monitor_ids", "alert_channels"}),
+                password_hash=hash_password(body.password), must_change_password=True)
+    if body.alert_channels is not None:
+        user.alert_channels = _alert_channels(db, body.alert_channels)
     db.add(user)
+    db.flush()
+    _set_access(db, user, body.project_ids, body.monitor_ids)
     db.commit()
-    return user
+    return _user_out(user, db.scalars(select(Project)).all())
 
 
 @admin.put("/users/{user_id}", response_model=UserOut)
@@ -280,15 +321,18 @@ def update_user(user_id: int, body: UserUpdate, db: Session = Depends(get_db), m
     losing_admin = user.role in ("admin", "superadmin") and (body.role != user.role or not body.active)
     if losing_admin and _active_admins(db, user.id) == 0:
         raise HTTPException(status.HTTP_409_CONFLICT, "At least one active admin is required")
-    for key, value in body.model_dump(exclude={"password"}).items():
+    for key, value in body.model_dump(exclude={"password", "project_ids", "monitor_ids", "alert_channels"}).items():
         setattr(user, key, value)
+    if body.alert_channels is not None:
+        user.alert_channels = _alert_channels(db, body.alert_channels)
+    _set_access(db, user, body.project_ids, body.monitor_ids)
     if body.password:
         user.password_hash = hash_password(body.password)
         user.must_change_password = not me.is_self(user.id)
     if body.password or not body.active:
         end_all_sessions(db, user.id)
     db.commit()
-    return user
+    return _user_out(user, db.scalars(select(Project)).all())
 
 
 @admin.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -339,7 +383,9 @@ def _check_channels(db: Session, channel_ids: list[int] | None) -> list[int] | N
 def list_projects(db: Session = Depends(get_db), user: Principal = Depends(require_user)):
     projects = db.scalars(select(Project).order_by(Project.name)).all()
     if not user.is_admin:
-        projects = [p for p in projects if user.id in (p.member_ids or [])]
+        visible = visible_monitor_ids(db, user) or set()
+        shown = set(db.scalars(select(Monitor.project_id).where(Monitor.id.in_(visible))).all())
+        projects = [p for p in projects if user.id in (p.member_ids or []) or p.id in shown]
     return [_project_out(db, p) for p in projects]
 
 
@@ -371,8 +417,13 @@ def update_project(project_id: int, body: ProjectIn, db: Session = Depends(get_d
 @admin.delete("/projects/{project_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_admin)])
 def delete_project(project_id: int, db: Session = Depends(get_db)):
     project = _get(db, Project, project_id)
-    for m in db.scalars(select(Monitor).where(Monitor.project_id == project.id)).all():
-        m.project_id = None
+    monitors = db.scalars(select(Monitor).where(Monitor.project_id == project.id)).all()
+    if monitors and project.name == DEFAULT_PROJECT:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Move the services of this project to another project first")
+    if monitors:
+        general = default_project(db)
+        for m in monitors:
+            m.project_id = general
     for channel in db.scalars(select(NotificationChannel)).all():
         if project.id in (channel.project_ids or []):
             channel.project_ids = [i for i in channel.project_ids if i != project.id]
