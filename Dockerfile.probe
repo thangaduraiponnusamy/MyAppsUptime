@@ -6,9 +6,10 @@ LABEL org.opencontainers.image.title="MyAppsUptime Probe"
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-# iputils-ping is needed for Ping monitors
+# iputils-ping is needed for Ping monitors; cap_net_raw lets the non-root user ping on hosts without ping_group_range
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends iputils-ping \
+    && apt-get install -y --no-install-recommends iputils-ping libcap2-bin \
+    && setcap cap_net_raw+ep /bin/ping \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /probe

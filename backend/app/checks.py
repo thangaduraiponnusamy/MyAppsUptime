@@ -90,12 +90,13 @@ async def check_ping(m: Monitor) -> CheckResult:
         args = ["ping", "-c", "1", "-W", str(m.timeout_sec), m.target]
     start = time.perf_counter()
     proc = await asyncio.create_subprocess_exec(
-        *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL
+        *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
     )
-    out, _ = await asyncio.wait_for(proc.communicate(), m.timeout_sec + 2)
+    out, err = await asyncio.wait_for(proc.communicate(), m.timeout_sec + 2)
     latency = _elapsed_ms(start)
     if proc.returncode != 0:
-        return CheckResult("down", None, "No ICMP reply")
+        detail = err.decode(errors="ignore").strip()
+        return CheckResult("down", None, f"No ICMP reply ({detail[:150]})" if detail else "No ICMP reply")
     match = re.search(r"time[=<]\s*([\d.]+)\s*ms", out.decode(errors="ignore"))
     if match:
         latency = float(match.group(1))
