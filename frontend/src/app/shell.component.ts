@@ -188,8 +188,12 @@ export class ShellComponent {
     if (this.menuOpen()) this.closeMenu(true);
   }
 
+  // Phones fire resize when the address bar shows or hides; only a width change moves the menu
+  private lastWidth = window.innerWidth;
   @HostListener('window:resize')
   onResize(): void {
+    if (window.innerWidth === this.lastWidth) return;
+    this.lastWidth = window.innerWidth;
     if (this.menuOpen()) this.closeMenu();
   }
 

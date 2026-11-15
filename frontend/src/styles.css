@@ -60,7 +60,7 @@ h2 { font-size: 16px; }
 .side {
   background: var(--surface); border-right: 1px solid var(--border);
   display: flex; flex-direction: column; padding: 16px 0; gap: 2px;
-  position: sticky; top: 0; height: 100vh; overflow-y: auto;
+  position: sticky; top: 0; height: 100vh; height: 100dvh; overflow-y: auto;
 }
 .side-head { display: flex; align-items: center; gap: 8px; padding: 0 12px 18px 16px; }
 .logo { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; }
@@ -790,7 +790,7 @@ input[type=file]::file-selector-button:hover { border-color: var(--primary); col
     border-bottom: 1px solid var(--border);
   }
   .side {
-    position: fixed; z-index: 50; inset: 0 auto 0 0; width: 280px; height: 100vh;
+    position: fixed; z-index: 50; inset: 0 auto 0 0; width: 280px; height: auto;
     transform: translateX(-105%); transition: transform .25s ease; box-shadow: 0 10px 40px rgba(0, 0, 0, .25);
   }
   .nav-open .side { transform: none; }
@@ -886,7 +886,7 @@ label.check input { width: auto; }
 .user-box { display: flex; flex-direction: column; align-items: stretch; gap: 8px; padding-top: 10px; margin-top: 4px; border-top: 1px solid var(--border); }
 .user-link {
   flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; padding: 6px; border-radius: 10px;
-  border: none; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer;
+  border: none; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; touch-action: manipulation;
 }
 .user-link:hover, .user-link.open { background: var(--surface-2); }
 .user-link .user-text { flex: 1; }
@@ -909,7 +909,7 @@ label.check input { width: auto; }
 .um-head .avatar { width: 32px; height: 32px; font-size: 12.5px; }
 .um-item {
   display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 10px; border: none; border-radius: 8px;
-  background: none; color: var(--text); font: inherit; font-size: 13.5px; font-weight: 500; text-align: left; cursor: pointer;
+  background: none; color: var(--text); font: inherit; font-size: 13.5px; font-weight: 500; text-align: left; cursor: pointer; touch-action: manipulation;
 }
 .um-item svg { color: var(--muted); }
 .um-item:hover, .um-item:focus-visible { background: var(--surface-2); outline: none; }

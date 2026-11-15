@@ -49,6 +49,8 @@ export class NetBgComponent implements AfterViewInit, OnDestroy {
   }
 
   private resize(): void {
+    // Phones fire resize when the address bar shows or hides; rebuilding then causes a visible stall
+    if (this.w && innerWidth === this.w && Math.abs(innerHeight - this.h) < 160) return;
     const c = this.canvas().nativeElement;
     const dpr = Math.min(devicePixelRatio || 1, 2);
     this.w = innerWidth;
