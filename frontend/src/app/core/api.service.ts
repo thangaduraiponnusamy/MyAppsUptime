@@ -110,6 +110,12 @@ export class ApiService {
 
 export function errorText(err: { error?: { detail?: unknown }; message?: string }): string {
   const detail = err.error?.detail;
-  if (Array.isArray(detail)) return detail.map((d: { msg?: string }) => d.msg).join(', ');
+  if (Array.isArray(detail)) {
+    return detail.map((d: { msg?: string; loc?: unknown[] }) => {
+      const msg = (d.msg ?? 'Invalid value').replace(/^Value error, /, '');
+      const field = d.loc?.length && d.loc[0] === 'body' && d.loc.length > 1 ? String(d.loc[d.loc.length - 1]).replace(/_/g, ' ') : '';
+      return field ? `${field[0].toUpperCase()}${field.slice(1)}: ${msg}` : msg;
+    }).join('. ');
+  }
   return typeof detail === 'string' ? detail : err.message ?? 'Request failed';
 }

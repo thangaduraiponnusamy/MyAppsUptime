@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ApiService, errorText } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
-import { LoginEvent } from '../../core/models';
+import { LoginEvent, ROLE_LABEL } from '../../core/models';
 import { PrefsService } from '../../core/prefs.service';
 
 @Component({
@@ -20,7 +20,7 @@ import { PrefsService } from '../../core/prefs.service';
         <dt>User name</dt><dd>{{ auth.user()?.username }}</dd>
         <dt>Name</dt><dd>{{ auth.user()?.name || '-' }}</dd>
         <dt>Email</dt><dd>{{ auth.user()?.email || '-' }}</dd>
-        <dt>Role</dt><dd class="cap">{{ auth.user()?.role }}</dd>
+        <dt>Role</dt><dd>{{ roleLabel[auth.user()?.role ?? ''] }}</dd>
       </dl>
     </section>
 
@@ -89,6 +89,7 @@ import { PrefsService } from '../../core/prefs.service';
 })
 export class SecuritySettingsComponent {
   auth = inject(AuthService);
+  readonly roleLabel = ROLE_LABEL;
   prefs = inject(PrefsService);
   private api = inject(ApiService);
   private router = inject(Router);

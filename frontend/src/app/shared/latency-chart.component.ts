@@ -23,6 +23,7 @@ const H = 200;
           <line [attr.x1]="p.x" [attr.x2]="p.x" y1="0" [attr.y2]="H" class="cross" />
         }
       </svg>
+      @if (beats().length < 2) { <div class="chart-wait">Collecting data. The chart appears after a few checks.</div> }
       @if (point(); as p) {
         @if (p.y !== null) { <span class="chart-dot" [style.left.%]="p.x / W * 100" [style.top.%]="p.y / H * 100"></span> }
         <div class="chart-tip" [style.left.%]="tipLeft(p.x)">

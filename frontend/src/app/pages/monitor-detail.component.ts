@@ -1,5 +1,6 @@
 import { DatePipe, DecimalPipe } from '@angular/common';
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, effect, inject, signal } from '@angular/core';
+import { Title } from '@angular/platform-browser';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { EMPTY, Subject, catchError, combineLatest, filter, first, forkJoin, merge, switchMap, timeout, timer } from 'rxjs';
@@ -58,7 +59,8 @@ const PAGE = 10;
         }
         <div style="margin-top: 14px"><app-heartbeat-bar [statuses]="statuses()" [details]="details()" [max]="72" [labels]="true" /></div>
         @if (m.fail_count && m.status !== 'down') {
-          <p class="muted">{{ m.fail_count }} failed check(s) in a row - alert after {{ m.down_after ?? 'the default number of' }} checks.</p>
+          <p class="muted">{{ m.fail_count }} failed {{ m.fail_count === 1 ? 'check' : 'checks' }} in a row.
+            {{ m.down_after ? 'An alert is sent after ' + m.down_after + '.' : 'An alert is sent at the limit set in General settings.' }}</p>
         }
       </section>
 
@@ -68,10 +70,10 @@ const PAGE = 10;
             <div class="stat"><div class="label">Response</div><div class="value">{{ fmtMs(m.last_latency_ms) }}</div></div>
             <div class="stat"><div class="label">Avg 24h</div><div class="value">{{ fmtMs(s.avg_latency_ms) }}</div></div>
             <div class="stat"><div class="label">P95 24h</div><div class="value">{{ fmtMs(s.p95_latency_ms) }}</div></div>
-            <div class="stat"><div class="label">Uptime 24h</div><div class="value up">{{ fmtPct(s.uptime_24h) }}</div></div>
-            <div class="stat"><div class="label">Uptime 7d</div><div class="value up">{{ fmtPct(s.uptime_7d) }}</div></div>
-            <div class="stat"><div class="label">Uptime 30d</div><div class="value up">{{ fmtPct(s.uptime_30d) }}</div></div>
-            <div class="stat"><div class="label">Incidents 30d</div><div class="value down">{{ s.incidents_30d }}</div></div>
+            <div class="stat"><div class="label">Uptime 24h</div><div class="value" [class.up]="s.uptime_24h !== null">{{ fmtPct(s.uptime_24h) }}</div></div>
+            <div class="stat"><div class="label">Uptime 7d</div><div class="value" [class.up]="s.uptime_7d !== null">{{ fmtPct(s.uptime_7d) }}</div></div>
+            <div class="stat"><div class="label">Uptime 30d</div><div class="value" [class.up]="s.uptime_30d !== null">{{ fmtPct(s.uptime_30d) }}</div></div>
+            <div class="stat"><div class="label">Incidents 30d</div><div class="value" [class.down]="s.incidents_30d > 0">{{ s.incidents_30d }}</div></div>
             <div class="stat"><div class="label">MTTR</div><div class="value">{{ s.mttr_min === null ? '--' : (s.mttr_min | number: '1.0-1') + ' min' }}</div></div>
             @if (sslDays() !== null) {
               <div class="stat"><div class="label">SSL expires</div>
@@ -90,7 +92,7 @@ const PAGE = 10;
               <div [style.width.%]="s.budget_remaining_pct"></div>
             </div>
             <div class="row" style="margin-top: 10px">
-              <div><b>{{ s.budget_remaining_pct }}%</b> <span class="muted">budget left</span></div>
+              <div><b>{{ s.budget_remaining_pct }}%</b>&nbsp;<span class="muted">budget left</span></div>
               <span class="spacer"></span>
               <span class="muted">{{ s.downtime_30d_min }} / {{ s.error_budget_min }} min used</span>
             </div>
@@ -119,7 +121,7 @@ const PAGE = 10;
                   <td class="muted">{{ e.message }}</td>
                 </tr>
               } @empty {
-                <tr><td colspan="3" class="muted">No events in this range.</td></tr>
+                <tr><td colspan="3" class="empty">No status changes in this range.</td></tr>
               }
             </tbody>
           </table>
@@ -203,6 +205,11 @@ export class MonitorDetailComponent {
   });
 
   constructor() {
+    const title = inject(Title);
+    effect(() => {
+      const name = this.monitor()?.name;
+      if (name) title.setTitle(`${name} - MyAppsUptime`);
+    });
     const tick = toObservable(this.auth.refreshMs).pipe(switchMap((ms) => merge(timer(0, ms), this.reload)));
     const range = computed(() => rangeQuery(this.hours(), this.custom()));
     combineLatest([this.route.paramMap, toObservable(range), tick])
@@ -290,7 +297,7 @@ export class MonitorDetailComponent {
       message: `You are about to delete the monitor "${m.name}".`,
       details: [
         'All its checks, incidents and uptime history are deleted.',
-        ...(kids ? [`${kids} monitor(s) that depend on it lose that link.`] : []),
+        ...(kids ? [`${kids} ${kids === 1 ? 'monitor depends' : 'monitors depend'} on it and will lose that link.`] : []),
       ],
       typeToConfirm: m.name,
       action: 'Delete monitor',

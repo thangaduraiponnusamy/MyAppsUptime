@@ -60,7 +60,7 @@ const IMAGE = 'ghcr.io/thangaduraiponnusamy/myappsuptime-probe:latest';
               </td>
             </tr>
           } @empty {
-            <tr><td colspan="6" class="muted">No private locations yet.</td></tr>
+            <tr><td colspan="6" class="empty">No private locations yet.</td></tr>
           }
         </tbody>
       </table>
@@ -124,7 +124,7 @@ export class LocationSettingsComponent {
     const ok = await this.confirm.ask({
       title: 'Delete private location?',
       message: `You are about to delete "${p.name}".`,
-      details: [`${p.monitors} monitor(s) move back to this server.`],
+      details: [`${p.monitors} ${p.monitors === 1 ? 'monitor moves' : 'monitors move'} back to this server.`],
       typeToConfirm: p.name,
       action: 'Delete location',
     });

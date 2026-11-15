@@ -1,10 +1,12 @@
 import { DatePipe, DecimalPipe } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
+import { Title } from '@angular/platform-browser';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute } from '@angular/router';
 import { EMPTY, catchError, map, of, switchMap, tap, timer } from 'rxjs';
 import { ApiService } from '../core/api.service';
 import { AuthService } from '../core/auth.service';
+import { ThemeService } from '../core/theme.service';
 import { PublicStatus } from '../core/models';
 import { BeatDetail, HeartbeatBarComponent } from '../shared/heartbeat-bar.component';
 import { IconComponent } from '../shared/icon.component';
@@ -29,8 +31,12 @@ const STATE_LABEL: Record<string, string> = {
     <div class="sp">
       <div class="sp-wrap">
         <div class="sp-top">
-          <app-logo [size]="32" [tagline]="false" />
+          <app-logo [size]="32" />
           <span class="sp-updated"><span class="live-dot"></span> Updated {{ updatedAt() | date: 'HH:mm:ss' }}</span>
+          <button class="btn sm" (click)="theme.toggle()" [title]="theme.theme() === 'light' ? 'Dark mode' : 'Light mode'"
+                  [attr.aria-label]="theme.theme() === 'light' ? 'Dark mode' : 'Light mode'">
+            <app-icon [name]="theme.theme() === 'light' ? 'moon' : 'sun'" [size]="16" />
+          </button>
         </div>
 
         @if (page(); as p) {
@@ -86,10 +92,10 @@ const STATE_LABEL: Record<string, string> = {
               <span><i style="background: var(--maintenance)"></i>Maintenance</span>
             </div>
             <span class="spacer"></span>
-            <span>Uptime = last 30 days &middot; refreshes every {{ refreshSec() }}s</span>
+            <span>Uptime: last 30 days &middot; refreshes every {{ refreshSec() }}s</span>
           </div>
         } @else if (notFound()) {
-          <div class="sp-banner down"><b>Status page not found</b></div>
+          <div class="sp-banner down"><b>Status page not found</b><span class="count">Check the link or ask the owner for the right address.</span></div>
         }
       </div>
     </div>
@@ -97,6 +103,7 @@ const STATE_LABEL: Record<string, string> = {
 })
 export class PublicStatusComponent {
   private api = inject(ApiService);
+  theme = inject(ThemeService);
   readonly bars = BARS;
   page = signal<PublicStatus | null>(null);
   notFound = signal(false);
@@ -118,6 +125,7 @@ export class PublicStatusComponent {
 
   constructor() {
     const slug = inject(ActivatedRoute).snapshot.paramMap.get('slug') ?? '';
+    const title = inject(Title);
     // Same refresh interval as the app (Settings > General)
     inject(AuthService)
       .options()
@@ -137,7 +145,10 @@ export class PublicStatusComponent {
         ),
         takeUntilDestroyed(),
       )
-      .subscribe((p) => this.page.set(p));
+      .subscribe((p) => {
+        this.page.set(p);
+        title.setTitle(`${p.title} - Status`);
+      });
   }
 
   label(status: string): string {

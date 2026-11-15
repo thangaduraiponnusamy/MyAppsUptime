@@ -26,7 +26,7 @@ const X0 = 60;
         }
         @for (n of layout().nodes; track n.key) {
           <g class="smap-node" [class.click]="!!n.m" [class.dim]="n.dim" [attr.transform]="'translate(' + n.x + ',' + n.y + ')'" (click)="open(n)">
-            <title>{{ n.m ? n.m.name + ' - ' + cls(n.m) + since(n.m) : 'All monitors' }}</title>
+            <title>{{ n.m ? n.m.name + ' - ' + cls(n.m) + since(n.m) : title() }}</title>
             @if (n.m) {
               <circle r="14" [class]="'halo ' + cls(n.m)" />
               <circle r="8" [class]="'core ' + cls(n.m)" />
@@ -35,7 +35,7 @@ const X0 = 60;
             } @else {
               <circle r="15" class="root" />
               <path d="M-6 -5h12M-6 0h12M-6 5h12" class="root-ico" />
-              <text x="0" y="32" text-anchor="middle" class="name">{{ title() }}</text>
+              <text x="0" y="34" text-anchor="middle" class="name root-name">{{ title() }}</text>
             }
           </g>
         }

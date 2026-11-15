@@ -63,8 +63,8 @@ import { Tenant, TenantCreate } from '../../core/models';
                 <b>{{ t.name }}</b> @if (t.slug === auth.user()?.active_tenant) { <span class="tag">current</span> }
                 <div class="muted small">{{ t.slug }} · {{ t.is_default ? 'Default' : t.active ? 'Active' : 'Disabled' }} · since {{ t.created_at | date: 'MMM d, y' }}</div>
               </td>
-              <td>{{ t.admins.join(', ') || '-' }}</td>
-              <td class="hide-sm">{{ t.users }} users · {{ t.teams }} projects · {{ t.monitors }} services
+              <td>{{ t.admins.join(', ') || '--' }}</td>
+              <td class="hide-sm">{{ count(t.users, 'user') }} · {{ count(t.teams, 'project') }} · {{ count(t.monitors, 'service') }}
                 @if (t.down) { <div class="small error">{{ t.down }} down</div> }
               </td>
               <td class="hide-sm"><code>{{ t.db_file }}</code><div class="muted small">{{ t.db_size_kb }} KB</div></td>
@@ -90,6 +90,10 @@ export class TenantSettingsComponent {
   error = signal('');
   resetPw = '';
   slugTouched = false;
+
+  count(n: number, word: string): string {
+    return `${n} ${word}${n === 1 ? '' : 's'}`;
+  }
 
   constructor() {
     this.load();
@@ -158,7 +162,7 @@ export class TenantSettingsComponent {
       title: 'Delete tenant?',
       message: `You are about to delete the tenant "${t.name}".`,
       details: [
-        `${t.users} users, ${t.teams} projects and ${t.monitors} services stop working.`,
+        `${this.count(t.users, 'user')}, ${this.count(t.teams, 'project')} and ${this.count(t.monitors, 'service')} stop working.`,
         'Nobody in this tenant can sign in any more.',
         `The database file ${t.db_file} is moved to tenants/deleted as a backup.`,
       ],

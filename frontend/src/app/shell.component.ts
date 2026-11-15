@@ -4,7 +4,7 @@ import { IsActiveMatchOptions, NavigationEnd, Router, RouterLink, RouterLinkActi
 import { filter } from 'rxjs';
 import { ApiService } from './core/api.service';
 import { AuthService } from './core/auth.service';
-import { Tenant } from './core/models';
+import { ROLE_LABEL, Tenant } from './core/models';
 import { MonitorStore } from './core/monitor-store.service';
 import { ThemeService } from './core/theme.service';
 import { IconComponent } from './shared/icon.component';
@@ -73,7 +73,7 @@ import { LogoComponent } from './shared/logo.component';
           <div class="user-box">
             <a routerLink="/settings/security" class="user-link" [title]="auth.user()?.username ?? ''">
               <span class="avatar">{{ initials() }}</span>
-              <span class="label user-text"><b>{{ auth.user()?.name || auth.user()?.username }}</b><small class="cap">{{ roleLabel() }}</small></span>
+              <span class="label user-text"><b>{{ auth.user()?.name || auth.user()?.username }}</b><small>{{ roleLabel() }}</small></span>
             </a>
             <button class="btn signout" (click)="logout()" title="Sign out"><app-icon name="logout" [size]="16" /> <span class="label">Sign out</span></button>
           </div>
@@ -114,7 +114,12 @@ export class ShellComponent {
     return words.slice(0, 2).map((w) => w[0].toUpperCase()).join('');
   });
 
-  roleLabel = computed(() => (this.auth.user()?.role === 'superadmin' ? 'Super admin' : this.auth.user()?.role ?? ''));
+  // Default accounts are named after their role; show the user name instead of repeating it
+  roleLabel = computed(() => {
+    const u = this.auth.user();
+    const role = ROLE_LABEL[u?.role ?? ''] ?? '';
+    return u?.name?.toLowerCase() === role.toLowerCase() ? '@' + u.username : role;
+  });
   tenants = signal<Tenant[]>([]);
 
   logout(): void {

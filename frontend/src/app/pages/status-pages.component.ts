@@ -11,9 +11,14 @@ import { MonitorStore } from '../core/monitor-store.service';
   standalone: true,
   imports: [ReactiveFormsModule, RouterLink],
   template: `
+    <div class="page-head">
+      <div>
+        <h1>Status pages</h1>
+        <div class="sub">Public, read-only pages you can share with users. No login needed.</div>
+      </div>
+    </div>
     <section class="card">
-      <h1>Status pages</h1>
-      <p class="muted">Public, read-only pages you can share with users. No login needed.</p>
+      <h2>{{ editId() ? 'Edit status page' : 'New status page' }}</h2>
       <form [formGroup]="form" (ngSubmit)="save()" class="form-grid">
         <label>Title <input formControlName="title" placeholder="Platform Status" /></label>
         <label>Slug (URL) <input formControlName="slug" placeholder="platform" /></label>
@@ -29,10 +34,13 @@ import { MonitorStore } from '../core/monitor-store.service';
             @if (logo()) { <button type="button" class="btn sm" (click)="logo.set(null)">Remove</button> }
           </div>
         </label>
-        <div class="full check-list">
-          @for (m of store.monitors(); track m.id) {
-            <label><input type="checkbox" [checked]="selected().has(m.id)" (change)="toggle(m.id)" /> {{ m.name }}</label>
-          }
+        <div class="full">
+          <div class="muted">Monitors (select at least one)</div>
+          <div class="check-list">
+            @for (m of store.monitors(); track m.id) {
+              <label><input type="checkbox" [checked]="selected().has(m.id)" (change)="toggle(m.id)" /> {{ m.name }}</label>
+            }
+          </div>
         </div>
         @if (error()) { <p class="error full">{{ error() }}</p> }
         <div class="full row">
@@ -50,7 +58,7 @@ import { MonitorStore } from '../core/monitor-store.service';
             <tr>
               <td>{{ p.title }}</td>
               <td><a [routerLink]="['/status', p.slug]" target="_blank">/status/{{ p.slug }}</a></td>
-              <td>{{ p.domain || '-' }}</td>
+              <td>{{ p.domain || '--' }}</td>
               <td>{{ p.monitor_ids.length }}</td>
               <td class="row">
                 <button class="btn sm" (click)="edit(p)">Edit</button>
@@ -58,7 +66,7 @@ import { MonitorStore } from '../core/monitor-store.service';
               </td>
             </tr>
           } @empty {
-            <tr><td colspan="5" class="muted">No status pages yet.</td></tr>
+            <tr><td colspan="5" class="empty">No status pages yet.</td></tr>
           }
         </tbody>
       </table>

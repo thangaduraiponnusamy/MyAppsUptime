@@ -3,9 +3,9 @@ export type MonitorType = 'http' | 'keyword' | 'json' | 'tcp' | 'ping' | 'dns' |
 export type ChannelType = 'webhook' | 'slack' | 'teams' | 'telegram' | 'discord' | 'googlechat' | 'ntfy' | 'email';
 
 export const MONITOR_TYPES: { value: MonitorType; label: string }[] = [
-  { value: 'http', label: 'HTTP(s)' },
-  { value: 'keyword', label: 'HTTP(s) - Keyword' },
-  { value: 'json', label: 'HTTP(s) - JSON assertion' },
+  { value: 'http', label: 'HTTP(S)' },
+  { value: 'keyword', label: 'HTTP(S) - Keyword' },
+  { value: 'json', label: 'HTTP(S) - JSON assertion' },
   { value: 'tcp', label: 'TCP Port' },
   { value: 'ping', label: 'Ping (ICMP)' },
   { value: 'dns', label: 'DNS' },
@@ -117,6 +117,7 @@ export interface Channel {
 }
 
 export type Role = 'superadmin' | 'admin' | 'member';
+export const ROLE_LABEL: Record<string, string> = { superadmin: 'Super admin', admin: 'Admin', member: 'Member' };
 
 export interface Me {
   id: number;

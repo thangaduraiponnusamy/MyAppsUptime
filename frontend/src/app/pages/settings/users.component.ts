@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { ApiService, errorText } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
 import { ConfirmService } from '../../core/confirm.service';
-import { User } from '../../core/models';
+import { ROLE_LABEL, User } from '../../core/models';
 
 @Component({
   selector: 'app-settings-users',
@@ -69,7 +69,7 @@ import { User } from '../../core/models';
           @for (u of users(); track u.id) {
             <tr [class.muted]="!u.active">
               <td><b>{{ u.username }}</b> @if (u.name) { <div class="muted small">{{ u.name }}</div> }</td>
-              <td class="cap">{{ u.role === 'superadmin' ? 'Super admin' : u.role }}</td>
+              <td>{{ roleLabel[u.role] }}</td>
               <td class="hide-sm">{{ u.email || '-' }}</td>
               <td class="hide-sm">{{ u.last_login_at ? (u.last_login_at | date: 'MMM d, y, HH:mm') : 'Never' }}</td>
               <td class="hide-sm">
@@ -94,6 +94,7 @@ export class UserSettingsComponent {
   private api = inject(ApiService);
   auth = inject(AuthService);
   private confirm = inject(ConfirmService);
+  readonly roleLabel = ROLE_LABEL;
   users = signal<User[]>([]);
   editing = signal<User | null>(null);
   resetting = signal<{ user: User; password: string } | null>(null);

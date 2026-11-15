@@ -4,11 +4,11 @@ import { AuthService } from '../core/auth.service';
 import { IconComponent } from '../shared/icon.component';
 
 export const SETTINGS_SECTIONS = [
-  { path: 'tenants', label: 'Tenants', icon: 'globe', admin: true, super: true },
   { path: 'general', label: 'General', icon: 'sliders', admin: false },
   { path: 'notifications', label: 'Notifications', icon: 'bell', admin: true },
   { path: 'projects', label: 'Projects', icon: 'folder', admin: true },
   { path: 'users', label: 'Users', icon: 'users', admin: true },
+  { path: 'tenants', label: 'Tenants', icon: 'globe', admin: true, super: true },
   { path: 'locations', label: 'Private locations', icon: 'network', admin: true },
   { path: 'security', label: 'Security', icon: 'shield', admin: false },
   { path: 'backup', label: 'Backup', icon: 'database', admin: true },

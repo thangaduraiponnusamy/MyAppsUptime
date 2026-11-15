@@ -11,7 +11,7 @@ import { LogoComponent } from './logo.component';
   template: `
     <div class="auth-page">
       <aside class="auth-brand">
-        <app-logo [size]="44" [tagline]="false" />
+        <app-logo [size]="44" />
         <div class="auth-pitch">
           <h1>Know the moment<br />something goes down.</h1>
           <p>One place to watch your apps, sites and devices, grouped by project, with alerts to the right people.</p>
@@ -25,7 +25,7 @@ import { LogoComponent } from './logo.component';
       </aside>
       <main class="auth-main">
         <div class="auth-card">
-          <div class="auth-logo-sm"><app-logo [size]="36" [tagline]="false" /></div>
+          <div class="auth-logo-sm"><app-logo [size]="36" /></div>
           <h2>{{ heading() }}</h2>
           @if (sub()) { <p class="muted">{{ sub() }}</p> }
           <ng-content />

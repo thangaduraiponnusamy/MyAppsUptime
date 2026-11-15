@@ -42,9 +42,13 @@ const PAGE = 25;
         <div class="sb-side">
           <div class="card-head">
             <span class="head-ico tone-ocean"><app-icon name="server" [size]="16" /></span>
-            <div class="grow"><h2>Status</h2><div class="sub">{{ scoped().length }} monitors &middot; current state</div></div>
+            <div class="grow"><h2>Status</h2><div class="sub">{{ scoped().length }} {{ scoped().length === 1 ? 'monitor' : 'monitors' }} &middot; current state</div></div>
             @if (attention().length) {
               <span class="sb-badge bad">{{ attention().length }} need attention</span>
+            } @else if (!scoped().length) {
+              <span class="sb-badge">No monitors</span>
+            } @else if (pendingCount()) {
+              <span class="sb-badge">Checking...</span>
             } @else {
               <span class="sb-badge ok">All healthy</span>
             }
@@ -67,7 +71,7 @@ const PAGE = 25;
                 }
               </svg>
               <span class="sb-center">
-                <b>{{ upPct() }}<i>%</i></b>
+                <b>@if (scoped().length) { {{ upPct() }}<i>%</i> } @else { -- }</b>
                 <small>Operational</small>
                 <em>{{ statusTiles()[0].count }} of {{ scoped().length }} up</em>
               </span>
@@ -133,12 +137,12 @@ const PAGE = 25;
       <div class="stat-grid three">
         <div class="stat-tile" [class.warn]="uptime() !== null && uptime()! < 99.9">
           <div class="st-label"><span class="st-ico emerald"><app-icon name="activity" [size]="15" /></span>Uptime</div>
-          <div class="st-value">{{ uptime() === null ? '--' : (uptime() | number: '1.2-2') }}<small>%</small></div>
+          <div class="st-value">@if (uptime() === null) { -- } @else { {{ uptime() | number: '1.2-2' }}<small>%</small> }</div>
           <div class="st-sub">{{ rangeText() }} &middot; target 99.9%</div>
         </div>
         <div class="stat-tile">
           <div class="st-label"><span class="st-ico indigo"><app-icon name="bolt" [size]="15" /></span>Avg response</div>
-          <div class="st-value">{{ avgLatency() === null ? '--' : (avgLatency() | number: '1.0-0') }}<small>ms</small></div>
+          <div class="st-value">@if (avgLatency() === null) { -- } @else { {{ avgLatency() | number: '1.0-0' }}<small>ms</small> }</div>
           <div class="st-sub">
             @if (latencyRange(); as lr) { {{ lr.min }}&ndash;{{ lr.max }} ms range } @else { {{ rangeText() }} }
           </div>
@@ -215,7 +219,11 @@ const PAGE = 25;
             }
           </div>
         } @empty {
-          <div class="empty-state">No monitors match. @if (auth.isAdmin()) { <a routerLink="/monitors/new" class="kpi-link">Create one</a> }</div>
+          @if (scoped().length) {
+            <div class="empty-state">No monitors match your filters.</div>
+          } @else {
+            <div class="empty-state">No monitors yet. @if (auth.isAdmin()) { <a routerLink="/monitors/new" class="kpi-link">Create one</a> }</div>
+          }
         }
       </div>
       @if (groups().length > limit()) {
@@ -299,7 +307,7 @@ export class DashboardComponent {
       : this.scoped().filter((m) => m.status === 'down').length);
   projectTitle = computed(() => {
     const p = this.project();
-    return p === null ? 'All monitors' : this.store.projectName(p) || 'Project';
+    return p === null ? 'Your watcher' : this.store.projectName(p) || 'Project';
   });
 
   private latencyValues = computed(() =>
@@ -325,6 +333,7 @@ export class DashboardComponent {
   });
   readonly circ = 2 * Math.PI * 50;
   upPct = computed(() => this.statusTiles()[0].pct);
+  pendingCount = computed(() => this.scoped().filter((m) => m.status === 'pending').length);
   arcs = computed(() => {
     const parts = this.statusTiles().filter((t) => t.count);
     const total = parts.reduce((s, t) => s + t.count, 0);

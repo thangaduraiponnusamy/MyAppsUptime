@@ -112,7 +112,7 @@ const emptyChannel = (): Channel => ({
               </td>
             </tr>
           } @empty {
-            <tr><td colspan="5" class="muted">No channels yet. Add Teams or email to get alerts.</td></tr>
+            <tr><td colspan="5" class="empty">No channels yet. Add Teams or email to get alerts.</td></tr>
           }
         </tbody>
       </table>

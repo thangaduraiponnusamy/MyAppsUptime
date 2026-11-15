@@ -11,9 +11,14 @@ import { MonitorStore } from '../core/monitor-store.service';
   standalone: true,
   imports: [DatePipe, ReactiveFormsModule],
   template: `
+    <div class="page-head">
+      <div>
+        <h1>Maintenance windows</h1>
+        <div class="sub">Monitors in a window show as maintenance. No alerts and no incidents are created.</div>
+      </div>
+    </div>
     <section class="card">
-      <h1>Maintenance windows</h1>
-      <p class="muted">Monitors in a window show as MAINTENANCE. No alerts and no incidents are created.</p>
+      <h2>Schedule a window</h2>
       <form [formGroup]="form" (ngSubmit)="save()" class="form-grid">
         <label class="full">Title <input formControlName="title" placeholder="Database upgrade" /></label>
         <label>Start <input type="datetime-local" formControlName="starts_at" /></label>
@@ -40,11 +45,11 @@ import { MonitorStore } from '../core/monitor-store.service';
               <td>{{ w.title }}</td>
               <td>{{ w.starts_at | date: 'MMM d, HH:mm' }}</td>
               <td>{{ w.ends_at | date: 'MMM d, HH:mm' }}</td>
-              <td class="muted">{{ w.monitor_ids.length ? w.monitor_ids.length + ' monitors' : 'All monitors' }}</td>
+              <td class="muted">{{ w.monitor_ids.length ? w.monitor_ids.length + (w.monitor_ids.length === 1 ? ' monitor' : ' monitors') : 'All monitors' }}</td>
               <td><button class="btn sm danger" (click)="remove(w)">Delete</button></td>
             </tr>
           } @empty {
-            <tr><td colspan="5" class="muted">No maintenance windows.</td></tr>
+            <tr><td colspan="5" class="empty">No maintenance windows yet.</td></tr>
           }
         </tbody>
       </table>
@@ -81,6 +86,10 @@ export class MaintenanceComponent {
 
   save(): void {
     const v = this.form.getRawValue();
+    if (new Date(v.ends_at) <= new Date(v.starts_at)) {
+      this.error.set('End must be after start.');
+      return;
+    }
     this.api
       .createMaintenance({
         title: v.title,

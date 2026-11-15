@@ -72,9 +72,9 @@ const URL_TYPES: MonitorType[] = ['http', 'keyword', 'json'];
         }
 
         <div class="section-title">Schedule</div>
-        <label>Interval (seconds) <input type="number" formControlName="interval_sec" /></label>
-        <label>Timeout (seconds) <input type="number" formControlName="timeout_sec" /></label>
-        <label>Retries before DOWN <input type="number" formControlName="retries" /></label>
+        <label>Interval (seconds, min 20) <input type="number" min="20" formControlName="interval_sec" /></label>
+        <label>Timeout (seconds, 1-60) <input type="number" min="1" max="60" formControlName="timeout_sec" /></label>
+        <label>Retries before DOWN (0-5) <input type="number" min="0" max="5" formControlName="retries" /></label>
         <label>Depends on (parent monitor)
           <select formControlName="parent_id">
             <option [ngValue]="null">None</option>

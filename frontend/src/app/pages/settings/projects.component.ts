@@ -90,7 +90,7 @@ import { MonitorStore } from '../../core/monitor-store.service';
               </td>
             </tr>
           } @empty {
-            <tr><td colspan="6" class="muted">No projects yet.</td></tr>
+            <tr><td colspan="6" class="empty">No projects yet.</td></tr>
           }
         </tbody>
       </table>
@@ -199,8 +199,8 @@ export class ProjectSettingsComponent {
       title: 'Delete project?',
       message: `You are about to delete the project "${p.name}".`,
       details: [
-        `${p.monitor_count ?? 0} monitor(s) are kept but become unassigned.`,
-        `${p.member_ids.length} member(s) lose access to these monitors and stop getting their alerts.`,
+        `${p.monitor_count ?? 0} ${(p.monitor_count ?? 0) === 1 ? 'monitor is' : 'monitors are'} kept but become unassigned.`,
+        `${p.member_ids.length} ${p.member_ids.length === 1 ? 'member loses' : 'members lose'} access to these monitors and stop getting their alerts.`,
       ],
       typeToConfirm: p.name,
       action: 'Delete project',

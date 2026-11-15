@@ -63,7 +63,7 @@ import { duration } from '../shared/time';
               </td>
             </tr>
           } @empty {
-            <tr><td colspan="6" class="muted">No incidents. All good.</td></tr>
+            <tr><td colspan="6" class="empty">No incidents in this period.</td></tr>
           }
         </tbody>
       </table>
