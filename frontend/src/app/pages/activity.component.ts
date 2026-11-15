@@ -60,7 +60,7 @@ function toRows(list: AlertEvent[]): Row[] {
         <div class="sub">Every alert notification that was sent &middot; {{ rangeText() }}</div>
       </div>
       <span class="spacer"></span>
-      <app-project-pick [project]="project()" (pick)="store.setProject($event)" />
+      <app-project-pick [picked]="store.projectIds()" (pick)="store.setProjects($event)" />
       <app-range-picker [hours]="hours()" [custom]="custom()" (pick)="pickHours($event)" (range)="applyCustom($event)" />
     </div>
 
@@ -153,11 +153,11 @@ export class ActivityComponent {
   filtered = computed(() => {
     const q = this.query().toLowerCase();
     const k = this.kind();
-    const p = this.project();
+    const s = this.store.scope();
     const of = this.store.projectOf();
     return this.events().filter(
       (e) => (k === 'all' || e.kind === k) && (!q || e.name.toLowerCase().includes(q))
-        && (p === null || (e.monitorId !== null && (of.get(e.monitorId) ?? 0) === p)),
+        && (s === null || (e.monitorId !== null && s.has(of.get(e.monitorId) ?? 0))),
     );
   });
   shown = computed(() => this.filtered().slice(0, this.limit()));

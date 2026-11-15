@@ -7,6 +7,18 @@ import { Monitor, Project, Summary } from './models';
 
 const PICK_KEY = 'pickedProject';
 
+// Older versions saved one project id per tenant
+function readPicked(): Record<string, number[]> {
+  let raw: Record<string, unknown> = {};
+  try { raw = JSON.parse(localStorage.getItem(PICK_KEY) ?? '{}') ?? {}; } catch { /* bad value: start empty */ }
+  const out: Record<string, number[]> = {};
+  for (const [tenant, v] of Object.entries(raw)) {
+    const ids = (Array.isArray(v) ? v : [v]).filter((id): id is number => typeof id === 'number' && id > 0);
+    if (ids.length) out[tenant] = ids;
+  }
+  return out;
+}
+
 @Injectable({ providedIn: 'root' })
 export class MonitorStore {
   private api = inject(ApiService);
@@ -17,13 +29,19 @@ export class MonitorStore {
   /** monitor id -> project id (0 = no project) */
   readonly projectOf = computed(() => new Map(this.monitors().map((m) => [m.id, m.project_id ?? 0])));
 
-  /** Picked project filter per tenant, kept until the user picks "All projects". */
-  private readonly picked = signal<Record<string, number>>(JSON.parse(localStorage.getItem(PICK_KEY) ?? '{}'));
+  /** Picked projects per tenant, kept until the user clears them (empty = all projects). */
+  private readonly picked = signal<Record<string, number[]>>(readPicked());
   private readonly loaded = signal(false);
-  readonly project = computed<number | null>(() => {
-    const id = this.picked()[this.auth.user()?.active_tenant ?? ''] ?? null;
-    return id !== null && this.loaded() && !this.projects().some((p) => p.id === id) ? null : id;
+  readonly projectIds = computed<number[]>(() => {
+    const ids = this.picked()[this.auth.user()?.active_tenant ?? ''] ?? [];
+    if (!this.loaded()) return ids;
+    const known = new Set(this.projects().map((p) => p.id));
+    return ids.filter((id) => known.has(id));
   });
+  /** Picked project ids, or null for all projects */
+  readonly scope = computed<Set<number> | null>(() => (this.projectIds().length ? new Set(this.projectIds()) : null));
+  /** The one picked project, or null when none or several are picked */
+  readonly project = computed<number | null>(() => (this.projectIds().length === 1 ? this.projectIds()[0] : null));
 
   /** Poll only while signed in, at the interval set in Settings > General. */
   private readonly pollMs = computed(() => {
@@ -49,14 +67,25 @@ export class MonitorStore {
   }
 
   setProject(id: number | null): void {
+    this.setProjects(id ? [id] : []);
+  }
+
+  setProjects(ids: Iterable<number>): void {
     const next = { ...this.picked() };
     const tenant = this.auth.user()?.active_tenant ?? '';
-    if (id) next[tenant] = id;
+    const list = [...new Set(ids)].filter((id) => id > 0);
+    if (list.length) next[tenant] = list;
     else delete next[tenant];
     this.setAll(next);
   }
 
-  private setAll(next: Record<string, number>): void {
+  /** True when a monitor of this project passes the project filter */
+  inScope(projectId: number | null | undefined): boolean {
+    const s = this.scope();
+    return s === null || s.has(projectId ?? 0);
+  }
+
+  private setAll(next: Record<string, number[]>): void {
     this.picked.set(next);
     localStorage.setItem(PICK_KEY, JSON.stringify(next));
   }

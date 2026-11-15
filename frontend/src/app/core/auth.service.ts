@@ -5,6 +5,8 @@ import { Me } from './models';
 
 const KEY = 'session';
 const TENANT_KEY = 'tenant';
+// Status map style; cleared on sign-out so each sign-in starts with the default
+export const MAP_STYLE_KEY = 'mapStyle';
 
 export interface AuthOptions {
   version: string;
@@ -93,6 +95,7 @@ export class AuthService {
   clear(): void {
     localStorage.removeItem(KEY);
     localStorage.removeItem(TENANT_KEY);
+    localStorage.removeItem(MAP_STYLE_KEY);
     this.user.set(null);
   }
 }

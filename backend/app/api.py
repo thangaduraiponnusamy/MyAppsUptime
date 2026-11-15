@@ -127,12 +127,15 @@ def _project_for(db: Session, project_id: int | None) -> int:
     return project_id if project_id is not None else default_project(db)
 
 
-def _scope(db: Session, user: Principal, project_id: int | None = None) -> list[int] | None:
-    """Monitor ids the user may see (None = all), optionally narrowed to one project (0 = no project)."""
+def _scope(db: Session, user: Principal, project_id: list[int] | None = None) -> list[int] | None:
+    """Monitor ids the user may see (None = all), optionally narrowed to some projects (0 = no project)."""
     ids = visible_monitor_ids(db, user)
-    if project_id is None:
+    if not project_id:
         return None if ids is None else sorted(ids)
-    column = Monitor.project_id.is_(None) if project_id == 0 else Monitor.project_id == project_id
+    wanted = set(project_id)
+    column = Monitor.project_id.in_(wanted - {0})
+    if 0 in wanted:
+        column = column | Monitor.project_id.is_(None)
     in_project = set(db.scalars(select(Monitor.id).where(column)).all())
     return sorted(in_project if ids is None else ids & in_project)
 
@@ -151,7 +154,7 @@ def _monitor_is_public(db: Session, monitor_id: int) -> bool:
 # ---------- summary & monitors ----------
 
 @router.get("/summary", response_model=SummaryOut)
-def summary(project_id: int | None = None, db: Session = Depends(get_db), user: Principal = Depends(require_user)):
+def summary(project_id: list[int] | None = Query(None), db: Session = Depends(get_db), user: Principal = Depends(require_user)):
     ids = _scope(db, user, project_id)
     query = select(Monitor)
     open_query = select(Incident).where(Incident.resolved_at.is_(None))
@@ -180,7 +183,7 @@ def summary(project_id: int | None = None, db: Session = Depends(get_db), user: 
 
 
 @router.get("/monitors", response_model=list[MonitorOut])
-def list_monitors(tag: str | None = None, project_id: int | None = None, db: Session = Depends(get_db),
+def list_monitors(tag: str | None = None, project_id: list[int] | None = Query(None), db: Session = Depends(get_db),
                   user: Principal = Depends(require_user)):
     ids = _scope(db, user, project_id)
     query = select(Monitor).order_by(Monitor.name)
@@ -353,7 +356,7 @@ def dashboard(
     hours: int = Query(24, ge=1, le=24 * 90),
     start: datetime | None = None,
     end: datetime | None = None,
-    project_id: int | None = None,
+    project_id: list[int] | None = Query(None),
     db: Session = Depends(get_db),
     user: Principal = Depends(require_user),
 ):
@@ -422,7 +425,7 @@ def incidents(
     hours: int | None = Query(None, ge=1, le=24 * 3650),
     start: datetime | None = None,
     end: datetime | None = None,
-    project_id: int | None = None,
+    project_id: list[int] | None = Query(None),
     db: Session = Depends(get_db),
     user: Principal = Depends(require_user),
 ):
@@ -451,7 +454,7 @@ def alerts(
     hours: int | None = Query(None, ge=1, le=24 * 3650),
     start: datetime | None = None,
     end: datetime | None = None,
-    project_id: int | None = None,
+    project_id: list[int] | None = Query(None),
     db: Session = Depends(get_db),
     user: Principal = Depends(require_user),
 ):

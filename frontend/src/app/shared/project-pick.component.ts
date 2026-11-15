@@ -1,29 +1,32 @@
 import { Component, computed, inject, input, output } from '@angular/core';
 import { MonitorStore } from '../core/monitor-store.service';
 import { IconComponent } from './icon.component';
-import { Option } from './multi-select.component';
-import { SelectComponent } from './select.component';
+import { MultiSelectComponent, Option } from './multi-select.component';
 
-/** Project filter: null = all projects. */
+/** Project filter: nothing picked = all projects. */
 @Component({
   selector: 'app-project-pick',
   standalone: true,
-  imports: [IconComponent, SelectComponent],
+  imports: [IconComponent, MultiSelectComponent],
   template: `
     @if (store.projects().length) {
-      <div class="project-pick row" [class.active]="project() !== null" title="Show one project">
+      <div class="project-pick row" [class.active]="picked().length > 0" title="Show one or more projects">
         <app-icon name="folder" [size]="16" />
-        <app-select [bare]="true" label="Project" [options]="options()" [value]="project()" (valueChange)="pick.emit($event)" />
+        <app-multi-select placeholder="All projects" [options]="options()" [picked]="pickedSet()" (pickedChange)="emit($event)" />
       </div>
     }
   `,
 })
 export class ProjectPickComponent {
   store = inject(MonitorStore);
-  project = input<number | null>(null);
-  pick = output<number | null>();
-  options = computed<Option<number | null>[]>(() => [{ id: null, label: 'All projects' },
-    ...this.store.projects().map((p) => ({ id: p.id!, label: p.name }))]);
+  picked = input<number[]>([]);
+  pick = output<number[]>();
+  pickedSet = computed(() => new Set(this.picked()));
+  options = computed<Option<number>[]>(() => this.store.projects().map((p) => ({ id: p.id!, label: p.name })));
+
+  emit(ids: Set<number>): void {
+    this.pick.emit([...ids]);
+  }
 }
 
 export function parseProject(value: string | null): number | null {

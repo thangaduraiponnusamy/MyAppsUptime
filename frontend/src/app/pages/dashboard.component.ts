@@ -36,7 +36,7 @@ const PAGE = 25;
         <div class="sub">{{ greeting }} &middot; {{ todayText }}</div>
       </div>
       <span class="spacer"></span>
-      <app-project-pick [project]="project()" (pick)="pickProject($event === null ? '' : '' + $event)" />
+      <app-project-pick [picked]="store.projectIds()" (pick)="store.setProjects($event)" />
     </div>
 
     <section class="card panel status-board">
@@ -99,7 +99,7 @@ const PAGE = 25;
           </div>
           @if (scoped().length) {
             <app-status-map [monitors]="scoped()" [filter]="status()" [title]="projectTitle()"
-              [projects]="project() === null ? store.projects() : []" (pickProject)="store.setProject($event)" />
+              [projects]="project() === null ? mapProjects() : []" (pickProject)="store.setProject($event)" />
           } @else {
             <div class="empty-state">No monitors yet. @if (auth.isAdmin()) { <a routerLink="/monitors/new" class="kpi-link">Create one</a> }</div>
           }
@@ -292,22 +292,20 @@ export class DashboardComponent {
   uptime = computed(() => this.data()?.uptime ?? null);
   avgLatency = computed(() => this.data()?.avg_latency_ms ?? null);
   private rangeParams = computed(() => {
-    const p = this.project();
-    return p === null ? rangeQuery(this.hours(), this.custom()) : { ...rangeQuery(this.hours(), this.custom()), project_id: p };
+    const ids = this.store.projectIds();
+    return ids.length ? { ...rangeQuery(this.hours(), this.custom()), project_id: ids } : rangeQuery(this.hours(), this.custom());
   });
 
-  scoped = computed(() => {
-    const p = this.project();
-    const all = this.store.monitors();
-    return p === null ? all : all.filter((m) => (m.project_id ?? 0) === p);
-  });
+  scoped = computed(() => this.store.monitors().filter((m) => this.store.inScope(m.project_id)));
+  mapProjects = computed(() => this.store.projects().filter((p) => this.store.inScope(p.id)));
   openNow = computed(() =>
-    this.project() === null
+    this.store.scope() === null
       ? (this.store.summary()?.open_incidents ?? 0)
       : this.scoped().filter((m) => m.status === 'down').length);
   projectTitle = computed(() => {
-    const p = this.project();
-    return p === null ? 'Your watcher' : this.store.projectName(p) || 'Project';
+    const ids = this.store.projectIds();
+    if (!ids.length) return 'Your watcher';
+    return ids.length === 1 ? this.store.projectName(ids[0]) || 'Project' : `${ids.length} projects`;
   });
 
   private latencyValues = computed(() =>
@@ -472,10 +470,6 @@ export class DashboardComponent {
 
   filterBy(key: Filter): void {
     this.setParams({ status: key === 'all' || this.status() === key ? null : key });
-  }
-
-  pickProject(value: string): void {
-    this.store.setProject(value === '' ? null : Number(value));
   }
 
   shortSince(iso: string): string {

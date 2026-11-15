@@ -5,7 +5,7 @@ import {
   Probe, Project, PublicStatus, ServerSettings, SmtpSettings, Stats, StatusPage, Summary, Tenant, TenantCreate, User,
 } from './models';
 
-type Range = { hours?: number; start?: string; end?: string; project_id?: number };
+type Range = { hours?: number; start?: string; end?: string; project_id?: number[] };
 
 @Injectable({ providedIn: 'root' })
 export class ApiService {
@@ -14,7 +14,7 @@ export class ApiService {
 
   summary() { return this.http.get<Summary>(`${this.base}/summary`); }
   dashboard(range: Range) {
-    const params = Object.fromEntries(Object.entries(range).filter(([, v]) => v !== undefined)) as Record<string, string | number>;
+    const params = Object.fromEntries(Object.entries(range).filter(([, v]) => v !== undefined)) as Record<string, string | number | number[]>;
     return this.http.get<DashboardData>(`${this.base}/dashboard`, { params });
   }
 
@@ -35,7 +35,10 @@ export class ApiService {
   incidents(openOnly = false, limit: number | null = 100, range: Range = {}) {
     let params = new HttpParams().set('open_only', openOnly);
     if (limit) params = params.set('limit', limit);
-    for (const [k, v] of Object.entries(range)) if (v !== undefined) params = params.set(k, v);
+    for (const [k, v] of Object.entries(range)) {
+      if (Array.isArray(v)) v.forEach((x) => (params = params.append(k, x)));
+      else if (v !== undefined) params = params.set(k, v);
+    }
     return this.http.get<Incident[]>(`${this.base}/incidents`, { params });
   }
   acknowledge(id: number, note: string | null, publicNote: string | null) {

@@ -199,6 +199,7 @@ h2 { font-size: 16px; }
 .sb-side { padding-right: clamp(16px, 1.6vw, 24px); border-right: 1px solid var(--border); }
 .sb-map { padding-left: clamp(16px, 1.6vw, 24px); min-width: 0; display: flex; flex-direction: column; }
 .sb-map .smap { flex: 1; min-height: 220px; }
+.sb-map app-status-map { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .sb-badge { font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 999px; white-space: nowrap; background: var(--surface-2); color: var(--muted); }
 .sb-badge.bad { background: var(--down-soft); color: var(--down); }
 .sb-badge.ok { background: var(--up-soft); color: var(--up); }
@@ -294,12 +295,27 @@ a.evt:hover { background: var(--surface-2); }
 .smap { position: relative; overflow: auto; max-height: 480px; border: 1px solid var(--border); border-radius: 12px; background:
   radial-gradient(circle, color-mix(in srgb, var(--border) 70%, transparent) 1px, transparent 1px) 0 0 / 18px 18px, var(--surface); }
 .smap svg { display: block; }
+.smap { cursor: grab; display: flex; }
+.smap svg { margin: 0 auto auto 0; flex: none; }
+.smap.circle svg { margin: auto; }
+.smap.dragging { cursor: grabbing; user-select: none; }
+.smap-bar { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.smap-style { width: 120px; }
+.smap-style .ms-box { padding: 5px 10px; font-size: 12.5px; min-height: 0; }
+.smap-zoom { display: inline-flex; }
+.smap-zoom .btn { border-radius: 0; margin-left: -1px; min-width: 32px; justify-content: center; }
+.smap-zoom .btn:first-child { border-radius: 8px 0 0 8px; margin-left: 0; }
+.smap-zoom .btn:last-child { border-radius: 0 8px 8px 0; }
+.smap-zoom .pct { min-width: 56px; font-variant-numeric: tabular-nums; }
+app-status-map:fullscreen { display: flex; flex-direction: column; padding: 16px; background: var(--bg, var(--surface)); }
+app-status-map:fullscreen .smap { flex: 1; max-height: none; }
 .smap-empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 13px; pointer-events: none; }
 .smap-link { fill: none; stroke: var(--border); stroke-width: 1.6; }
 .smap-link.up { stroke: color-mix(in srgb, var(--up) 45%, var(--border)); }
 .smap-link.down { stroke: var(--down); }
 .smap-link.blocked { stroke: #ea580c; stroke-dasharray: 5 4; }
 .smap-link.degraded { stroke: var(--degraded); }
+.smap-link.ring { stroke-dasharray: 4 6; }
 .smap-node.click { cursor: pointer; }
 .smap-node.click:hover .name { fill: var(--primary); }
 .smap-node.dim { opacity: .35; }
@@ -996,6 +1012,11 @@ app-select.bare .ms-box { border: none; background: transparent; padding: 6px 4p
 .tenant-box app-select { flex: 1; }
 .tenant-box app-select .ms-box { padding: 2px 4px; font-size: 13px; font-weight: 600; }
 .project-pick app-select { min-width: 160px; }
+.project-pick app-multi-select { min-width: 160px; max-width: 300px; }
+.project-pick app-multi-select .ms-box { border: none; background: transparent; padding: 6px 4px; font-weight: 700; }
+.project-pick .ms-text.muted { color: var(--text); }
+.project-pick.active app-multi-select .ms-box, .project-pick.active app-multi-select .ms-caret { color: #fff; }
+.project-pick.active .ms-count { background: #fff; color: var(--primary); }
 .project-pick .ms-panel { left: auto; right: 0; }
 @media (max-width: 720px) { .project-pick .ms-panel { left: 0; right: auto; width: min(300px, calc(100vw - 28px)); } }
 .project-pick.active app-select .ms-box, .project-pick.active app-select .ms-caret { color: #fff; }

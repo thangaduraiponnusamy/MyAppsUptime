@@ -20,7 +20,7 @@ import { duration } from '../shared/time';
         <div class="sub">Opened automatically on DOWN, closed on recovery. Acknowledge to tell the team you are on it.</div>
       </div>
       <span class="spacer"></span>
-      <app-project-pick [project]="project()" (pick)="pickProject($event)" />
+      <app-project-pick [picked]="store.projectIds()" (pick)="store.setProjects($event)" />
       <div class="segmented">
         <button class="chip" [class.active]="!openOnly()" (click)="load(false)">All</button>
         <button class="chip" [class.active]="openOnly()" (click)="load(true)">Ongoing</button>
@@ -72,15 +72,15 @@ import { duration } from '../shared/time';
 })
 export class IncidentsComponent {
   private api = inject(ApiService);
-  private store = inject(MonitorStore);
+  store = inject(MonitorStore);
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   incidents = signal<Incident[]>([]);
   project = this.store.project;
   shown = computed(() => {
-    const p = this.project();
+    const s = this.store.scope();
     const of = this.store.projectOf();
-    return p === null ? this.incidents() : this.incidents().filter((i) => (of.get(i.monitor_id) ?? 0) === p);
+    return s === null ? this.incidents() : this.incidents().filter((i) => s.has(of.get(i.monitor_id) ?? 0));
   });
   openOnly = signal(false);
   editing = signal<number | null>(null);
@@ -97,10 +97,6 @@ export class IncidentsComponent {
       }
     });
     this.load(false);
-  }
-
-  pickProject(project: number | null): void {
-    this.store.setProject(project);
   }
 
   load(openOnly: boolean): void {

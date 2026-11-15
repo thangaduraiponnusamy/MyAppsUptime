@@ -290,6 +290,18 @@ def test_every_monitor_has_a_project(client, su):
     assert client.delete(f"/api/projects/{projects['General']}", headers=su).status_code == 409
 
 
+def test_filter_by_several_projects(client, su):
+    a = client.post("/api/projects", json={"name": "Multi A"}, headers=su).json()["id"]
+    b = client.post("/api/projects", json={"name": "Multi B"}, headers=su).json()["id"]
+    c = client.post("/api/projects", json={"name": "Multi C"}, headers=su).json()["id"]
+    ma, mb, mc = (make_monitor(client, su, name=f"multi-{x}", project_id=p)["id"] for x, p in (("a", a), ("b", b), ("c", c)))
+    seen = {m["id"] for m in client.get(f"/api/monitors?project_id={a}&project_id={b}", headers=su).json()}
+    assert ma in seen and mb in seen and mc not in seen
+    one = {m["id"] for m in client.get(f"/api/monitors?project_id={c}", headers=su).json()}
+    assert one == {mc}
+    assert client.get(f"/api/dashboard?project_id={a}&project_id={b}", headers=su).status_code == 200
+
+
 def test_user_access_to_projects_and_single_services(client, su):
     shop = client.post("/api/projects", json={"name": "Shop", "email_members": True}, headers=su).json()
     ops = client.post("/api/projects", json={"name": "Ops", "email_members": True}, headers=su).json()
