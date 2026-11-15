@@ -35,6 +35,7 @@ const PATHS: Record<string, string> = {
   child: 'M15 10l5 5-5 5M4 4v7a4 4 0 0 0 4 4h12',
   'chevrons-left': 'M11 17l-5-5 5-5M18 17l-5-5 5-5',
   'chevrons-right': 'M6 17l5-5-5-5M13 17l5-5-5-5',
+  'chevrons-up-down': 'M7 15l5 5 5-5M7 9l5-5 5 5',
   network: rr(16, 16, 6, 6, 1) + rr(2, 16, 6, 6, 1) + rr(9, 2, 6, 6, 1) + 'M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3M12 12V8',
   'check-circle': 'M12 2a10 10 0 1 0 0 20 10 10 0 1 0 0-20zM8 12l3 3 5-6',
   'x-circle': 'M12 2a10 10 0 1 0 0 20 10 10 0 1 0 0-20zM15 9l-6 6M9 9l6 6',
