@@ -1,7 +1,8 @@
 import { DatePipe } from '@angular/common';
-import { Component, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ApiService, errorText } from '../../core/api.service';
+import { AuthService } from '../../core/auth.service';
 import { ConfirmService } from '../../core/confirm.service';
 import { Probe } from '../../core/models';
 import { MonitorStore } from '../../core/monitor-store.service';
@@ -43,6 +44,17 @@ const IMAGE = 'ghcr.io/thangaduraiponnusamy/myappsuptime-probe:latest';
         </div>
       }
 
+      @if (hasOutdated()) {
+        <div class="s-box">
+          <p><b>A newer probe image is available</b> (version {{ serverVersion() }}). On each outdated machine run:</p>
+          <div class="code-box mono" style="white-space: pre-wrap">{{ updateCmd }}
+            <span class="spacer"></span>
+            <button class="btn sm" (click)="copy(updateCmd)"><app-icon name="copy" [size]="14" /></button>
+          </div>
+          <p class="muted small">Then start it again with the same docker run command and token. Lost the token? Use "New token".</p>
+        </div>
+      }
+
       <table>
         <thead><tr><th>Location</th><th>Status</th><th>Monitors</th><th class="hide-sm">Last contact</th><th class="hide-sm">Version</th><th></th></tr></thead>
         <tbody>
@@ -53,7 +65,8 @@ const IMAGE = 'ghcr.io/thangaduraiponnusamy/myappsuptime-probe:latest';
                 {{ p.online ? 'online' : p.last_seen_at ? 'offline' : 'waiting' }}</span></td>
               <td>{{ p.monitors }}</td>
               <td class="hide-sm">{{ p.last_seen_at ? (p.last_seen_at | date: 'MMM d, HH:mm:ss') : 'never' }}</td>
-              <td class="hide-sm">{{ p.version || '-' }}</td>
+              <td class="hide-sm">{{ p.version || '-' }}
+                @if (outdated(p)) { <span class="pill degraded" [title]="'Latest is ' + serverVersion()">update available</span> }</td>
               <td class="row nowrap">
                 <button class="btn sm" (click)="newToken(p)">New token</button>
                 <button class="btn sm danger" (click)="remove(p)">Delete</button>
@@ -76,9 +89,23 @@ export class LocationSettingsComponent {
   error = signal('');
   notice = signal('');
   name = '';
+  serverVersion = signal('');
+  readonly updateCmd = `docker pull ${IMAGE}\ndocker rm -f myappsuptime-probe`;
+  hasOutdated = computed(() => this.probes().some((p) => this.outdated(p)));
 
   constructor() {
     this.load();
+    inject(AuthService).options().subscribe((o) => this.serverVersion.set(o.version));
+  }
+
+  outdated(p: Probe): boolean {
+    const s = this.serverVersion();
+    if (!p.version || !s) return false;
+    const a = p.version.split('.').map(Number), b = s.split('.').map(Number);
+    for (let i = 0; i < 3; i++) {
+      if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) < (b[i] || 0);
+    }
+    return false;
   }
 
   load(): void {
