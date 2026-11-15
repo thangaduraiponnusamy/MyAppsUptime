@@ -308,6 +308,7 @@ Screenshots: [ui-overview.png](preview/ui-overview.png), [ui-overview-dark.png](
 | `probe/` | Probe for private locations |
 | `e2e/` | Browser tests (Playwright) |
 | `docs/USAGE.md` | How to use the app |
+| `docs/architecture.drawio` | Architecture diagram (open in draw.io) |
 | `Dockerfile` | Builds UI + API into one image |
 | `Dockerfile.probe` | Builds the probe image |
 

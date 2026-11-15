@@ -1,0 +1,129 @@
+<mxfile host="65bd71144e">
+    <diagram id="arch" name="Architecture">
+        <mxGraphModel dx="1149" dy="1017" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1200" pageHeight="850" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="title" parent="1" style="text;html=1;fontSize=18;align=left;verticalAlign=middle;" value="&lt;b&gt;MyAppsUptime - architecture&lt;/b&gt;" vertex="1">
+                    <mxGeometry height="30" width="400" x="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="server" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=3;fillColor=#eef2ff;strokeColor=#6366f1;verticalAlign=top;fontStyle=1;" value="MyAppsUptime Server (Docker image: myappsuptime)" vertex="1">
+                    <mxGeometry height="420" width="520" x="300" y="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="ui" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6366f1;" value="Web UI (Angular)" vertex="1">
+                    <mxGeometry height="50" width="210" x="330" y="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="backup" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6366f1;" value="Daily backup (keep 7 days)" vertex="1">
+                    <mxGeometry height="50" width="210" x="580" y="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="api" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6366f1;" value="&lt;b&gt;API (FastAPI)&lt;/b&gt;&lt;br&gt;/api &amp;nbsp;·&amp;nbsp; /api/public (status, badges, push) &amp;nbsp;·&amp;nbsp; /api/probe/sync &amp;nbsp;·&amp;nbsp; /api/metrics" vertex="1">
+                    <mxGeometry height="60" width="460" x="330" y="160" as="geometry"/>
+                </mxCell>
+                <mxCell id="sched" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6366f1;" value="&lt;b&gt;Scheduler&lt;/b&gt;&lt;br&gt;runs checks, opens incidents" vertex="1">
+                    <mxGeometry height="60" width="210" x="330" y="250" as="geometry"/>
+                </mxCell>
+                <mxCell id="notifier" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6366f1;" value="&lt;b&gt;Notifier&lt;/b&gt;&lt;br&gt;sends alerts" vertex="1">
+                    <mxGeometry height="60" width="210" x="580" y="250" as="geometry"/>
+                </mxCell>
+                <mxCell id="db" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;size=10;fillColor=#fff7ed;strokeColor=#f59e0b;" value="&lt;b&gt;Data volume /data&lt;/b&gt;&lt;br&gt;SQLite (one file per team), secret.key, backups" vertex="1">
+                    <mxGeometry height="90" width="460" x="330" y="340" as="geometry"/>
+                </mxCell>
+                <mxCell id="users" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f1f5f9;strokeColor=#64748b;" value="Users (browser)" vertex="1">
+                    <mxGeometry height="50" width="180" x="40" y="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="public" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f1f5f9;strokeColor=#64748b;" value="Public visitors&lt;br&gt;(status page, badges)" vertex="1">
+                    <mxGeometry height="50" width="180" x="40" y="160" as="geometry"/>
+                </mxCell>
+                <mxCell id="cron" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f1f5f9;strokeColor=#64748b;" value="Cron jobs / scripts&lt;br&gt;(Push monitors)" vertex="1">
+                    <mxGeometry height="50" width="180" x="40" y="240" as="geometry"/>
+                </mxCell>
+                <mxCell id="prom" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f1f5f9;strokeColor=#64748b;" value="Prometheus" vertex="1">
+                    <mxGeometry height="50" width="180" x="40" y="320" as="geometry"/>
+                </mxCell>
+                <mxCell id="docker" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ecfeff;strokeColor=#0891b2;" value="Docker socket&lt;br&gt;(container monitors)" vertex="1">
+                    <mxGeometry height="50" width="250" x="900" y="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="targets" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ecfeff;strokeColor=#0891b2;" value="&lt;b&gt;Internet targets&lt;/b&gt;&lt;br&gt;HTTP, Keyword, JSON, TCP, Ping, DNS, SSL" vertex="1">
+                    <mxGeometry height="60" width="250" x="900" y="170" as="geometry"/>
+                </mxCell>
+                <mxCell id="channels" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef2f2;strokeColor=#dc2626;" value="&lt;b&gt;Alert channels&lt;/b&gt;&lt;br&gt;Teams, Email, Slack, Telegram, Discord, Google Chat, ntfy, Webhook" vertex="1">
+                    <mxGeometry height="70" width="250" x="900" y="250" as="geometry"/>
+                </mxCell>
+                <mxCell id="home" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=3;fillColor=#f0fdf4;strokeColor=#16a34a;verticalAlign=top;fontStyle=1;" value="Private network - private location &quot;Office-Lab&quot; (example, no inbound ports needed)" vertex="1">
+                    <mxGeometry height="240" width="850" x="300" y="540" as="geometry"/>
+                </mxCell>
+                <mxCell id="probe" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#16a34a;" value="&lt;b&gt;Probe container&lt;/b&gt;&lt;br&gt;(myappsuptime-probe)&lt;br&gt;runs on Lab server" vertex="1">
+                    <mxGeometry height="70" width="220" x="340" y="610" as="geometry"/>
+                </mxCell>
+                <mxCell id="router" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#16a34a;" value="Router 10.0.0.1&lt;br&gt;(Ping / TCP)" vertex="1">
+                    <mxGeometry height="50" width="200" x="640" y="590" as="geometry"/>
+                </mxCell>
+                <mxCell id="nas" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#16a34a;" value="Lab server web UI 10.0.0.20&lt;br&gt;(HTTP / TCP)" vertex="1">
+                    <mxGeometry height="50" width="200" x="640" y="690" as="geometry"/>
+                </mxCell>
+                <mxCell id="task" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#16a34a;" value="Scheduled task on Lab server&lt;br&gt;curl push every 1-5 min" vertex="1">
+                    <mxGeometry height="60" width="210" x="910" y="640" as="geometry"/>
+                </mxCell>
+                <mxCell id="e1" edge="1" parent="1" source="users" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" target="ui" value="HTTPS">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e2" edge="1" parent="1" source="ui" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" target="api">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e3" edge="1" parent="1" source="public" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" target="api" value="HTTPS">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e4" edge="1" parent="1" source="cron" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" target="api" value="push URL">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e5" edge="1" parent="1" source="prom" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" target="api" value="scrape">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e6" edge="1" parent="1" source="api" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" target="sched">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e7" edge="1" parent="1" source="sched" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" target="db">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e8" edge="1" parent="1" source="sched" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" target="notifier">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e9" edge="1" parent="1" source="backup" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" target="db">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e10" edge="1" parent="1" source="sched" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" target="targets" value="checks">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e11" edge="1" parent="1" source="sched" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" target="docker">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e12" edge="1" parent="1" source="notifier" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" target="channels" value="alerts">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e13" edge="1" parent="1" source="probe" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#16a34a;strokeWidth=2;exitX=0;exitY=0.5;entryX=0;entryY=0.75;" target="api" value="HTTPS outbound + token&lt;br&gt;get monitors / send results (every 10 s)">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="270" y="645"/>
+                            <mxPoint x="270" y="205"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e14" edge="1" parent="1" source="probe" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#16a34a;" target="router" value="ping / TCP">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e15" edge="1" parent="1" source="probe" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#16a34a;" target="nas" value="HTTP / TCP">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e16" edge="1" parent="1" source="task" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;strokeColor=#16a34a;exitX=0.5;exitY=0;entryX=1;entryY=0.5;" target="api" value="push heartbeat (HTTPS)&lt;br&gt;server alerts if it stops">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="1015" y="500"/>
+                            <mxPoint x="860" y="500"/>
+                            <mxPoint x="860" y="190"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>
