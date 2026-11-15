@@ -64,6 +64,51 @@ def test_down_only_after_n_failed_checks(client, su):
         assert db.query(Incident).filter_by(monitor_id=m["id"]).count() == 1
 
 
+def test_degraded_only_after_slow_checks_in_a_row(client, su):
+    m = make_monitor(client, su)
+
+    def check(latency):
+        asyncio.run(scheduler.record_result(tenancy.DEFAULT, m["id"], CheckResult("up", latency, "HTTP 200")))
+        return monitor(client, su, m["id"])["status"]
+
+    for i in range(25):
+        check(100.0 + i % 5)
+    assert check(1500.0) == "up"
+    assert check(100.0) == "up"
+    assert [check(1500.0) for _ in range(3)] == ["up", "up", "degraded"]
+    assert check(100.0) == "up"
+    sent = [a["status"] for a in client.get("/api/alerts?hours=1", headers=su).json() if a["monitor_id"] == m["id"]]
+    assert sent[:2] == ["up", "degraded"]
+
+
+def test_every_sent_alert_is_listed(client, su):
+    m = make_monitor(client, su, down_after=1)
+    record(m["id"], "up")
+    record(m["id"], "down", "refused")
+    record(m["id"], "down", "refused")  # no change: nothing sent
+    record(m["id"], "up")
+    rows = [a for a in client.get("/api/alerts", headers=su).json() if a["monitor_id"] == m["id"]]
+    assert [a["status"] for a in rows][:2] == ["up", "down"]
+    assert rows[1]["name"] == "site" and "refused" in rows[1]["message"] and rows[1]["sent_to"] is not None
+    team = client.post("/api/projects", json={"name": "Other team"}, headers=su).json()
+    assert all(a["monitor_id"] != m["id"] for a in
+               client.get(f"/api/alerts?project_id={team['id']}", headers=su).json())
+
+
+def test_client_ip_behind_cloudflare():
+    from starlette.requests import Request
+    from app.admin_api import client_ip
+
+    def req(peer, cf=None):
+        headers = [(b"cf-connecting-ip", cf.encode())] if cf else []
+        return Request({"type": "http", "client": (peer, 1234), "headers": headers})
+
+    assert client_ip(req("172.70.108.30", "122.172.81.116")) == "122.172.81.116"
+    assert client_ip(req("2606:4700::1", "2001:db8::5")) == "2001:db8::5"
+    assert client_ip(req("203.0.113.9", "1.2.3.4")) == "203.0.113.9"  # not Cloudflare: header ignored
+    assert client_ip(req("162.159.124.5", "bogus")) == "162.159.124.5"
+
+
 def test_general_default_for_failed_checks(client, su):
     general = client.get("/api/settings/general", headers=su).json()
     assert client.put("/api/settings/general", json={**general, "down_after_checks": 1}, headers=su).status_code == 200

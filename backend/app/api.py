@@ -13,10 +13,11 @@ from sqlalchemy.orm import Session
 from . import notifier, probes, tenancy
 from .auth import Principal, get_db, require_admin, require_user, visible_monitor_ids
 from .checks import CheckResult
-from .models import (Heartbeat, Incident, IncidentAck, MaintenanceWindow, Monitor, NotificationChannel, Probe, Project,
-                     StatusPage, aware, utcnow)
+from .models import (AlertEvent, Heartbeat, Incident, IncidentAck, MaintenanceWindow, Monitor, NotificationChannel,
+                     Probe, Project, StatusPage, aware, utcnow)
 from .scheduler import record_result, scheduler, tenant_config
-from .schemas import (AckIn, ChannelIn, ChannelOut, DashboardOut, DashboardPoint, ExportData, HeartbeatOut,
+from .schemas import (AckIn, AlertEventOut, ChannelIn, ChannelOut, DashboardOut, DashboardPoint, ExportData,
+                      HeartbeatOut,
                       IncidentOut, MaintenanceIn, MaintenanceOut, MonitorCreate, MonitorExport, MonitorOut,
                       ProjectExport, PublicIncident, PublicMonitor, PublicStatusOut,
                       StatsOut, StatusPageIn, StatusPageOut, SummaryOut)
@@ -424,6 +425,27 @@ def incidents(
         out.monitor_name = name
         result.append(out)
     return result
+
+
+@router.get("/alerts", response_model=list[AlertEventOut])
+def alerts(
+    limit: int = Query(2000, ge=1, le=10000),
+    hours: int | None = Query(None, ge=1, le=24 * 3650),
+    start: datetime | None = None,
+    end: datetime | None = None,
+    project_id: int | None = None,
+    db: Session = Depends(get_db),
+    user: Principal = Depends(require_user),
+):
+    """Every alert notification that was sent, newest first."""
+    query = select(AlertEvent).order_by(AlertEvent.created_at.desc(), AlertEvent.id.desc()).limit(limit)
+    ids = _scope(db, user, project_id)
+    if ids is not None:  # private location alerts have no monitor and are listed only without a filter
+        query = query.where(AlertEvent.monitor_id.in_(ids))
+    if hours or start or end:
+        since, until = _window(hours or 24, start, end)
+        query = query.where(AlertEvent.created_at >= since, AlertEvent.created_at <= until)
+    return db.scalars(query).all()
 
 
 @router.post("/incidents/{incident_id}/ack", response_model=IncidentOut)

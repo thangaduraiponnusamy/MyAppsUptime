@@ -105,6 +105,17 @@ export interface Incident {
   acks?: { by: string; note: string | null; created_at: string }[];
 }
 
+export interface AlertEvent {
+  id: number;
+  monitor_id: number | null;
+  name: string;
+  status: string;
+  message: string;
+  sent_to: string[] | null;
+  errors: string;
+  created_at: string;
+}
+
 export interface Channel {
   id?: number;
   name: string;

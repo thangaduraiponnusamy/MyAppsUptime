@@ -7,11 +7,11 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from . import notifier, tenancy
+from . import tenancy
 from .auth import bearer, get_db, require_admin, token_tenant
 from .checks import CheckResult
 from .models import Monitor, Probe, aware, utcnow
-from .scheduler import PROBE_OFFLINE, probe_alert, record_result
+from .scheduler import PROBE_OFFLINE, deliver, probe_alert, record_result
 from .schemas import ProbeCreated, ProbeIn, ProbeOut, ProbeSyncIn
 
 admin = APIRouter(prefix="/api/probes", dependencies=[Depends(require_admin)])
@@ -137,5 +137,5 @@ async def sync(body: ProbeSyncIn, authorization: str | None = Header(None)):
             await record_result(tenant, r.monitor_id,
                                 CheckResult(r.status, r.latency_ms, r.message, r.ssl_expires_at))
     if back_online:
-        await notifier.send(*back_online)
+        await deliver(tenant, None, *back_online)
     return {"name": name, "monitors": jobs, "run_now": sorted(_run_now.pop((tenant, probe_id), set()) & allowed)}

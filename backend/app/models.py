@@ -109,6 +109,20 @@ class IncidentAck(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class AlertEvent(Base):
+    """Every alert the server sent (down, up, degraded, expiry warnings, private locations)."""
+    __tablename__ = "alert_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    monitor_id: Mapped[int | None] = mapped_column(index=True)  # no foreign key: history stays after a delete
+    name: Mapped[str] = mapped_column(String(160))
+    status: Mapped[str] = mapped_column(String(12))
+    message: Mapped[str] = mapped_column(String(300), default="")
+    sent_to: Mapped[list | None] = mapped_column(JSON, nullable=True)  # None = unknown (older history)
+    errors: Mapped[str] = mapped_column(String(500), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
 class NotificationChannel(Base):
     __tablename__ = "notification_channels"
 

@@ -276,7 +276,7 @@ h2 { font-size: 16px; }
   display: grid; grid-template-columns: minmax(0, 1.6fr) 70px minmax(0, 1.2fr) minmax(0, 1.3fr); gap: 12px; align-items: center;
   padding: 9px 6px; border-top: 1px solid var(--border); color: var(--text); font-size: 13px;
 }
-.evt-list.full .evt { grid-template-columns: minmax(0, 1.4fr) 70px minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.6fr); }
+.evt-list.full .evt { grid-template-columns: minmax(0, 1.4fr) 84px minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.4fr); }
 a.evt:hover { background: var(--surface-2); }
 .evt-head { border-top: none; color: var(--muted); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; padding-top: 0; }
 .evt-name { display: flex; align-items: center; gap: 10px; min-width: 0; }
@@ -284,10 +284,12 @@ a.evt:hover { background: var(--surface-2); }
 .evt-ico { width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; flex: none; }
 .evt-ico.up { background: var(--up-soft); color: var(--up); }
 .evt-ico.down { background: var(--down-soft); color: var(--down); }
+.evt-ico.degraded, .evt-ico.warning { background: var(--degraded-soft); color: var(--degraded); }
+.evt-dur.text-down { color: var(--down); }
 .evt-dur { color: var(--muted); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .muted-strong { color: var(--muted); }
-@media (max-width: 1000px) { .evt-list.full .evt { grid-template-columns: minmax(0, 1.4fr) 70px minmax(0, 1fr) minmax(0, 1fr); } }
-@media (max-width: 640px) { .evt, .evt-list.full .evt { grid-template-columns: minmax(0, 1fr) 64px minmax(0, 1fr); } }
+@media (max-width: 1000px) { .evt-list.full .evt { grid-template-columns: minmax(0, 1.4fr) 84px minmax(0, 1fr) minmax(0, 1fr); } }
+@media (max-width: 640px) { .evt { grid-template-columns: minmax(0, 1fr) 64px minmax(0, 1fr); } .evt-list.full .evt { grid-template-columns: minmax(0, 1fr) 80px minmax(0, 1fr); } }
 
 /* Status map (dependency tree) */
 .smap { position: relative; overflow: auto; max-height: 480px; border: 1px solid var(--border); border-radius: 12px; background:
@@ -570,7 +572,7 @@ a.evt:hover { background: var(--surface-2); }
 }
 .pill.up { background: var(--up-soft); color: var(--up); }
 .pill.down { background: var(--down-soft); color: var(--down); }
-.pill.degraded { background: var(--degraded-soft); color: var(--degraded); }
+.pill.degraded, .pill.warning { background: var(--degraded-soft); color: var(--degraded); }
 .pill.maintenance { background: var(--maintenance-soft); color: var(--maintenance); }
 
 /* ---------- heartbeat bar ---------- */

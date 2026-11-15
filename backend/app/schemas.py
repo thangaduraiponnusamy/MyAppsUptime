@@ -158,6 +158,19 @@ class IncidentOut(BaseModel):
     acks: list[IncidentAckOut] = []
 
 
+class AlertEventOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    monitor_id: int | None
+    name: str
+    status: str
+    message: str
+    sent_to: list[str] | None
+    errors: str
+    created_at: Utc
+
+
 class AckIn(BaseModel):
     by: str | None = Field(default=None, max_length=120)  # ignored: the signed-in user is recorded
     note: str | None = Field(default=None, max_length=1000)

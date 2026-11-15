@@ -230,7 +230,7 @@ Both images are built for amd64 and arm64, with the same tags. `DB_PASSWORD` wor
 | `TENANT_DATA_DIR` | `tenants/` next to the main DB | Where tenant database files live |
 | `BACKUP_DIR` | `backups/` next to the main DB | Where daily backups are saved |
 | `CORS_ORIGINS` | `http://localhost:4200` | Only for local dev |
-| `FORWARDED_ALLOW_IPS` | `127.0.0.1,172.16.0.0/12` | Proxies whose `X-Forwarded-For` is trusted, so sign-in history shows the real visitor IP. The default covers a proxy on the Docker host or in another container |
+| `FORWARDED_ALLOW_IPS` | `127.0.0.1,172.16.0.0/12` | Proxies whose `X-Forwarded-For` is trusted, so sign-in history shows the real visitor IP. The default covers a proxy on the Docker host or in another container. Behind Cloudflare, the `CF-Connecting-IP` header is used (only for requests that come from Cloudflare) |
 
 ## Local testing (without Docker)
 

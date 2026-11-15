@@ -107,7 +107,7 @@ Main options:
 | Depends on | Parent monitor. No alerts for this one while the parent is down |
 | SLA target | For example `99.9`. Used for the error budget |
 | Slow threshold | Above this (ms) = DEGRADED |
-| Anomaly detection | DEGRADED when latency jumps far above normal |
+| Anomaly detection | DEGRADED when latency stays far above normal for 3 checks in a row |
 | Repeat alert | Send again every N minutes while still down |
 | Tags | Filter monitors and route alerts |
 | Run from | This server, or a private location (see 13) |

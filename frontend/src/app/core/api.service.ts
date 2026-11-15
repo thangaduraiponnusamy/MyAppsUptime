@@ -1,7 +1,7 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import {
-  AdminDefaults, Channel, DashboardData, DatabaseInfo, ExportData, GeneralSettings, Heartbeat, Incident, LoginEvent, Maintenance, Monitor, MonitorInput,
+  AdminDefaults, AlertEvent, Channel, DashboardData, DatabaseInfo, ExportData, GeneralSettings, Heartbeat, Incident, LoginEvent, Maintenance, Monitor, MonitorInput,
   Probe, Project, PublicStatus, ServerSettings, SmtpSettings, Stats, StatusPage, Summary, Tenant, TenantCreate, User,
 } from './models';
 
@@ -40,6 +40,10 @@ export class ApiService {
   }
   acknowledge(id: number, note: string | null, publicNote: string | null) {
     return this.http.post<Incident>(`${this.base}/incidents/${id}/ack`, { note, public_note: publicNote });
+  }
+  alerts(range: Range) {
+    const params = Object.fromEntries(Object.entries(range).filter(([, v]) => v !== undefined)) as Record<string, string | number>;
+    return this.http.get<AlertEvent[]>(`${this.base}/alerts`, { params });
   }
 
   channels() { return this.http.get<Channel[]>(`${this.base}/notifications`); }

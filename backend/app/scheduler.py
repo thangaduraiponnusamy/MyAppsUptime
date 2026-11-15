@@ -10,8 +10,8 @@ from sqlalchemy import delete, select
 from . import backup, expiry, notifier, tenancy
 from .checks import CheckResult, run_check
 from .config import get_setting, retention_days
-from .models import (Heartbeat, Incident, IncidentAck, LoginEvent, MaintenanceWindow, Monitor, NotificationChannel,
-                     Probe, Project, User, aware, utcnow)
+from .models import (AlertEvent, Heartbeat, Incident, IncidentAck, LoginEvent, MaintenanceWindow, Monitor,
+                     NotificationChannel, Probe, Project, User, aware, utcnow)
 
 log = logging.getLogger(__name__)
 
@@ -28,18 +28,23 @@ def in_maintenance(db, monitor_id: int, now) -> bool:
     return any(not w.monitor_ids or monitor_id in w.monitor_ids for w in windows)
 
 
+ANOMALY_CHECKS = 3  # slow checks in a row before a monitor is degraded
+
+
 def latency_anomaly(db, monitor_id: int, latency: float) -> float | None:
-    """Return the baseline mean when latency is far outside the recent normal range."""
+    """Return the baseline mean when the last few checks are all far outside the normal range."""
     values = db.scalars(
         select(Heartbeat.latency_ms)
-        .where(Heartbeat.monitor_id == monitor_id, Heartbeat.status == "up", Heartbeat.latency_ms.is_not(None))
+        .where(Heartbeat.monitor_id == monitor_id, Heartbeat.status.in_(("up", "degraded")),
+               Heartbeat.latency_ms.is_not(None))
         .order_by(Heartbeat.created_at.desc())
-        .limit(50)
+        .limit(50 + ANOMALY_CHECKS - 1)
     ).all()
-    if len(values) < 20:
+    recent, history = [latency, *values[:ANOMALY_CHECKS - 1]], values[ANOMALY_CHECKS - 1:]
+    if len(history) < 20:
         return None
-    mean, std = statistics.fmean(values), statistics.pstdev(values)
-    if latency > mean + 3 * std and latency > mean * 1.5 and latency - mean > 50:
+    mean, std = statistics.fmean(history), statistics.pstdev(history)
+    if all(v > mean + 3 * std and v > mean * 1.5 and v - mean > 50 for v in recent):
         return mean
     return None
 
@@ -82,6 +87,17 @@ def build_alert(db, tenant: str, m: Monitor, status: str, message: str, headline
         **notifier.alert_context(general),
     )
     return channels, alert, emails, smtp
+
+
+async def deliver(tenant: str, monitor_id: int | None, channels, alert, emails, smtp) -> None:
+    """Send an alert and keep a record of it for the Alerts page."""
+    sent_to = [c.name for c in channels] + (["Team e-mail"] if emails else [])
+    errors = await notifier.send(channels, alert, emails, smtp)
+    with tenancy.session_for(tenant) as db:
+        db.add(AlertEvent(monitor_id=monitor_id, name=alert.monitor[:160], status=alert.status,
+                          message=(alert.message or "")[:300], sent_to=sent_to,
+                          errors="; ".join(errors or [])[:500]))
+        db.commit()
 
 
 async def record_result(tenant: str, monitor_id: int, result: CheckResult) -> None:
@@ -152,7 +168,7 @@ async def record_result(tenant: str, monitor_id: int, result: CheckResult) -> No
         message = ("Still down: " if repeat and not changed else "") + result.message
         channels, alert, emails, smtp = build_alert(db, tenant, m, status, message)
 
-    await notifier.send(channels, alert, emails, smtp)
+    await deliver(tenant, monitor_id, channels, alert, emails, smtp)
 
 
 def probe_alert(db, tenant: str, probe: Probe, status: str, message: str):
@@ -187,7 +203,7 @@ async def check_probes(tenant: str) -> None:
             alerts.append(probe_alert(db, tenant, p, "down", text))
         db.commit()
     for channels, alert, emails, smtp in alerts:
-        await notifier.send(channels, alert, emails, smtp)
+        await deliver(tenant, None, channels, alert, emails, smtp)
 
 
 async def check_expiry(tenant: str, client: httpx.AsyncClient, domains: dict) -> None:
@@ -235,7 +251,7 @@ async def check_expiry(tenant: str, client: httpx.AsyncClient, domains: dict) ->
                     alerts.append(build_alert(db, tenant, row, "warning", text, headline=text.split(" (")[0]))
             db.commit()
         for channels, alert, emails, smtp in alerts:
-            await notifier.send(channels, alert, emails, smtp)
+            await deliver(tenant, m.id, channels, alert, emails, smtp)
 
 
 class Scheduler:
@@ -349,6 +365,7 @@ class Scheduler:
                 db.execute(delete(IncidentAck).where(IncidentAck.incident_id.not_in(select(Incident.id))))
                 db.execute(delete(MaintenanceWindow).where(MaintenanceWindow.ends_at < cutoff))
                 db.execute(delete(LoginEvent).where(LoginEvent.created_at < cutoff))
+                db.execute(delete(AlertEvent).where(AlertEvent.created_at < cutoff))
                 db.commit()
 
 

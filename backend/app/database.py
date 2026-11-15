@@ -120,6 +120,13 @@ def _default_sql(column) -> str:
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
     (1, "index incidents.resolved_at for log retention",
      ["CREATE INDEX IF NOT EXISTS ix_incidents_resolved_at ON incidents (resolved_at)"]),
+    (2, "alert history from existing incidents",
+     ["INSERT INTO alert_events (monitor_id, name, status, message, errors, created_at) "
+      "SELECT i.monitor_id, m.name, 'down', COALESCE(i.cause, ''), '', i.started_at "
+      "FROM incidents i JOIN monitors m ON m.id = i.monitor_id",
+      "INSERT INTO alert_events (monitor_id, name, status, message, errors, created_at) "
+      "SELECT i.monitor_id, m.name, 'up', '', '', i.resolved_at "
+      "FROM incidents i JOIN monitors m ON m.id = i.monitor_id WHERE i.resolved_at IS NOT NULL"]),
 ]
 
 

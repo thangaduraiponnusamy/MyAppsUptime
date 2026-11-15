@@ -50,6 +50,27 @@ def test_migrations_add_columns(tmp_path):
     engine.dispose()
 
 
+def test_alert_history_from_old_incidents(tmp_path):
+    path = tmp_path / "old-alerts.db"
+    con = sqlite3.connect(path)
+    con.execute("CREATE TABLE monitors (id INTEGER PRIMARY KEY, name VARCHAR(120))")
+    con.execute("INSERT INTO monitors VALUES (1, 'api')")
+    con.execute("CREATE TABLE incidents (id INTEGER PRIMARY KEY, monitor_id INTEGER, cause VARCHAR(300), "
+                "started_at DATETIME, resolved_at DATETIME)")
+    con.execute("INSERT INTO incidents VALUES (1, 1, 'timeout', '2026-01-01 10:00:00', '2026-01-01 10:05:00')")
+    con.execute("INSERT INTO incidents VALUES (2, 1, 'refused', '2026-01-02 10:00:00', NULL)")
+    con.commit()
+    con.close()
+    engine = make_engine(f"sqlite:///{path.as_posix()}")
+    upgrade_schema(engine)
+    upgrade_schema(engine)  # runs once
+    raw = sqlite3.connect(path)
+    rows = raw.execute("SELECT status, message, sent_to FROM alert_events ORDER BY created_at").fetchall()
+    assert rows == [("down", "timeout", None), ("up", "", None), ("down", "refused", None)]
+    raw.close()
+    engine.dispose()
+
+
 def test_retention():
     assert retention_days(GeneralSettings().model_dump()) == 365
     assert retention_days({"retention_value": 6, "retention_unit": "months"}) == 180

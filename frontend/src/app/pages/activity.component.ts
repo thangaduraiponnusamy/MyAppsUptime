@@ -5,13 +5,49 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { EMPTY, catchError, combineLatest, switchMap, timer } from 'rxjs';
 import { ApiService } from '../core/api.service';
 import { AuthService } from '../core/auth.service';
-import { Incident } from '../core/models';
+import { AlertEvent } from '../core/models';
 import { PrefsService } from '../core/prefs.service';
-import { toEvents } from '../shared/activity';
+import { short } from '../shared/time';
 import { IconComponent } from '../shared/icon.component';
 import { ProjectPickComponent, parseProject } from '../shared/project-pick.component';
 import { DAY, DayRange, RANGES, RangePickerComponent, rangeLabel, rangeQuery } from '../shared/range-picker.component';
 import { MonitorStore } from '../core/monitor-store.service';
+
+interface Row {
+  key: number;
+  monitorId: number | null;
+  name: string;
+  kind: string;
+  at: string;
+  detail: string;
+  message: string;
+  sentTo: string;
+  errors: string;
+}
+
+const ICONS: Record<string, string> = { up: 'trend-up', down: 'trend-down', degraded: 'activity', warning: 'alert' };
+const LABELS: Record<string, string> = { up: 'Up', down: 'Down', degraded: 'Degraded', warning: 'Warning' };
+const STATES = ['up', 'down', 'degraded'];
+
+// Newest first; each up/down/degraded alert lasts until the next alert of that service with another state
+function toRows(list: AlertEvent[]): Row[] {
+  const later = new Map<string, { kind: string; at: string; end: string | null }>();
+  return list.map((a) => {
+    const key = a.monitor_id === null ? `n:${a.name}` : `m:${a.monitor_id}`;
+    let detail = '--';
+    if (STATES.includes(a.status)) {
+      const next = later.get(key);
+      const end = next ? (next.kind !== a.status ? next.at : next.end) : null;
+      later.set(key, { kind: a.status, at: a.created_at, end });
+      const label = LABELS[a.status];
+      detail = end ? `${label} for ${short(a.created_at, end)}`
+        : a.status === 'up' ? `Up for ${short(a.created_at)} · running` : `Still ${a.status} · ${short(a.created_at)}`;
+    }
+    const sentTo = a.sent_to === null ? '--' : a.sent_to.length ? a.sent_to.join(', ') : 'No channel';
+    return { key: a.id, monitorId: a.monitor_id, name: a.name, kind: a.status, at: a.created_at, detail,
+             message: a.message, sentTo, errors: a.errors };
+  });
+}
 
 @Component({
   selector: 'app-activity',
@@ -21,7 +57,7 @@ import { MonitorStore } from '../core/monitor-store.service';
     <div class="page-head">
       <div>
         <h1>Alerts</h1>
-        <div class="sub">Every time a service went down or came back up &middot; {{ rangeText() }}</div>
+        <div class="sub">Every alert notification that was sent &middot; {{ rangeText() }}</div>
       </div>
       <span class="spacer"></span>
       <app-project-pick [project]="project()" (pick)="store.setProject($event)" />
@@ -44,18 +80,19 @@ import { MonitorStore } from '../core/monitor-store.service';
       @if (filtered().length) {
         <div class="evt-list full">
           <div class="evt evt-head">
-            <span>Service</span><span>Status</span><span>Date &amp; time</span><span class="hide-sm">Duration</span><span class="hide-md">Cause</span>
+            <span>Service</span><span>Status</span><span>Date &amp; time</span><span class="hide-sm">Duration</span><span class="hide-md">Sent to</span><span class="hide-md">Details</span>
           </div>
           @for (e of shown(); track e.key) {
-            <a class="evt" [routerLink]="['/monitors', e.monitorId]">
+            <a class="evt" [routerLink]="e.monitorId ? ['/monitors', e.monitorId] : null">
               <span class="evt-name">
-                <span [class]="'evt-ico ' + e.kind"><app-icon [name]="e.kind === 'up' ? 'trend-up' : 'trend-down'" [size]="14" /></span>
+                <span [class]="'evt-ico ' + e.kind"><app-icon [name]="icon(e.kind)" [size]="14" /></span>
                 <b>{{ e.name }}</b>
               </span>
-              <span><span [class]="'pill ' + e.kind">{{ e.kind === 'up' ? 'Up' : 'Down' }}</span></span>
+              <span><span [class]="'pill ' + e.kind">{{ label(e.kind) }}</span></span>
               <span class="num muted-strong">{{ e.at | date: 'MMM d, HH:mm:ss' }}</span>
               <span class="hide-sm evt-dur">{{ e.detail }}</span>
-              <span class="hide-md evt-dur">{{ e.cause || '--' }}</span>
+              <span class="hide-md evt-dur" [class.text-down]="e.errors" [title]="e.errors ? 'Failed: ' + e.errors : e.sentTo">{{ e.sentTo }}@if (e.errors) { (failed)}</span>
+              <span class="hide-md evt-dur" [title]="e.message">{{ e.message || '--' }}</span>
             </a>
           }
         </div>
@@ -65,7 +102,7 @@ import { MonitorStore } from '../core/monitor-store.service';
       } @else {
         <div class="empty-state tint-up">
           <span class="empty-ico"><app-icon name="check" [size]="20" /></span>
-          <div><b>No alerts</b><div class="muted">No service changed state {{ rangeText() }}.</div></div>
+          <div><b>No alerts</b><div class="muted">No alert was sent {{ rangeText() }}.</div></div>
         </div>
       }
     </section>
@@ -81,15 +118,17 @@ export class ActivityComponent {
   readonly kinds = [
     { value: 'all', label: 'All' },
     { value: 'down', label: 'Down' },
+    { value: 'degraded', label: 'Degraded' },
     { value: 'up', label: 'Up' },
+    { value: 'warning', label: 'Warning' },
   ] as const;
 
   page = computed(() => this.prefs.limits().page);
   hours = signal(24);
   custom = signal<DayRange | null>(null);
-  incidents = signal<Incident[]>([]);
+  alerts = signal<AlertEvent[]>([]);
   query = signal('');
-  kind = signal<'all' | 'up' | 'down'>('all');
+  kind = signal<string>('all');
   project = this.store.project;
   limit = signal(this.page());
 
@@ -103,10 +142,10 @@ export class ActivityComponent {
       ? { from: Date.parse(`${c.from}T00:00:00`), to: Date.parse(`${c.to}T23:59:59`) }
       : { from: Date.now() - this.hours() * 3_600_000, to: Infinity };
   });
-  // Only events whose time falls inside the picked range
+  // Only alerts whose time falls inside the picked range
   private events = computed(() => {
     const w = this.window();
-    return toEvents(this.incidents()).filter((e) => {
+    return toRows(this.alerts()).filter((e) => {
       const t = Date.parse(e.at);
       return t >= w.from && t <= w.to;
     });
@@ -117,10 +156,14 @@ export class ActivityComponent {
     const p = this.project();
     const of = this.store.projectOf();
     return this.events().filter(
-      (e) => (k === 'all' || e.kind === k) && (!q || e.name.toLowerCase().includes(q)) && (p === null || (of.get(e.monitorId) ?? 0) === p),
+      (e) => (k === 'all' || e.kind === k) && (!q || e.name.toLowerCase().includes(q))
+        && (p === null || (e.monitorId !== null && (of.get(e.monitorId) ?? 0) === p)),
     );
   });
   shown = computed(() => this.filtered().slice(0, this.limit()));
+
+  icon(kind: string): string { return ICONS[kind] ?? 'bell'; }
+  label(kind: string): string { return LABELS[kind] ?? kind.charAt(0).toUpperCase() + kind.slice(1); }
 
   constructor() {
     this.route.queryParamMap.pipe(takeUntilDestroyed()).subscribe((p) => {
@@ -137,8 +180,8 @@ export class ActivityComponent {
     const range = computed(() => rangeQuery(this.hours(), this.custom()));
     const tick = toObservable(this.auth.refreshMs).pipe(switchMap((ms) => timer(0, ms)));
     combineLatest([toObservable(range), tick])
-      .pipe(switchMap(([r]) => this.api.incidents(false, null, r).pipe(catchError(() => EMPTY))), takeUntilDestroyed())
-      .subscribe((list) => this.incidents.set(list));
+      .pipe(switchMap(([r]) => this.api.alerts(r).pipe(catchError(() => EMPTY))), takeUntilDestroyed())
+      .subscribe((list) => this.alerts.set(list));
   }
 
   pickHours(hours: number): void {

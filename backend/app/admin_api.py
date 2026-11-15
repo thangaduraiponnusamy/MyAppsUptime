@@ -1,4 +1,5 @@
 import asyncio
+import ipaddress
 import logging
 from pathlib import Path
 
@@ -11,7 +12,8 @@ from .auth import (RESET_MIN, Principal, bearer, check_lock, clear_fails, create
                    current_user, end_all_sessions, end_session, get_db, hash_password, record_fail, require_admin,
                    require_super, require_user, token_tenant, use_reset_token, verify_password)
 from .config import APP_VERSION, get_setting, put_setting
-from .models import Heartbeat, Incident, IncidentAck, LoginEvent, Monitor, NotificationChannel, Project, User, utcnow
+from .models import (AlertEvent, Heartbeat, Incident, IncidentAck, LoginEvent, Monitor, NotificationChannel, Project,
+                     User, utcnow)
 from .schemas import (DatabaseInfo, ForgotIn, GeneralSettings, LoginEventOut, LoginIn, LoginOut, MeOut, PasswordIn,
                       ProjectIn, ProjectOut, ResetIn, ServerOut, ServerSettings, SmtpOut, SmtpSettings, SmtpTestIn,
                       UserCreate, UserOut, UserUpdate)
@@ -43,6 +45,34 @@ def _me(db: Session, user: Principal) -> MeOut:
 
 # ---------- sign in ----------
 
+# Published at https://www.cloudflare.com/ips/
+CLOUDFLARE = [ipaddress.ip_network(n) for n in (
+    "173.245.48.0/20", "103.21.244.0/22", "103.22.200.0/22", "103.31.4.0/22", "141.101.64.0/18",
+    "108.162.192.0/18", "190.93.240.0/20", "188.114.96.0/20", "197.234.240.0/22", "198.41.128.0/17",
+    "162.158.0.0/15", "104.16.0.0/13", "104.24.0.0/14", "172.64.0.0/13", "131.0.72.0/22",
+    "2400:cb00::/32", "2606:4700::/32", "2803:f800::/32", "2405:b500::/32", "2405:8100::/32",
+    "2a06:98c0::/29", "2c0f:f248::/32",
+)]
+
+
+def _parse_ip(value: str):
+    try:
+        return ipaddress.ip_address(value.strip())
+    except ValueError:
+        return None
+
+
+def client_ip(request: Request) -> str:
+    """The visitor's address. Behind Cloudflare the peer is a Cloudflare server, so its
+    CF-Connecting-IP header is used, but only when the request really came from Cloudflare."""
+    peer = request.client.host if request.client else ""
+    addr = _parse_ip(peer)
+    if addr is not None and any(addr in net for net in CLOUDFLARE):
+        real = _parse_ip(request.headers.get("cf-connecting-ip", ""))
+        if real is not None:
+            return str(real)
+    return peer[:64]
+
 # Short label like "Chrome on Android"; the full user agent is not stored
 def describe_agent(ua: str) -> str:
     if not ua:
@@ -61,8 +91,8 @@ def describe_agent(ua: str) -> str:
 
 @auth.post("/login", response_model=LoginOut)
 def login(body: LoginIn, request: Request):
-    key = f"{body.username.lower()}|{request.client.host if request.client else ''}"
-    ip = (request.client.host if request.client else "")[:64]
+    ip = client_ip(request)
+    key = f"{body.username.lower()}|{ip}"
     device = describe_agent(request.headers.get("user-agent", ""))[:80]
     check_lock(key)
     # User names are unique across tenants, so the first match is the account
@@ -113,7 +143,7 @@ def options(db: Session = Depends(get_db)):
 
 @auth.post("/forgot")
 async def forgot_password(body: ForgotIn, request: Request):
-    key = f"forgot|{request.client.host if request.client else ''}"
+    key = f"forgot|{client_ip(request)}"
     check_lock(key)
     record_fail(key)  # counts every request, so this cannot be used to spam mailboxes
     name = body.username.strip().lower()
@@ -433,6 +463,7 @@ def clear_stats(db: Session = Depends(get_db)):
     db.execute(delete(Heartbeat))
     db.execute(delete(IncidentAck))
     db.execute(delete(Incident))
+    db.execute(delete(AlertEvent))
     db.execute(update(Monitor).values(fail_count=0))
     db.commit()
     return _db_info(db)

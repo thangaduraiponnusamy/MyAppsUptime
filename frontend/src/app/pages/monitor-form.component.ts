@@ -86,7 +86,7 @@ const URL_TYPES: MonitorType[] = ['http', 'keyword', 'json'];
         <label>SLA target (%) <input type="number" step="0.01" formControlName="sla_target" /></label>
         <label>Slow response threshold (ms, optional) <input type="number" formControlName="latency_threshold_ms" /></label>
         <label class="inline full"><input type="checkbox" formControlName="anomaly_detection" />
-          Smart latency anomaly detection (flags DEGRADED when response time jumps far above the normal baseline)</label>
+          Smart latency anomaly detection (flags DEGRADED when response time stays far above the normal baseline for 3 checks in a row)</label>
 
         <div class="section-title">Alerting</div>
         <label>Project
