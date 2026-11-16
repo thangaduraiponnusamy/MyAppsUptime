@@ -15,6 +15,7 @@ from playwright.sync_api import sync_playwright
 ROOT = Path(__file__).resolve().parents[1]
 UI = ROOT / "frontend" / "dist" / "myappsuptime-ui" / "browser"
 PASSWORD = "Admin12345"
+DATA: dict[str, Path] = {}
 
 
 def _free_port() -> int:
@@ -36,6 +37,7 @@ def server():
     if not (UI / "index.html").is_file():
         pytest.skip("Build the UI first: cd frontend && npx ng build")
     data = Path(tempfile.mkdtemp(prefix="mau-e2e-"))
+    DATA["db"] = data / "main.db"
     port = _free_port()
     env = {**os.environ, "DATABASE_URL": f"sqlite:///{(data / 'main.db').as_posix()}", "BACKUP_DIR": str(data / "b"),
            "TENANT_DATA_DIR": str(data), "STATIC_DIR": str(UI)}

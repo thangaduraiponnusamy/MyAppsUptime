@@ -39,7 +39,24 @@ PAGES = ["/", "/activity", "/incidents", "/maintenance", "/monitors/new", "/stat
 
 def test_pages_render_without_errors(page, server):
     import os
-    base, _ = server
+    base, token = server
+    # Data so lists, tables and alerts are filled on every page
+    proj = call(base, "POST", "/api/projects", {"name": "Shop platform"}, token)
+    down = call(base, "POST", "/api/monitors", {"name": "Billing API with a long service name", "type": "http",
+                "target": "http://127.0.0.1:1/very/long/path/to/check", "project_id": proj["id"]}, token)
+    for _ in range(4):
+        call(base, "POST", f"/api/monitors/{down['id']}/check", None, token)
+        page.wait_for_timeout(700)
+    # Alerts are only recorded when sent; add a few directly
+    import sqlite3
+    from datetime import datetime, timezone
+    from conftest import DATA
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat(sep=" ")
+    with sqlite3.connect(DATA["db"]) as db:
+        for st, msg in (("down", "Connection refused while connecting to 127.0.0.1:1"), ("up", "Back up after 4 minutes"),
+                        ("degraded", "Slow: 2400 ms for 3 checks")):
+            db.execute("INSERT INTO alert_events (monitor_id, name, status, message, sent_to, errors, created_at)"
+                       " VALUES (?, ?, ?, ?, ?, '', ?)", (down["id"], down["name"], st, msg, '["Team e-mail", "Teams ops channel"]', now))
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
     sign_in(page, base)
@@ -50,6 +67,14 @@ def test_pages_render_without_errors(page, server):
         expect(page.locator("main.main")).to_be_visible()
         if shots:
             page.screenshot(path=os.path.join(shots, path.strip("/").replace("/", "_") or "dashboard") + ".png", full_page=True)
+    page.set_viewport_size({"width": 390, "height": 844})
+    for path in PAGES:
+        page.goto(f"{base}{path}")
+        page.wait_for_timeout(800)
+        expect(page.locator("main.main")).to_be_visible()
+        assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1"), f"{path} scrolls sideways on mobile"
+        if shots:
+            page.screenshot(path=os.path.join(shots, "m_" + (path.strip("/").replace("/", "_") or "dashboard")) + ".png", full_page=True)
     assert errors == []
 
 
