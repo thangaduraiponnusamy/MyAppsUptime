@@ -1,5 +1,5 @@
 // MyAppsUptime service worker: offline app shell and push notifications. /api/* is never cached.
-const CACHE = 'mau-shell-v1';
+const CACHE = 'mau-shell-v2';
 const SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icon-192.png'];
 
 self.addEventListener('install', (event) => {
