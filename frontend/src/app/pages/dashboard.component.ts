@@ -1,5 +1,5 @@
 import { DatePipe, DecimalPipe, NgTemplateOutlet, formatDate } from '@angular/common';
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, effect, inject, signal, untracked } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { EMPTY, catchError, combineLatest, switchMap, timer } from 'rxjs';
@@ -56,6 +56,7 @@ const PAGE = 25;
             }
           </div>
           <div class="sb-body">
+            <div class="sb-ring">
             <button class="sb-donut" (click)="filterBy('all')" title="Show all monitors">
               <svg viewBox="0 0 120 120">
                 <defs>
@@ -67,25 +68,27 @@ const PAGE = 25;
                   <linearGradient id="sbg-paused" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#cbd5e1" /><stop offset="1" stop-color="#64748b" /></linearGradient>
                 </defs>
                 <circle cx="60" cy="60" r="50" class="sb-track" />
-                @for (a of arcs(); track a.key) {
+                @for (a of arcs(); track a.key + replay()) {
                   <circle cx="60" cy="60" r="50" [class]="'sb-arc ' + a.key" [class.solo]="arcs().length === 1"
                           [attr.stroke-dasharray]="a.len + ' ' + (circ - a.len)" [attr.stroke-dashoffset]="-a.start" />
                 }
               </svg>
-              <span class="sb-center">
-                <b>@if (scoped().length) { {{ upPct() }}<i>%</i> } @else { -- }</b>
+              <span class="sb-center" [style.--beat.s]="beatSecs()">
+                <svg class="sb-beat" [class.bad]="attention().length" viewBox="0 0 100 24" aria-hidden="true">
+                  <path pathLength="1" d="M2 12h30l5-9 7 18 7-18 5 9h42" />
+                </svg>
+                <b>@if (scoped().length) { {{ shownPct() }}<i>%</i> } @else { -- }</b>
                 <small>Operational</small>
                 <em>{{ statusTiles()[0].count }} of {{ scoped().length }} up</em>
               </span>
             </button>
-            <div class="sb-tiles">
-              @for (t of statusTiles(); track t.key) {
-                <button [class]="'sb-tile ' + t.key" [class.active]="status() === t.key" [class.zero]="!t.count"
-                        (click)="filterBy(t.key)" [title]="'Show ' + t.label.toLowerCase() + ' monitors'">
-                  <span class="sb-name"><i></i>{{ t.label }}</span>
-                  <span class="sb-num"><b>{{ t.count }}</b><small>{{ t.pct }}%</small></span>
-                </button>
-              }
+            @for (a of arcs(); track a.key + replay()) {
+              <button [class]="'sb-pill ' + a.key" [class.active]="status() === a.key"
+                      [style.left.%]="a.x" [style.top.%]="a.y" [style.--tx.%]="a.tx" [style.--ty.%]="a.ty"
+                      (click)="filterBy(a.key)" [title]="'Show ' + a.label.toLowerCase() + ' monitors'">
+                {{ a.label }} <b>{{ a.count }}</b> <small>{{ a.pct }}%</small>
+              </button>
+            }
             </div>
           </div>
         </div>
@@ -331,6 +334,30 @@ export class DashboardComponent {
   });
   readonly circ = 2 * Math.PI * 50;
   upPct = computed(() => this.statusTiles()[0].pct);
+  // Like a pulse: calm when healthy, a bit faster with each down monitor
+  beatSecs = computed(() => {
+    const down = this.statusTiles().find((t) => t.key === 'down')?.count ?? 0;
+    return Math.max(0.9, 3 - down * 0.4);
+  });
+  shownPct = signal(0);
+  replay = signal(0);
+  private lastReplay = 0;
+  private countUp = effect((onCleanup) => {
+    const to = this.upPct();
+    const replayed = this.replay() !== this.lastReplay;
+    this.lastReplay = this.replay();
+    const from = replayed ? 0 : untracked(this.shownPct);
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return this.shownPct.set(to);
+    const t0 = performance.now();
+    let raf = 0;
+    const step = (now: number) => {
+      const k = Math.min((now - t0) / 900, 1);
+      this.shownPct.set(Math.round(from + (to - from) * (1 - (1 - k) ** 3)));
+      if (k < 1) raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    onCleanup(() => cancelAnimationFrame(raf));
+  });
   pendingCount = computed(() => this.scoped().filter((m) => m.status === 'pending').length);
   arcs = computed(() => {
     const parts = this.statusTiles().filter((t) => t.count);
@@ -340,7 +367,13 @@ export class DashboardComponent {
     let start = 0;
     return parts.map((t) => {
       const full = (t.count / total) * this.circ;
-      const a = { key: t.key, start: start + gap / 2, len: Math.max(full - gap, 0.01) };
+      // Pill sits just outside the middle of its arc; the svg is rotated -90deg so 0 is at the top
+      const ang = parts.length === 1 ? 0 : ((start + full / 2) / this.circ) * 2 * Math.PI - Math.PI / 2;
+      const cos = Math.cos(ang), sin = Math.sin(ang);
+      const a = {
+        key: t.key, label: t.label, count: t.count, pct: t.pct, start: start + gap / 2, len: Math.max(full - gap, 0.01),
+        x: 50 + 50 * cos, y: 50 + 50 * sin, tx: -50 + 50 * cos, ty: -50 + 50 * sin,
+      };
       start += full;
       return a;
     });
@@ -469,6 +502,7 @@ export class DashboardComponent {
   }
 
   filterBy(key: Filter): void {
+    this.replay.update((n) => n + 1);
     this.setParams({ status: key === 'all' || this.status() === key ? null : key });
   }
 

@@ -52,9 +52,10 @@ const RANK: Record<string, number> = { down: 0, blocked: 1, degraded: 2, pending
         [attr.viewBox]="'0 0 ' + layout().width + ' ' + layout().height" role="img" aria-label="Status map">
         @for (l of layout().links; track $index) {
           <path [attr.d]="l.d" [class]="'smap-link ' + l.cls" />
+          @if (l.cls === 'up') { <path [attr.d]="l.d" class="smap-flow" /> }
         }
-        @for (n of layout().nodes; track n.key) {
-          <g class="smap-node" [class.click]="!!n.m || !!n.g" [class.dim]="n.dim" [attr.transform]="'translate(' + n.x + ',' + n.y + ')'" (click)="open(n)">
+        @for (n of layout().nodes; track n.key; let i = $index) {
+          <g class="smap-node" [style.animation-delay.ms]="i * 40" [class.click]="!!n.m || !!n.g" [class.dim]="n.dim" [attr.transform]="'translate(' + n.x + ',' + n.y + ')'" (click)="open(n)">
             <title>{{ n.m ? n.m.name + ' - ' + cls(n.m) + since(n.m) : n.g ? 'Project ' + n.g.name + ' - ' + n.g.meta : title() }}</title>
             @if (n.g) {
               <circle r="16" [class]="'halo ' + n.g.cls" />

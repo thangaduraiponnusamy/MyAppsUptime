@@ -15,7 +15,7 @@ let nextId = 0;
       </defs>
       <rect width="64" height="64" rx="16" [attr.fill]="'url(#' + gid + ')'" />
       <path d="M0 16A16 16 0 0 1 16 0h32a16 16 0 0 1 16 16v6C44 30 20 30 0 22z" fill="#fff" opacity=".1" />
-      <path d="M11 37h8l5.5-15 7.5 23 7.5-23 5.5 15h4" fill="none" stroke="#fff" stroke-width="5"
+      <path class="logo-beat" pathLength="1" d="M11 37h8l5.5-15 7.5 23 7.5-23 5.5 15h4" fill="none" stroke="#fff" stroke-width="5"
             stroke-linecap="round" stroke-linejoin="round" />
       <circle cx="52" cy="37" r="4" fill="#fff" />
     </svg>
