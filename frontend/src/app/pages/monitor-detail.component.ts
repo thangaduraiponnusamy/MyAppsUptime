@@ -7,11 +7,12 @@ import { EMPTY, Subject, catchError, combineLatest, filter, first, forkJoin, mer
 import { ApiService, errorText } from '../core/api.service';
 import { AuthService } from '../core/auth.service';
 import { ConfirmService } from '../core/confirm.service';
-import { Heartbeat, Monitor, Stats } from '../core/models';
+import { Heartbeat, Incident, Monitor, Stats } from '../core/models';
 import { MonitorStore } from '../core/monitor-store.service';
 import { HeartbeatBarComponent } from '../shared/heartbeat-bar.component';
 import { IconComponent } from '../shared/icon.component';
 import { LatencyChartComponent } from '../shared/latency-chart.component';
+import { TimingBarComponent } from '../shared/timing-bar.component';
 import { daysUntil } from '../shared/time';
 import { DayRange, RANGES, RangePickerComponent, rangeQuery } from '../shared/range-picker.component';
 
@@ -20,7 +21,7 @@ const PAGE = 10;
 @Component({
   selector: 'app-monitor-detail',
   standalone: true,
-  imports: [DatePipe, DecimalPipe, RouterLink, HeartbeatBarComponent, IconComponent, LatencyChartComponent, RangePickerComponent],
+  imports: [DatePipe, DecimalPipe, RouterLink, HeartbeatBarComponent, IconComponent, LatencyChartComponent, RangePickerComponent, TimingBarComponent],
   template: `
     @if (monitor(); as m) {
       <div class="page-head">
@@ -57,12 +58,67 @@ const PAGE = 10;
         @if (notice()) {
           <p class="row muted">@if (noticeStatus(); as s) { <span [class]="'pill ' + s">{{ s }}</span> } {{ notice() }}</p>
         }
+        @if (incident(); as i) {
+          <p class="row">
+            <span class="pill down">open incident</span>
+            <span class="muted">since {{ i.started_at | date: 'MMM d, HH:mm' }}</span>
+            @if (i.acknowledged_at) {
+              <span class="muted">&middot; Acknowledged by {{ i.acknowledged_by }} at {{ i.acknowledged_at | date: 'MMM d, HH:mm' }}</span>
+            } @else {
+              <button class="btn" (click)="ack(i)">Acknowledge</button>
+            }
+          </p>
+        }
+        <p class="row">
+          @if (snoozed(m)) {
+            <span class="muted">Alerts snoozed until {{ m.snoozed_until | date: 'MMM d, HH:mm' }}</span>
+            <button class="btn" (click)="snooze(m, 0)">Unsnooze</button>
+          }
+          <select #snz (change)="snooze(m, +snz.value); snz.value = ''" aria-label="Snooze alerts">
+            <option value="">Snooze alerts...</option>
+            <option value="60">1 hour</option>
+            <option value="240">4 hours</option>
+            <option value="1440">24 hours</option>
+          </select>
+        </p>
         <div style="margin-top: 14px"><app-heartbeat-bar [statuses]="statuses()" [details]="details()" [max]="72" [labels]="true" /></div>
         @if (m.fail_count && m.status !== 'down') {
           <p class="muted">{{ m.fail_count }} failed {{ m.fail_count === 1 ? 'check' : 'checks' }} in a row.
             {{ m.down_after ? 'An alert is sent after ' + m.down_after + '.' : 'An alert is sent at the limit set in General settings.' }}</p>
         }
       </section>
+
+      @if (m.last_timings; as t) {
+        <section class="card">
+          <h2>Last check timing</h2>
+          <app-timing-bar [timings]="t" />
+        </section>
+      }
+
+      @if (m.type === 'security' && m.security_findings; as f) {
+        <section class="card">
+          <div class="row">
+            <h2>Security headers</h2>
+            <span [class]="'pill ' + (f.grade <= m.min_grade ? 'up' : 'degraded')">Grade {{ f.grade }}</span>
+            <span class="muted">Minimum {{ m.min_grade }}</span>
+          </div>
+          @if (f.tls; as tls) {
+            <p class="muted">{{ tls.version }}, {{ tls.cipher }}</p>
+          }
+          <table>
+            <thead><tr><th>Result</th><th>Check</th><th>Detail</th></tr></thead>
+            <tbody>
+              @for (c of f.checks; track c.name) {
+                <tr>
+                  <td><b [class.up]="c.ok" [class.down]="!c.ok">{{ c.ok ? 'Pass' : 'Fail' }}</b></td>
+                  <td>{{ c.name }}</td>
+                  <td class="muted">{{ c.detail }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </section>
+      }
 
       @if (stats(); as s) {
         <div class="two-col">
@@ -149,8 +205,26 @@ const PAGE = 10;
             </div>
           }
           <div>
-            <div class="muted">Badges (monitor must be on a status page)</div>
-            <div class="code-box mono">{{ origin }}/api/public/badge/{{ m.id }}/uptime.svg{{ auth.user()?.active_tenant === 'admin' ? '' : '?t=' + auth.user()?.active_tenant }}</div>
+            <div class="row">
+              <span class="muted">Badges</span>
+              <span class="spacer"></span>
+              <label class="inline"><input type="checkbox" [checked]="m.badge_enabled" (change)="setBadge(m, $any($event.target).checked)" />
+                Enable badge</label>
+            </div>
+            @if (m.badge_token) {
+              @for (kind of badgeKinds; track kind) {
+                <div style="margin-top: 8px">
+                  <img [src]="origin + '/api/badge/' + m.badge_token + '/' + kind + '.svg'" [alt]="kind + ' badge'" />
+                  <div class="code-box mono">{{ badgeMd(m, kind) }}
+                    <span class="spacer"></span>
+                    <button class="btn sm" title="Copy Markdown" (click)="copy(badgeMd(m, kind))">MD</button>
+                    <button class="btn sm" title="Copy HTML" (click)="copy(badgeHtml(m, kind))">HTML</button>
+                  </div>
+                </div>
+              }
+            } @else {
+              <p class="hint">Off. When on, anyone with the link can see this service's status, uptime and latency.</p>
+            }
           </div>
           <div>
             <div class="muted">Prometheus</div>
@@ -171,6 +245,7 @@ export class MonitorDetailComponent {
 
   readonly origin = location.origin;
   monitor = signal<Monitor | null>(null);
+  incident = signal<Incident | null>(null);
   beats = signal<Heartbeat[]>([]);
   stats = signal<Stats | null>(null);
   notice = signal('');
@@ -183,7 +258,7 @@ export class MonitorDetailComponent {
   readonly ranges = [{ hours: 1, label: '1h' }, ...RANGES];
 
   statuses = computed(() => this.beats().map((b) => b.status));
-  details = computed(() => this.beats().map((b) => ({ time: b.created_at, message: b.message, latency: b.latency_ms })));
+  details = computed(() => this.beats().map((b) => ({ time: b.created_at, message: b.message, latency: b.latency_ms, timings: b.timings })));
   sslDays = computed(() => daysUntil(this.monitor()?.ssl_expires_at ?? null));
   domainDays = computed(() => daysUntil(this.monitor()?.domain_expires_at ?? null));
   parent = computed(() => this.store.monitors().find((p) => p.id === this.monitor()?.parent_id) ?? null);
@@ -206,6 +281,7 @@ export class MonitorDetailComponent {
 
   constructor() {
     const title = inject(Title);
+    this.api.general().subscribe({ next: (g) => g.app_url && this.appUrl.set(g.app_url.replace(/\/+$/, '')), error: () => {} });
     effect(() => {
       const name = this.monitor()?.name;
       if (name) title.setTitle(`${name} - MyAppsUptime`);
@@ -220,12 +296,14 @@ export class MonitorDetailComponent {
             monitor: this.api.monitor(id),
             beats: this.api.heartbeats(id, q),
             stats: this.api.stats(id),
+            open: this.api.incidents(true, null),
           }).pipe(catchError(() => EMPTY));
         }),
         takeUntilDestroyed(),
       )
       .subscribe((r) => {
         this.monitor.set(r.monitor);
+        this.incident.set(r.open.find((i) => i.monitor_id === r.monitor.id) ?? null);
         this.beats.set(r.beats);
         this.stats.set(r.stats);
       });
@@ -244,6 +322,28 @@ export class MonitorDetailComponent {
   copy(text: string): void {
     this.noticeStatus.set('');
     navigator.clipboard.writeText(text).then(() => this.notice.set('Copied to clipboard.'));
+  }
+
+  readonly badgeKinds = ['status', 'uptime', 'latency'];
+  appUrl = signal(this.origin);
+
+  badgeUrl(m: Monitor, kind: string): string {
+    return `${this.appUrl()}/api/badge/${m.badge_token}/${kind}.svg`;
+  }
+
+  badgeMd(m: Monitor, kind: string): string {
+    return `![${kind}](${this.badgeUrl(m, kind)})`;
+  }
+
+  badgeHtml(m: Monitor, kind: string): string {
+    return `<img src="${this.badgeUrl(m, kind)}" alt="${kind}" />`;
+  }
+
+  setBadge(m: Monitor, on: boolean): void {
+    this.api.updateMonitor(m.id, { ...m, badge_enabled: on }).subscribe({
+      next: (updated) => this.monitor.set(updated),
+      error: () => this.notice.set('Could not change the badge.'),
+    });
   }
 
   fmtMs(v: number | null | undefined): string {
@@ -281,6 +381,18 @@ export class MonitorDetailComponent {
           this.notice.set(e?.name === 'TimeoutError' ? 'Check is still running. The result shows on the next refresh.' : errorText(e));
         },
       });
+  }
+
+  snoozed(m: Monitor): boolean {
+    return !!m.snoozed_until && new Date(m.snoozed_until).getTime() > Date.now();
+  }
+
+  snooze(m: Monitor, minutes: number): void {
+    this.api.snooze(m.id, minutes).subscribe((updated) => this.monitor.set(updated));
+  }
+
+  ack(i: Incident): void {
+    this.api.acknowledge(i.id, null, i.public_note).subscribe((updated) => this.incident.set(updated));
   }
 
   togglePause(m: Monitor): void {

@@ -44,7 +44,7 @@ export class SelectComponent<T = number | null> implements ControlValueAccessor 
   private onTouched: () => void = () => {};
 
   @ViewChild('search') set search(el: ElementRef<HTMLInputElement> | undefined) {
-    el?.nativeElement.focus();
+    el?.nativeElement.focus({ preventScroll: true });
   }
 
   current = computed(() => this.options().find((o) => o.id === this.value()));

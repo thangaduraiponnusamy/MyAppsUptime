@@ -21,7 +21,7 @@ const IMAGE = 'ghcr.io/thangaduraiponnusamy/myappsuptime-probe:latest';
 
     <section class="s-section">
       <div class="s-head">
-        <h3>Locations</h3>
+        <h3>Locations <span class="count-badge">{{ probes().length }}</span></h3>
         <button class="btn sm" (click)="load()">Refresh</button>
       </div>
       <form class="row s-box" (ngSubmit)="add()">

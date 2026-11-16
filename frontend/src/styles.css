@@ -60,7 +60,7 @@ h2 { font-size: 16px; }
 .side {
   background: var(--surface); border-right: 1px solid var(--border);
   display: flex; flex-direction: column; padding: 16px 0; gap: 2px;
-  position: sticky; top: 0; height: 100vh; height: 100dvh; overflow-y: auto;
+  position: sticky; top: 0; height: 100vh; height: 100dvh; overflow-y: auto; overflow-x: hidden;
 }
 .side-head { display: flex; align-items: center; gap: 8px; padding: 0 12px 18px 16px; }
 .logo { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; }
@@ -661,6 +661,10 @@ input.ng-invalid.ng-touched, input.ng-invalid.ng-dirty { border-color: var(--dow
 input.ng-invalid.ng-touched:focus, input.ng-invalid.ng-dirty:focus { outline-color: rgba(220, 38, 38, .2); }
 input:disabled, select:disabled, textarea:disabled { background: var(--surface-2); color: var(--muted); cursor: not-allowed; }
 .search { max-width: 320px; }
+.s-section .toolbar { margin-bottom: 0; }
+.s-section .toolbar .search { flex: 1 1 180px; min-width: 0; }
+.s-head h3:has(.count-badge) { display: flex; align-items: center; gap: 8px; }
+.s-section > .btn { align-self: flex-start; }
 .btn {
   display: inline-flex; align-items: center; gap: 8px; padding: 9px 16px; border-radius: 10px;
   border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; font: inherit; font-weight: 550;
@@ -1009,8 +1013,11 @@ app-select, app-multi-select { position: relative; display: block; min-width: 0;
 .ms-row input { width: auto; }
 .ms-empty { padding: 6px 8px; margin: 0; }
 app-select.bare .ms-box { border: none; background: transparent; padding: 6px 4px; font-weight: 700; }
-.tenant-box app-select { flex: 1; }
+.tenant-box app-select { flex: 1; position: static; }
 .tenant-box app-select .ms-box { padding: 2px 4px; font-size: 13px; font-weight: 600; }
+/* Panel spans the whole tenant box so it stays inside the sidebar */
+.tenant-box { position: relative; }
+.tenant-box .ms-panel { min-width: 0; }
 .project-pick app-select { min-width: 160px; }
 .project-pick app-multi-select { min-width: 160px; max-width: 300px; }
 .project-pick app-multi-select .ms-box { border: none; background: transparent; padding: 6px 4px; font-weight: 700; }

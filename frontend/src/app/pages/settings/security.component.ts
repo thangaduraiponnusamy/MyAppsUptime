@@ -1,10 +1,11 @@
 import { Component, computed, effect, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
+import { RouterLink } from '@angular/router';
 import { ApiService, errorText } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
-import { AuditEvent, LoginEvent, ROLE_LABEL } from '../../core/models';
+import { LoginEvent, ROLE_LABEL, ServerSettings, SessionInfo } from '../../core/models';
+import { ConfirmService } from '../../core/confirm.service';
 import { PrefsService } from '../../core/prefs.service';
 import { IconComponent } from '../../shared/icon.component';
 import { MultiSelectComponent } from '../../shared/multi-select.component';
@@ -12,7 +13,7 @@ import { MultiSelectComponent } from '../../shared/multi-select.component';
 @Component({
   selector: 'app-settings-security',
   standalone: true,
-  imports: [FormsModule, DatePipe, IconComponent, MultiSelectComponent],
+  imports: [FormsModule, DatePipe, RouterLink, IconComponent, MultiSelectComponent],
   template: `
     <h2 class="s-title">Security</h2>
 
@@ -34,18 +35,22 @@ import { MultiSelectComponent } from '../../shared/multi-select.component';
       </div>
     </section>
 
+    @if (auth.isAdmin()) {
     <section class="s-section">
       <h3>Sign-in history</h3>
-      <p class="muted">{{ auth.isAdmin() ? 'Latest sign-ins of all users in this tenant.' : 'Your latest sign-ins.' }}
-        Last {{ prefs.limits().logins }} shown (change in General).</p>
+      <p class="muted">Sign-ins of all users are in the <a class="link" routerLink="/settings/audit">Audit log</a> (type "Sign-ins &amp; account").</p>
+    </section>
+    } @else {
+    <section class="s-section">
+      <h3>My sign-ins</h3>
+      <p class="muted">Your last {{ prefs.limits().logins }} sign-ins (change in General).</p>
       @if (logins().length) {
         <div class="table-wrap"><table>
-          <thead><tr><th>Time</th>@if (auth.isAdmin()) { <th>User</th> }<th>Device</th><th class="hide-sm">IP address</th><th>Result</th></tr></thead>
+          <thead><tr><th>Time</th><th>Device</th><th class="hide-sm">IP address</th><th>Result</th></tr></thead>
           <tbody>
             @for (l of logins(); track l.id) {
               <tr>
                 <td>{{ l.created_at | date: 'MMM d, y, HH:mm:ss' }}</td>
-                @if (auth.isAdmin()) { <td>{{ l.username }}</td> }
                 <td>@if (l.device) {
                   <span class="device"><app-icon [name]="isPhone(l.device) ? 'phone' : 'monitor'" [size]="15" />{{ l.device }}</span>
                 } @else { - }</td>
@@ -59,37 +64,50 @@ import { MultiSelectComponent } from '../../shared/multi-select.component';
         <p class="muted">No sign-ins yet.</p>
       }
     </section>
+    }
 
-    @if (auth.isAdmin()) {
-      <section class="s-section">
-        <h3>Audit log</h3>
-        <p class="muted">Who created, changed, paused or deleted services, projects, channels, users and settings.</p>
-        <form class="row" (ngSubmit)="loadAudit()">
-          <input class="search" name="aq" [(ngModel)]="auditQuery" placeholder="Search user, name, action or IP..." />
-          <button class="btn sm">Search</button>
-        </form>
-        @if (audit().length) {
-          <div class="table-wrap"><table>
-            <thead><tr><th>Time</th><th>User</th><th>Action</th><th>What</th><th class="hide-sm">IP address</th></tr></thead>
-            <tbody>
-              @for (a of audit(); track a.id) {
-                <tr>
-                  <td class="nowrap">{{ a.created_at | date: 'MMM d, y, HH:mm:ss' }}</td>
-                  <td>{{ a.username }}</td>
-                  <td>{{ a.action }}</td>
-                  <td>{{ a.kind }} @if (a.target) { <b>{{ a.target }}</b> }
-                    @if (a.detail) { <div class="muted small">{{ a.detail }}</div> }</td>
-                  <td class="hide-sm mono">{{ a.ip || '-' }}</td>
-                </tr>
-              }
-            </tbody>
-          </table></div>
-          @if (audit().length >= auditLimit) {
-            <button class="btn sm" (click)="auditLimit = auditLimit + 50; loadAudit()">Show more</button>
-          }
-        } @else {
-          <p class="muted">Nothing recorded yet.</p>
+    <section class="s-section">
+      <h3>Active sessions</h3>
+      <p class="muted">Browsers where you are signed in.</p>
+      @if (sessions().length) {
+        <div class="table-wrap"><table>
+          <thead><tr><th>Device</th><th class="hide-sm">IP address</th><th>Signed in</th><th>Last used</th><th></th></tr></thead>
+          <tbody>
+            @for (s of sessions(); track s.id) {
+              <tr>
+                <td><span class="device"><app-icon [name]="isPhone(s.device) ? 'phone' : 'monitor'" [size]="15" />{{ s.device || 'Unknown' }}</span>
+                  @if (s.current) { <span class="pill up">This browser</span> }</td>
+                <td class="hide-sm mono">{{ s.ip || '-' }}</td>
+                <td class="nowrap">{{ s.created_at | date: 'MMM d, y, HH:mm' }}</td>
+                <td class="nowrap">{{ s.last_used_at | date: 'MMM d, y, HH:mm' }}</td>
+                <td>@if (!s.current) { <button class="btn sm" (click)="revoke(s)">Revoke</button> }</td>
+              </tr>
+            }
+          </tbody>
+        </table></div>
+        @if (sessions().length > 1) {
+          <button class="btn sm" (click)="revokeOthers()">Sign out all other sessions</button>
         }
+      } @else {
+        <p class="muted">No sessions (signed in with an API token).</p>
+      }
+      @if (sessionNotice()) { <span class="muted small">{{ sessionNotice() }}</span> }
+    </section>
+
+    @if (auth.isSuper()) {
+      <section class="s-section">
+        <h3>Monitor targets</h3>
+        <p class="muted">Checks run by this server cannot reach private, local or cloud metadata addresses.
+          Private locations are not limited.</p>
+        <form class="s-fields" (ngSubmit)="saveTargets()">
+          <label class="check full"><input type="checkbox" name="ap" [(ngModel)]="allowPrivate" /> Allow private targets</label>
+          <label class="full">Always allowed networks (CIDR, one per line)
+            <textarea name="cidrs" rows="3" [(ngModel)]="cidrs" placeholder="10.20.0.0/16"></textarea></label>
+          <div class="row full">
+            <button class="btn primary">Save</button>
+            @if (targetNotice()) { <span class="muted">{{ targetNotice() }}</span> }
+          </div>
+        </form>
       </section>
     }
 
@@ -127,10 +145,6 @@ import { MultiSelectComponent } from '../../shared/multi-select.component';
         It has admin rights, so keep it secret.</p>
     </section>
 
-    <section class="s-section">
-      <h3>Sign out</h3>
-      <button class="btn" (click)="logout()">Sign out of this browser</button>
-    </section>
   `,
 })
 export class SecuritySettingsComponent {
@@ -138,11 +152,14 @@ export class SecuritySettingsComponent {
   readonly roleLabel = ROLE_LABEL;
   prefs = inject(PrefsService);
   private api = inject(ApiService);
-  private router = inject(Router);
+  private confirm = inject(ConfirmService);
   logins = signal<LoginEvent[]>([]);
-  audit = signal<AuditEvent[]>([]);
-  auditQuery = '';
-  auditLimit = 50;
+  sessions = signal<SessionInfo[]>([]);
+  sessionNotice = signal('');
+  private server: ServerSettings | null = null;
+  allowPrivate = false;
+  cidrs = '';
+  targetNotice = signal('');
   current = '';
   next = '';
   repeat = '';
@@ -153,13 +170,54 @@ export class SecuritySettingsComponent {
 
   constructor() {
     effect(() => {
+      if (this.auth.isAdmin()) return;
       this.api.logins(this.prefs.limits().logins).subscribe((l) => this.logins.set(l));
     });
-    if (this.auth.isAdmin()) this.loadAudit();
+    this.loadSessions();
+    if (this.auth.isSuper()) {
+      this.api.server().subscribe((s) => {
+        this.server = s;
+        this.allowPrivate = !!s.allow_private_targets;
+        this.cidrs = (s.allowed_cidrs ?? []).join('\n');
+      });
+    }
   }
 
-  loadAudit(): void {
-    this.api.audit(this.auditLimit, this.auditQuery.trim()).subscribe((a) => this.audit.set(a));
+  loadSessions(): void {
+    this.api.sessions().subscribe((s) => this.sessions.set(s));
+  }
+
+  async revoke(s: SessionInfo): Promise<void> {
+    const ok = await this.confirm.ask({ title: 'Revoke session', message: `Sign out ${s.device || 'this session'}?`, action: 'Revoke' });
+    if (!ok) return;
+    this.api.revokeSession(s.id).subscribe({
+      next: () => this.loadSessions(),
+      error: (e) => this.sessionNotice.set(errorText(e)),
+    });
+  }
+
+  async revokeOthers(): Promise<void> {
+    const ok = await this.confirm.ask({ title: 'Sign out other sessions', message: 'Sign out everywhere except this browser?', action: 'Sign out' });
+    if (!ok) return;
+    this.api.revokeOtherSessions().subscribe({
+      next: (r) => { this.sessionNotice.set(`${r.revoked} signed out.`); this.loadSessions(); },
+      error: (e) => this.sessionNotice.set(errorText(e)),
+    });
+  }
+
+  saveTargets(): void {
+    if (!this.server) return;
+    const { backup_dir, backups, ...rest } = this.server;
+    const body: ServerSettings = { ...rest, allow_private_targets: this.allowPrivate,
+      allowed_cidrs: this.cidrs.split(/[\s,]+/).filter(Boolean) };
+    this.api.saveServer(body).subscribe({
+      next: (s) => {
+        this.server = s;
+        this.cidrs = (s.allowed_cidrs ?? []).join('\n');
+        this.targetNotice.set('Saved.');
+      },
+      error: (e) => this.targetNotice.set(errorText(e)),
+    });
   }
 
   isPhone(device: string): boolean {
@@ -181,10 +239,5 @@ export class SecuritySettingsComponent {
       },
       error: (e) => this.notice.set(errorText(e)),
     });
-  }
-
-  logout(): void {
-    this.auth.logout();
-    this.router.navigate(['/login']);
   }
 }

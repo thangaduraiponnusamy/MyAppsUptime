@@ -17,6 +17,7 @@ import { NotificationSettingsComponent } from './pages/settings/notifications.co
 import { ProjectSettingsComponent } from './pages/settings/projects.component';
 import { UserSettingsComponent } from './pages/settings/users.component';
 import { SecuritySettingsComponent } from './pages/settings/security.component';
+import { AuditSettingsComponent } from './pages/settings/audit.component';
 import { BackupSettingsComponent } from './pages/settings/backup.component';
 import { AboutSettingsComponent } from './pages/settings/about.component';
 import { TenantSettingsComponent } from './pages/settings/tenants.component';
@@ -54,6 +55,7 @@ export const routes: Routes = [
           { path: 'locations', component: LocationSettingsComponent, canActivate: [adminGuard], title: 'Private locations - MyAppsUptime' },
           { path: 'tenants', component: TenantSettingsComponent, canActivate: [superGuard], title: 'Tenants - MyAppsUptime' },
           { path: 'security', component: SecuritySettingsComponent, title: 'Security - MyAppsUptime' },
+          { path: 'audit', component: AuditSettingsComponent, canActivate: [adminGuard], title: 'Audit log - MyAppsUptime' },
           { path: 'backup', component: BackupSettingsComponent, canActivate: [adminGuard], title: 'Backup - MyAppsUptime' },
           { path: 'about', component: AboutSettingsComponent, title: 'About - MyAppsUptime' },
         ],

@@ -5,7 +5,7 @@ export interface Limit { key: 'recent' | 'page' | 'logins'; label: string; hint:
 export const LIMITS: Limit[] = [
   { key: 'recent', label: 'Recent alerts on dashboard', hint: 'Rows shown in the dashboard tile', def: 5, min: 1, max: 20 },
   { key: 'page', label: 'Alert rows per page', hint: 'Rows before "Show more"', def: 50, min: 10, max: 500 },
-  { key: 'logins', label: 'Sign-in history rows', hint: 'Rows shown in Security', def: 20, min: 5, max: 500 },
+  { key: 'logins', label: 'Sign-in history rows', hint: 'My sign-ins in Security (members)', def: 20, min: 5, max: 500 },
 ];
 
 const clamp = (l: Limit, v: unknown) => {

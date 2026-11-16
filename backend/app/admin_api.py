@@ -1,23 +1,29 @@
 import asyncio
+import csv
+import io
 import logging
+import re
+from datetime import datetime, timedelta
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
+from . import audit as audit_log
 from . import backup, dnscache, notifier, tenancy
 from .api import DEFAULT_PROJECT, default_project
-from .auth import (RESET_MIN, Principal, bearer, check_lock, clear_fails, client_ip, create_reset_token,
-                   create_session, current_user, end_all_sessions, end_session, get_db, hash_password, record_fail,
+from .auth import (ACCOUNT_LOCK_AFTER, ACCOUNT_LOCK_MIN, LOGIN_IP_PER_MIN, LOGIN_USER_PER_MIN, RESET_MIN, Principal,
+                   bearer, check_lock, client_ip, create_reset_token, create_session, current_user,
+                   end_all_sessions, end_session, get_db, hash_password, rate_limit, record_fail,
                    require_admin, require_super, require_user, token_tenant, use_reset_token, verify_password,
                    visible_monitor_ids)
 from .config import APP_VERSION, get_setting, put_setting
-from .models import (AlertEvent, AuditEvent, Heartbeat, Incident, IncidentAck, LoginEvent, Monitor,
-                     NotificationChannel, Project, User, utcnow)
+from .models import (AlertEvent, AuditEvent, AuthToken, Heartbeat, Incident, IncidentAck, LoginEvent, Monitor,
+                     NotificationChannel, Project, User, aware, utcnow)
 from .schemas import (ALERT_EMAIL, AlertChannelsIn, AlertOption, AuditEventOut, DatabaseInfo, ForgotIn, GeneralSettings, LoginEventOut, LoginIn, LoginOut, MeOut, PasswordIn,
-                      ProjectIn, ProjectOut, ResetIn, ServerOut, ServerSettings, SmtpOut, SmtpSettings, SmtpTestIn,
-                      UserCreate, UserOut, UserUpdate)
+                      ProjectIn, ProjectOut, ResetIn, ServerOut, ServerSettings, SessionOut, SmtpOut, SmtpSettings,
+                      SmtpTestIn, UserCreate, UserOut, UserUpdate)
 
 log = logging.getLogger(__name__)
 
@@ -80,29 +86,96 @@ def describe_agent(ua: str) -> str:
 @auth.post("/login", response_model=LoginOut)
 def login(body: LoginIn, request: Request):
     ip = client_ip(request)
-    key = f"{body.username.lower()}|{ip}"
+    name = body.username.strip().lower()
     device = describe_agent(request.headers.get("user-agent", ""))[:80]
-    check_lock(key)
+    rate_limit(f"ip|{ip}", LOGIN_IP_PER_MIN)
+    rate_limit(f"user|{name}", LOGIN_USER_PER_MIN)
     # User names are unique across tenants, so the first match is the account
     for slug in tenancy.slugs(active_only=False):
         with tenancy.session_for(slug) as db:
-            user = db.scalar(select(User).where(func.lower(User.username) == body.username.lower()))
+            user = db.scalar(select(User).where(func.lower(User.username) == name))
             if user is None:
                 continue
-            if not user.active or not verify_password(body.password, user.password_hash):
+            now = utcnow()
+            locked = user.locked_until is not None and aware(user.locked_until) > now
+            # A locked account gets the same answer as a wrong password
+            if locked or not user.active or not verify_password(body.password, user.password_hash):
                 db.add(LoginEvent(user_id=user.id, username=user.username, ip=ip, device=device, success=False))
+                audit_log.record(db, request, user.username, "sign-in failed", "account", user.username,
+                                 "account is locked" if locked else "", user.id)
+                if not locked and user.active:
+                    user.failed_logins = (user.failed_logins or 0) + 1
+                    if user.failed_logins >= ACCOUNT_LOCK_AFTER:
+                        user.failed_logins, user.locked_until = 0, now + timedelta(minutes=ACCOUNT_LOCK_MIN)
+                        audit_log.record(db, request, user.username, "locked out", "account", user.username,
+                                         f"{ACCOUNT_LOCK_MIN} min after {ACCOUNT_LOCK_AFTER} failed sign-ins", user.id)
                 db.commit()
                 break
-            clear_fails(key)
             if not tenancy.is_active(slug):
                 raise HTTPException(status.HTTP_403_FORBIDDEN, "Your organization is disabled. Contact the administrator.")
-            user.last_login_at = utcnow()
+            user.last_login_at = now
+            user.failed_logins, user.locked_until = 0, None
             db.add(LoginEvent(user_id=user.id, username=user.username, ip=ip, device=device, success=True))
-            token = create_session(db, user)
+            audit_log.record(db, request, user.username, "signed in", "account", user.username, device, user.id)
+            token = create_session(db, user, ip, device)
             me = _me(db, Principal(user.id, user.username, user.role, user.must_change_password, slug, slug))
             return LoginOut(**me.model_dump(), token=token)
-    record_fail(key)
+    else:
+        with tenancy.session_for(tenancy.DEFAULT) as db:
+            audit_log.record(db, request, body.username, "sign-in failed", "account", body.username, "unknown user")
+            db.commit()
     raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Wrong user name or password")
+
+
+# ---------- active sessions of the signed-in user ----------
+
+SESSION_ID = re.compile(r"^[0-9a-f]{16}$")
+
+
+def _my_sessions(user: Principal):
+    return select(AuthToken).where(AuthToken.user_id == user.id, AuthToken.kind == "session",
+                                   AuthToken.expires_at > utcnow())
+
+
+@auth.get("/sessions", response_model=list[SessionOut])
+def list_sessions(user: Principal = Depends(current_user)):
+    if not user.session:
+        return []
+    with tenancy.session_for(user.tenant) as home:
+        rows = home.scalars(_my_sessions(user)).all()
+        out = [SessionOut(id=r.token_hash[:16], device=r.device or "", ip=r.ip or "", created_at=r.created_at,
+                          last_used_at=r.last_used_at, current=r.token_hash == user.session) for r in rows]
+    out.sort(key=lambda s: str(s.last_used_at or s.created_at or ""), reverse=True)
+    return sorted(out, key=lambda s: not s.current)
+
+
+@auth.delete("/sessions/{sid}", status_code=status.HTTP_204_NO_CONTENT)
+def revoke_session(sid: str, request: Request, user: Principal = Depends(current_user)):
+    if not SESSION_ID.match(sid) or not user.session:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
+    with tenancy.session_for(user.tenant) as home:
+        row = home.scalar(_my_sessions(user).where(AuthToken.token_hash.startswith(sid)))
+        if row is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
+        audit_log.record(home, request, user.username, "session revoked", "account", user.username,
+                         " ".join(filter(None, (row.device, row.ip))), sid)
+        home.delete(row)
+        home.commit()
+
+
+@auth.post("/sessions/others")
+def revoke_other_sessions(request: Request, user: Principal = Depends(current_user)):
+    """Sign out everywhere except here."""
+    if not user.session:
+        return {"revoked": 0}
+    with tenancy.session_for(user.tenant) as home:
+        rows = home.scalars(_my_sessions(user).where(AuthToken.token_hash != user.session)).all()
+        for row in rows:
+            home.delete(row)
+        audit_log.record(home, request, user.username, "sessions revoked", "account", user.username,
+                         f"{len(rows)} other sessions")
+        home.commit()
+    return {"revoked": len(rows)}
 
 
 @auth.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
@@ -285,15 +358,48 @@ def list_logins(limit: int = 20, db: Session = Depends(get_db), me: Principal = 
     return db.scalars(query.limit(max(1, min(limit, 500)))).all()
 
 
-@admin.get("/audit", response_model=list[AuditEventOut], dependencies=[Depends(require_admin)])
-def list_audit(limit: int = 50, q: str = "", db: Session = Depends(get_db)):
-    """Who created, changed, paused or deleted what, newest first."""
+def _audit_query(q: str, action: str, kind: str, username: str, since: datetime | None, until: datetime | None):
     query = select(AuditEvent).order_by(AuditEvent.created_at.desc(), AuditEvent.id.desc())
     if q.strip():
         like = f"%{q.strip()}%"
         query = query.where(AuditEvent.username.ilike(like) | AuditEvent.target.ilike(like) |
                             AuditEvent.kind.ilike(like) | AuditEvent.action.ilike(like) | AuditEvent.ip.ilike(like))
-    return db.scalars(query.limit(max(1, min(limit, 1000)))).all()
+    for column, value in ((AuditEvent.action, action), (AuditEvent.kind, kind), (AuditEvent.username, username)):
+        if value.strip():
+            query = query.where(func.lower(column) == value.strip().lower())
+    if since:
+        query = query.where(AuditEvent.created_at >= since)
+    if until:
+        query = query.where(AuditEvent.created_at < until)
+    return query
+
+
+@admin.get("/audit", response_model=list[AuditEventOut], dependencies=[Depends(require_admin)])
+def list_audit(limit: int = 50, offset: int = 0, q: str = "", action: str = "", kind: str = "", username: str = "",
+               since: datetime | None = None, until: datetime | None = None, db: Session = Depends(get_db)):
+    """Who created, changed, paused or deleted what, newest first."""
+    query = _audit_query(q, action, kind, username, since, until)
+    return db.scalars(query.offset(max(0, offset)).limit(max(1, min(limit, 1000)))).all()
+
+
+def _csv_cell(value) -> str:
+    text = "" if value is None else str(value)
+    # Spreadsheets run cells that start like a formula
+    return "'" + text if text[:1] in ("=", "+", "-", "@", "\t", "\r") else text
+
+
+@admin.get("/audit/export", dependencies=[Depends(require_admin)])
+def export_audit(q: str = "", action: str = "", kind: str = "", username: str = "", since: datetime | None = None,
+                 until: datetime | None = None, db: Session = Depends(get_db)):
+    out = io.StringIO()
+    writer = csv.writer(out)
+    fields = ("created_at", "tenant", "username", "action", "kind", "target", "object_id", "detail", "changes", "ip",
+              "user_agent")
+    writer.writerow(fields)
+    for row in db.scalars(_audit_query(q, action, kind, username, since, until).limit(100000)):
+        writer.writerow([_csv_cell(getattr(row, f)) for f in fields])
+    return Response(out.getvalue(), media_type="text/csv",
+                    headers={"Content-Disposition": 'attachment; filename="audit-log.csv"'})
 
 
 @admin.post("/users", response_model=UserOut, status_code=status.HTTP_201_CREATED)

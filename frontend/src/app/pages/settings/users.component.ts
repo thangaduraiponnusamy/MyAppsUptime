@@ -19,7 +19,7 @@ import { ServiceTreeComponent } from '../../shared/service-tree.component';
 
     <section class="s-section">
       <div class="s-head">
-        <h3>All users</h3>
+        <h3>All users <span class="count-badge">{{ shown().length }}</span></h3>
         @if (!editing()) { <button class="btn primary sm" (click)="edit(null)">Add user</button> }
       </div>
 
@@ -80,9 +80,9 @@ import { ServiceTreeComponent } from '../../shared/service-tree.component';
         </form>
       }
 
-      @if (users().length > 8) {
+      <div class="toolbar">
         <input class="search" [value]="query()" (input)="query.set($any($event.target).value)" placeholder="Search user, name or email..." />
-      }
+      </div>
       <table>
         <thead><tr><th>User</th><th>Role</th><th class="hide-sm">Access</th><th class="hide-sm">Email</th><th class="hide-sm">Last sign-in</th><th class="hide-sm">Status</th><th></th></tr></thead>
         <tbody>

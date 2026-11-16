@@ -36,7 +36,7 @@ def test_probe_sync_and_results(client, su):
     assert p["token"].startswith(f"{tenancy.DEFAULT}.") and not p["online"]
     assert client.post("/api/probes", json={"name": "home-a"}, headers=su).status_code == 409
     mine = make_monitor(client, su, name="nas", type="tcp", target="192.168.1.10", port=445, probe_id=p["id"])
-    other = make_monitor(client, su, name="other", type="tcp", target="10.0.0.1", port=22)
+    other = make_monitor(client, su, name="other", type="tcp", target="203.0.113.1", port=22)
 
     assert sync(client, "default.wrong").status_code == 401
     r = sync(client, p["token"], [

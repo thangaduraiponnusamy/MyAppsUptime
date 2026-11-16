@@ -30,3 +30,33 @@ def test_monitor_detail(page, server):
     expect(page.get_by_role("heading", name="E2E detail")).to_be_visible()
     expect(page.get_by_role("button", name="Check now")).to_be_enabled()
     expect(page.get_by_role("heading", name="Response time")).to_be_visible()
+
+
+PAGES = ["/", "/activity", "/incidents", "/maintenance", "/monitors/new", "/status-pages", "/settings/general",
+         "/settings/notifications", "/settings/projects", "/settings/users", "/settings/tenants", "/settings/locations",
+         "/settings/security", "/settings/audit", "/settings/backup", "/settings/about"]
+
+
+def test_pages_render_without_errors(page, server):
+    import os
+    base, _ = server
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    sign_in(page, base)
+    shots = os.environ.get("E2E_SHOTS")
+    for path in PAGES:
+        page.goto(f"{base}{path}")
+        page.wait_for_timeout(800)
+        expect(page.locator("main.main")).to_be_visible()
+        if shots:
+            page.screenshot(path=os.path.join(shots, path.strip("/").replace("/", "_") or "dashboard") + ".png", full_page=True)
+    assert errors == []
+
+
+def test_audit_log_has_sign_ins(page, server):
+    base, _ = server
+    sign_in(page, base)
+    page.goto(f"{base}/settings/audit")
+    page.locator(".toolbar app-select .ms-box").click()
+    page.locator(".ms-row", has_text="Sign-ins & account").click()
+    expect(page.locator("td", has_text="signed in").first).to_be_visible()

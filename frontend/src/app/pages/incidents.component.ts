@@ -21,13 +21,18 @@ import { duration } from '../shared/time';
       </div>
       <span class="spacer"></span>
       <app-project-pick [picked]="store.projectIds()" (pick)="store.setProjects($event)" />
-      <div class="segmented">
-        <button class="chip" [class.active]="!openOnly()" (click)="load(false)">All</button>
-        <button class="chip" [class.active]="openOnly()" (click)="load(true)">Ongoing</button>
-      </div>
     </div>
 
-    <section class="card">
+    <section class="card panel">
+      <div class="toolbar">
+        <h2>All incidents <span class="count-badge">{{ shown().length }}</span></h2>
+        <input class="search" placeholder="Search monitor or cause..." [value]="query()" (input)="query.set($any($event.target).value)" />
+        <span class="spacer"></span>
+        <div class="segmented">
+          <button class="chip" [class.active]="!openOnly()" (click)="load(false)">All</button>
+          <button class="chip" [class.active]="openOnly()" (click)="load(true)">Ongoing</button>
+        </div>
+      </div>
       <table>
         <thead><tr><th>Monitor</th><th>Cause</th><th>Started</th><th>Duration</th><th>State</th><th>Owner / note</th></tr></thead>
         <tbody>
@@ -77,10 +82,13 @@ export class IncidentsComponent {
   private router = inject(Router);
   incidents = signal<Incident[]>([]);
   project = this.store.project;
+  query = signal('');
   shown = computed(() => {
     const s = this.store.scope();
     const of = this.store.projectOf();
-    return s === null ? this.incidents() : this.incidents().filter((i) => s.has(of.get(i.monitor_id) ?? 0));
+    const q = this.query().trim().toLowerCase();
+    return this.incidents().filter((i) => (s === null || s.has(of.get(i.monitor_id) ?? 0))
+      && (!q || `${i.monitor_name} ${i.cause}`.toLowerCase().includes(q)));
   });
   openOnly = signal(false);
   editing = signal<number | null>(null);

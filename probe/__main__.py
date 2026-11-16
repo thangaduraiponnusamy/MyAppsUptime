@@ -73,6 +73,7 @@ class Probe:
             self.results.append((time.monotonic(), {
                 "monitor_id": job["id"], "status": r.status, "latency_ms": r.latency_ms, "message": r.message[:300],
                 "ssl_expires_at": r.ssl_expires_at.isoformat() if r.ssl_expires_at else None,
+                "timings": r.timings, "findings": r.findings,
             }))
         except Exception:
             log.exception("Check of '%s' failed", job["name"])

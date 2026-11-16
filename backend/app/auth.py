@@ -6,6 +6,7 @@ import os
 import re
 import secrets
 import time
+from collections import deque
 from dataclasses import dataclass
 from datetime import timedelta
 
@@ -22,6 +23,10 @@ API_TOKEN = os.getenv("API_TOKEN")
 SESSION_DAYS = int(os.getenv("SESSION_DAYS", "7"))
 RESET_MIN = 30
 MAX_FAILS, LOCK_SEC = 5, 300
+LOGIN_IP_PER_MIN = int(os.getenv("LOGIN_IP_PER_MIN", "10"))
+LOGIN_USER_PER_MIN = int(os.getenv("LOGIN_USER_PER_MIN", "10"))
+ACCOUNT_LOCK_AFTER, ACCOUNT_LOCK_MIN = 5, 15  # wrong passwords in a row, minutes locked
+SESSION_TOUCH = timedelta(seconds=60)  # how often "last used" is written
 
 # Published at https://www.cloudflare.com/ips/
 CLOUDFLARE = [ipaddress.ip_network(n) for n in (
@@ -52,7 +57,7 @@ def client_ip(request: Request) -> str:
     return peer[:64]
 
 # Members may only change these (everything else that is not GET needs an admin)
-MEMBER_WRITES = re.compile(r"^/api/(incidents/\d+/ack|monitors/\d+/check)$")
+MEMBER_WRITES = re.compile(r"^/api/(incidents/\d+/ack|monitors/\d+/(check|snooze)|push/(subscribe|test))$")
 
 
 @dataclass
@@ -63,6 +68,7 @@ class Principal:
     must_change_password: bool = False
     tenant: str = tenancy.DEFAULT  # where the account lives
     active: str = tenancy.DEFAULT  # tenant being worked on (a super admin can switch)
+    session: str = ""  # token hash of the current session
 
     @property
     def is_admin(self) -> bool:
@@ -104,10 +110,11 @@ def token_tenant(token: str) -> str:
     return token.split(".", 1)[0] if "." in token else tenancy.DEFAULT
 
 
-def create_session(db: Session, user: User) -> str:
+def create_session(db: Session, user: User, ip: str = "", device: str = "") -> str:
     token = _new_token(db)
     db.execute(delete(AuthToken).where(AuthToken.expires_at < utcnow()))
-    db.add(AuthToken(token_hash=_token_hash(token), user_id=user.id, expires_at=utcnow() + timedelta(days=SESSION_DAYS)))
+    db.add(AuthToken(token_hash=_token_hash(token), user_id=user.id, expires_at=utcnow() + timedelta(days=SESSION_DAYS),
+                     created_at=utcnow(), last_used_at=utcnow(), ip=ip[:64], device=device[:80]))
     db.commit()
     return token
 
@@ -159,6 +166,23 @@ def clear_fails(key: str) -> None:
     _fails.pop(key, None)
 
 
+_hits: dict[str, deque] = {}
+
+
+def rate_limit(key: str, per_min: int) -> None:
+    """Sliding one-minute window; raises 429 when the key was used too often."""
+    now = time.monotonic()
+    if len(_hits) > 10000:
+        for k in [k for k, q in _hits.items() if not q or q[-1] <= now - 60]:
+            del _hits[k]
+    hits = _hits.setdefault(key, deque())
+    while hits and hits[0] <= now - 60:
+        hits.popleft()
+    if len(hits) >= per_min:
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Too many attempts. Try again later.")
+    hits.append(now)
+
+
 # ---------- dependencies ----------
 
 def bearer(authorization: str | None) -> str | None:
@@ -185,7 +209,12 @@ def _resolve(request: Request) -> Principal | None:
                 ).first()
                 if row and aware(row.AuthToken.expires_at) > utcnow() and row.User.active:
                     u = row.User
-                    principal = Principal(u.id, u.username, u.role, u.must_change_password, slug, slug)
+                    principal = Principal(u.id, u.username, u.role, u.must_change_password, slug, slug,
+                                          row.AuthToken.token_hash)
+                    used = row.AuthToken.last_used_at
+                    if used is None or aware(used) < utcnow() - SESSION_TOUCH:
+                        row.AuthToken.last_used_at = utcnow()
+                        db.commit()
     if principal and principal.is_super:
         wanted = request.headers.get("x-tenant")
         if wanted and tenancy.exists(wanted):

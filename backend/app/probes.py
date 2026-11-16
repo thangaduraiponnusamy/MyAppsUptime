@@ -19,7 +19,7 @@ probe = APIRouter(prefix="/api/probe")
 
 JOB_FIELDS = ("id", "name", "type", "target", "port", "keyword", "json_path", "json_expected", "method",
               "expected_status", "interval_sec", "timeout_sec", "retries", "latency_threshold_ms",
-              "ssl_expiry_warn_days")
+              "ssl_expiry_warn_days", "min_grade")
 
 # "Check now" requests waiting for the next probe sync: (tenant, probe id) -> monitor ids
 _run_now: dict[tuple[str, int], set[int]] = {}
@@ -136,7 +136,8 @@ async def sync(body: ProbeSyncIn, request: Request, authorization: str | None = 
     for r in body.results:
         if r.monitor_id in allowed:
             await record_result(tenant, r.monitor_id,
-                                CheckResult(r.status, r.latency_ms, r.message, r.ssl_expires_at))
+                                CheckResult(r.status, r.latency_ms, r.message, r.ssl_expires_at,
+                                            timings=r.timings, findings=r.findings))
     if back_online:
         await deliver(tenant, None, *back_online)
     return {"name": name, "monitors": jobs, "run_now": sorted(_run_now.pop((tenant, probe_id), set()) & allowed)}

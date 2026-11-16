@@ -7,7 +7,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 
-from . import admin_api, api, dnscache, probes, tenancy, tenants_api
+from . import actions, admin_api, api, dnscache, probes, push, tenancy, tenants_api
 from .audit import audit
 from .auth import ensure_default_admin
 from .config import APP_VERSION, get_setting
@@ -66,7 +66,8 @@ app.add_middleware(
 )
 
 CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
-       "connect-src 'self'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'; object-src 'none'")
+       "connect-src 'self'; worker-src 'self'; manifest-src 'self'; frame-ancestors 'self'; base-uri 'self'; "
+       "form-action 'self'; object-src 'none'")
 
 
 @app.middleware("http")
@@ -91,6 +92,9 @@ app.include_router(probes.admin, dependencies=[Depends(audit)])
 app.include_router(probes.probe)
 app.include_router(api.router, dependencies=[Depends(audit)])
 app.include_router(api.public)
+app.include_router(api.badges)
+app.include_router(actions.router)
+app.include_router(push.router)
 
 
 @app.get("/health")
@@ -100,6 +104,10 @@ def health():
 
 # Serve the built Angular UI when present (Docker image); SPA routes fall back to index.html.
 STATIC_DIR = Path(os.getenv("STATIC_DIR", Path(__file__).resolve().parent.parent / "static")).resolve()
+SPECIAL_FILES = {
+    "sw.js": ("application/javascript", {"Cache-Control": "no-cache", "Service-Worker-Allowed": "/"}),
+    "manifest.webmanifest": ("application/manifest+json", {"Cache-Control": "no-cache"}),
+}
 
 if STATIC_DIR.is_dir():
     @app.get("/{path:path}", include_in_schema=False)
@@ -111,6 +119,9 @@ if STATIC_DIR.is_dir():
             if page:
                 return RedirectResponse(f"/status/{page}")
         file = (STATIC_DIR / path).resolve()
+        if path in SPECIAL_FILES and file.is_file():
+            media_type, headers = SPECIAL_FILES[path]
+            return FileResponse(file, media_type=media_type, headers=headers)
         if path and file.is_file() and file.is_relative_to(STATIC_DIR):
             return FileResponse(file)
         return FileResponse(STATIC_DIR / "index.html")

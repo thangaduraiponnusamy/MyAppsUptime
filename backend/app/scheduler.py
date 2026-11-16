@@ -1,4 +1,5 @@
 import asyncio
+import ipaddress
 import logging
 import statistics
 from datetime import timedelta
@@ -7,8 +8,8 @@ import httpx
 
 from sqlalchemy import delete, select
 
-from . import backup, expiry, notifier, tenancy
-from .checks import CheckResult, run_check
+from . import actions, backup, expiry, notifier, otel, tenancy
+from .checks import CheckResult, TargetPolicy, run_check
 from .config import get_setting, retention_days
 from .models import (AlertEvent, AuditEvent, Heartbeat, Incident, IncidentAck, LoginEvent, MaintenanceWindow, Monitor,
                      NotificationChannel, Probe, Project, User, aware, utcnow)
@@ -20,6 +21,14 @@ TICK_SEC = 5
 JOBS_EVERY = timedelta(minutes=10)
 EXPIRY_EVERY = timedelta(hours=12)
 PROBE_OFFLINE = timedelta(seconds=90)  # probes sync every 10 s
+
+
+def target_policy() -> TargetPolicy:
+    """Which targets checks run by this server may reach (Server settings of the admin tenant)."""
+    with tenancy.session_for(tenancy.DEFAULT) as db:
+        server = get_setting(db, "server")
+    return TargetPolicy(bool(server["allow_private_targets"]),
+                        tuple(ipaddress.ip_network(c, strict=False) for c in server["allowed_cidrs"]))
 
 
 def in_maintenance(db, monitor_id: int, now) -> bool:
@@ -70,7 +79,8 @@ def channel_for(channel: NotificationChannel, m: Monitor, project: Project | Non
     return notifier.channel_matches(channel, m)
 
 
-def build_alert(db, tenant: str, m: Monitor, status: str, message: str, headline: str = ""):
+def build_alert(db, tenant: str, m: Monitor, status: str, message: str, headline: str = "",
+                incident_id: int | None = None):
     """Channels, alert, project e-mails and SMTP settings for one monitor alert."""
     active = db.scalars(select(NotificationChannel).where(NotificationChannel.active.is_(True))).all()
     project = db.get(Project, m.project_id) if m.project_id else None
@@ -97,13 +107,36 @@ def build_alert(db, tenant: str, m: Monitor, status: str, message: str, headline
         link=f"{app_url}/monitors/{m.id}" if app_url else None,
         **notifier.alert_context(general),
     )
+    if app_url and incident_id and status == "down":
+        alert.actions = actions.links(app_url, tenant, incident_id, m.id)
     return channels, alert, emails, smtp
+
+
+def is_snoozed(m: Monitor) -> bool:
+    until = aware(m.snoozed_until)
+    return until is not None and until > utcnow()
 
 
 async def deliver(tenant: str, monitor_id: int | None, channels, alert, emails, smtp) -> None:
     """Send an alert and keep a record of it for the Alerts page."""
+    if monitor_id is not None:
+        with tenancy.session_for(tenant) as db:
+            m = db.get(Monitor, monitor_id)
+            if m is not None and is_snoozed(m):
+                log.info("Alert for %s skipped: snoozed until %s", m.name, m.snoozed_until)
+                return
     sent_to = [c.name for c in channels] + (["Team e-mail"] if emails else [])
     errors = await notifier.send(channels, alert, emails, smtp)
+    if monitor_id is not None:
+        from . import push
+        try:
+            pushed, push_errors = await push.notify_monitor(tenant, monitor_id, alert)
+        except Exception:  # push must never stop the other alerts
+            log.exception("Push delivery failed")
+            pushed, push_errors = 0, ["Push: failed"]
+        if pushed:
+            sent_to.append("Push")
+        errors = list(errors or []) + push_errors
     with tenancy.session_for(tenant) as db:
         db.add(AlertEvent(monitor_id=monitor_id, name=alert.monitor[:160], status=alert.status,
                           message=(alert.message or "")[:300], sent_to=sent_to,
@@ -144,12 +177,18 @@ async def record_result(tenant: str, monitor_id: int, result: CheckResult) -> No
             if parent_down:
                 result.message += f" (parent '{parent.name}' is down)"
 
+        # Phase timings are kept on heartbeats only when the check failed or was slow
+        slow = result.latency_ms is not None and result.latency_ms > m.timeout_sec * 500
         db.add(Heartbeat(monitor_id=m.id, status=status, latency_ms=result.latency_ms,
-                         message=result.message[:300], created_at=now))
+                         message=result.message[:300], created_at=now,
+                         timings=result.timings if (result.status != "up" or slow) else None))
         m.status = status
         m.last_checked = now
         m.last_latency_ms = result.latency_ms
         m.last_message = result.message[:300]
+        m.last_timings = result.timings
+        if result.findings is not None:
+            m.security_findings = result.findings
         if result.ssl_expires_at:
             m.ssl_expires_at = result.ssl_expires_at
 
@@ -158,7 +197,8 @@ async def record_result(tenant: str, monitor_id: int, result: CheckResult) -> No
         )
         # A child that is down because its parent is down is covered by the parent's incident
         if status == "down" and open_incident is None and not parent_down:
-            db.add(Incident(monitor_id=m.id, cause=result.message[:300], started_at=now))
+            open_incident = Incident(monitor_id=m.id, cause=result.message[:300], started_at=now)
+            db.add(open_incident)
         elif status in ("up", "degraded") and open_incident is not None:
             open_incident.resolved_at = now
 
@@ -168,16 +208,20 @@ async def record_result(tenant: str, monitor_id: int, result: CheckResult) -> No
         repeat = (
             status == "down" and previous == "down" and m.notify_repeat_min is not None
             and (last_sent is None or now - last_sent >= timedelta(minutes=m.notify_repeat_min))
+            and not (open_incident is not None and open_incident.acknowledged_at)
         )
         notify = (changed or repeat) and not parent_down
         if notify:
             m.last_notified_at = now
         db.commit()
+        if result.status in ("down", "degraded"):
+            otel.export_failed_check(m.name, m.target, result.status, result.message, result.timings)
 
         if not notify:
             return
         message = ("Still down: " if repeat and not changed else "") + result.message
-        channels, alert, emails, smtp = build_alert(db, tenant, m, status, message)
+        incident_id = open_incident.id if open_incident is not None and not open_incident.resolved_at else None
+        channels, alert, emails, smtp = build_alert(db, tenant, m, status, message, incident_id=incident_id)
 
     await deliver(tenant, monitor_id, channels, alert, emails, smtp)
 
@@ -353,7 +397,7 @@ class Scheduler:
 
     async def _check(self, tenant: str, m: Monitor) -> None:
         try:
-            result = await run_check(m)
+            result = await run_check(m, target_policy())
             # Push monitors record their UP beats when the push arrives
             if not (m.type == "push" and result.status == "up"):
                 await record_result(tenant, m.id, result)
@@ -370,6 +414,7 @@ class Scheduler:
         for tenant in tenancy.slugs():
             with tenancy.session_for(tenant) as db:
                 cutoff = now - timedelta(days=retention_days(get_setting(db, "general")))
+                audit_cutoff = now - timedelta(days=int(get_setting(db, "general")["audit_keep_days"]))
                 db.execute(delete(Heartbeat).where(Heartbeat.created_at < cutoff))
                 db.execute(delete(Incident).where(Incident.resolved_at.is_not(None), Incident.resolved_at < cutoff))
                 # SQLite does not enforce ON DELETE CASCADE here, so drop notes of deleted incidents
@@ -377,7 +422,8 @@ class Scheduler:
                 db.execute(delete(MaintenanceWindow).where(MaintenanceWindow.ends_at < cutoff))
                 db.execute(delete(LoginEvent).where(LoginEvent.created_at < cutoff))
                 db.execute(delete(AlertEvent).where(AlertEvent.created_at < cutoff))
-                db.execute(delete(AuditEvent).where(AuditEvent.created_at < cutoff))
+                # The audit log has its own retention
+                db.execute(delete(AuditEvent).where(AuditEvent.created_at < audit_cutoff))
                 db.commit()
 
 

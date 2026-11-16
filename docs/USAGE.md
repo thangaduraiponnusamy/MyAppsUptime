@@ -91,6 +91,7 @@ Click **+ New monitor** and pick a check type.
 | HTTP(s) | `https://example.com/health` | Status code in range (default `200-399`) |
 | HTTP(s) - Keyword | URL + keyword `healthy` | Status code + keyword in the page |
 | HTTP(s) - JSON | URL + path `data.status` + expected `ok` | Value at the JSON path |
+| Security headers | `https://example.com` | Grade A-F for HTTPS, TLS and security headers (see 3) |
 | TCP Port | `db.example.com` + `5432` | Port accepts connections |
 | Ping | `10.0.0.1` | ICMP reply |
 | DNS | `example.com` | Name resolves |
@@ -128,6 +129,36 @@ Main options:
 - **SLA & error budget**: how much allowed downtime is left this month.
 - Response time chart: 1h, 24h, 7d, 30d. Red lines = DOWN checks.
 - **Check now**, **Pause / Resume**, **Edit**, **Delete**.
+
+### Check timing
+
+URL monitors show **Last check timing**: one bar split into DNS, TCP connect, TLS, time to first byte (TTFB) and download.
+The slowest part is the widest. Hover a red or slow beat in the status bar to see its timing.
+Timings are saved for failed or slow checks only.
+
+### Security headers monitor
+
+Grades a URL from A to F:
+
+| Check | Pass when |
+|---|---|
+| HTTPS, TLS 1.2+, strong cipher | Required. A fail here = F |
+| Certificate | Not expiring within the warn days |
+| HSTS | `max-age` 180 days or more |
+| Content-Security-Policy | Present |
+| X-Content-Type-Options | `nosniff` |
+| Clickjacking | `X-Frame-Options` or CSP `frame-ancestors` |
+| Referrer-Policy | Present |
+| Server version | `Server` / `X-Powered-By` show no version number |
+
+Each failed check lowers the grade by one. Below the **Minimum grade** (default B) the monitor is DEGRADED.
+The monitor page shows the grade and a pass/fail list.
+
+### Send failed checks to OpenTelemetry (optional)
+
+Set `OTEL_EXPORTER_OTLP_ENDPOINT` (for example `http://otel-collector:4318`) and install
+`opentelemetry-sdk opentelemetry-exporter-otlp-proto-http`. Each failed check is sent as one trace with a span per timing part.
+`OTEL_SERVICE_NAME` sets the service name (default `myappsuptime`). Without these, nothing is sent.
 
 ## 4. Push monitors (cron jobs)
 
@@ -185,6 +216,34 @@ Without them, the `APP_URL` and `TZ` environment variables are used (default: no
 
 Webhook JSON body: `monitor`, `status`, `message`, `project`, `target`, `link`, `server`, `time` (UTC), `time_local`, `text`.
 
+### Acknowledge and snooze from an alert
+
+When the app address is set, DOWN alerts get two more buttons:
+
+| Button | What it does |
+|---|---|
+| Acknowledge | Marks the incident "Acknowledged by via alert link". Repeat alerts stop. |
+| Snooze 1h | No alerts for this monitor for 1 hour. Checks keep running. |
+
+- The link opens a small page; nothing changes until you press the button there.
+- Links are signed, work for 7 days, and only for that one incident.
+- On the monitor page you can also Acknowledge, Snooze (1h / 4h / 24h) or Unsnooze.
+- All of these show up in the audit log.
+
+### Browser push (app on phone or PC)
+
+1. Open the app in Chrome, Edge or Firefox and choose "Install app" (optional).
+2. Settings > Notifications > **Push on this device** > Enable.
+3. Press **Send test**.
+
+| Setting (env) | Default |
+|---|---|
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | Created once in `/data/vapid.json` - back it up |
+| `VAPID_SUBJECT` | `mailto:admin@localhost` |
+
+- Push needs HTTPS (or `localhost`).
+- You get alerts only for monitors you can see. Snooze and maintenance apply.
+
 ## 7. Maintenance windows
 
 Go to **Maintenance**, set start and end, select monitors (none = all).
@@ -193,13 +252,21 @@ During the window: status is MAINTENANCE, no alerts, no incidents.
 ## 8. Status pages and badges
 
 - **Status pages**: choose title, slug and monitors. Share `http://<host>:8000/status/<slug>`.
-- **Badges** work for monitors on a status page:
+- **Badges** are off by default. Turn on **Enable badge** in the monitor form or on the monitor page.
+  The monitor page shows previews plus Markdown and HTML to copy.
 
 ```markdown
-![uptime](http://<host>:8000/api/public/badge/<id>/uptime.svg)
+![uptime](http://<host>:8000/api/badge/<badge-token>/uptime.svg)
 ```
 
-Kinds: `status.svg`, `uptime.svg`, `latency.svg`.
+| URL | Shows |
+|-----|-------|
+| `/api/badge/<token>/status.svg` | Current status |
+| `/api/badge/<token>/uptime.svg?range=24h\|7d\|30d` | Uptime (default 30d) |
+| `/api/badge/<token>/latency.svg` | Average response time, last 24h |
+
+- Optional `?label=My%20API` changes the left text (max 30 characters).
+- Anyone with the link can see the badge. Turning the badge off makes old links return 404; turning it on again gives a new link.
 
 ## 9. Security
 
@@ -212,6 +279,28 @@ What is stored and how:
 | SMTP password | Encrypted (Fernet / AES) |
 | Alert webhook URLs | Encrypted (Fernet / AES) |
 | Monitors, history, settings | Plain SQLite, or fully encrypted with `DB_PASSWORD` |
+
+### Protection settings
+
+| Setting | Where | What it does |
+|---|---|---|
+| Sign-in limit | `LOGIN_IP_PER_MIN`, `LOGIN_USER_PER_MIN` (default 10) | Too many sign-ins per minute get "Too many attempts" |
+| Account lock | fixed | 5 wrong passwords in a row lock the account for 15 minutes |
+| Active sessions | Settings > Security | See where you are signed in, revoke one or sign out all others |
+| Monitor targets | Settings > Security (super admin) | Server checks cannot reach private, local or metadata addresses. Allow private targets or add allowed networks (CIDR). Private locations are not limited |
+| Metadata address | `ALLOW_METADATA=1` | Allows 169.254.169.254 (blocked by default, even with the settings above) |
+| Audit log | Settings > Audit log (admin) | Every sign-in and change. Cannot be edited; secrets and passwords are never stored. Search, type filter, time range, pages of 50, CSV export. Kept `audit_keep_days` (default 365) |
+
+### Container
+
+The images run as user 10001 (not root). Only `/data` and `/tmp` need to be writable.
+`docker-compose.yml` uses `read_only: true`, `tmpfs: /tmp`, `cap_drop: ALL` and `no-new-privileges`.
+For the probe, add `--cap-add NET_RAW` if Ping monitors fail:
+
+```bash
+docker run -d --read-only --tmpfs /tmp --cap-drop ALL --cap-add NET_RAW \
+  --security-opt no-new-privileges:true -e SERVER_URL=... -e PROBE_TOKEN=... myappsuptime-probe
+```
 
 ### Production setup
 

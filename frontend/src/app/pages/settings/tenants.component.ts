@@ -16,7 +16,7 @@ import { Tenant, TenantCreate } from '../../core/models';
 
     <section class="s-section">
       <div class="s-head">
-        <h3>All tenants</h3>
+        <h3>All tenants <span class="count-badge">{{ tenants().length }}</span></h3>
         @if (!creating()) { <button class="btn primary sm" (click)="startCreate()">Add tenant</button> }
       </div>
 

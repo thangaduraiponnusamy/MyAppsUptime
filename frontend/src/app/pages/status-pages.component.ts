@@ -47,11 +47,15 @@ import { MultiSelectComponent } from '../shared/multi-select.component';
       </form>
     </section>
 
-    <section class="card">
+    <section class="card panel">
+      <div class="toolbar">
+        <h2>All status pages <span class="count-badge">{{ shown().length }}</span></h2>
+        <input class="search" placeholder="Search title, slug or domain..." [value]="query()" (input)="query.set($any($event.target).value)" />
+      </div>
       <table>
         <thead><tr><th>Title</th><th>URL</th><th>Domain</th><th>Monitors</th><th></th></tr></thead>
         <tbody>
-          @for (p of pages(); track p.id) {
+          @for (p of shown(); track p.id) {
             <tr>
               <td>{{ p.title }}</td>
               <td><a [routerLink]="['/status', p.slug]" target="_blank">/status/{{ p.slug }}</a></td>
@@ -75,6 +79,11 @@ export class StatusPagesComponent {
   store = inject(MonitorStore);
   private confirm = inject(ConfirmService);
   pages = signal<StatusPage[]>([]);
+  query = signal('');
+  shown = computed(() => {
+    const q = this.query().trim().toLowerCase();
+    return q ? this.pages().filter((p) => `${p.title} ${p.slug} ${p.domain ?? ''}`.toLowerCase().includes(q)) : this.pages();
+  });
   selected = signal(new Set<number>());
   monitorOptions = computed(() => this.store.monitors().map((m) => ({ id: m.id, label: m.name })));
   error = signal('');

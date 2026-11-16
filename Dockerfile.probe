@@ -20,7 +20,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/app/__init__.py backend/app/checks.py backend/app/timeutil.py ./app/
 COPY probe/*.py ./probe/
 
-RUN useradd --system --uid 10001 probe
-USER probe
+# Non-root; the probe writes nothing, so the root file system can be read-only
+RUN groupadd --system --gid 10001 probe \
+    && useradd --system --uid 10001 --gid 10001 --no-create-home probe
+USER 10001:10001
 
 CMD ["python", "-m", "probe"]

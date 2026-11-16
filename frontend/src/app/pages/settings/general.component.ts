@@ -213,7 +213,8 @@ export class GeneralSettingsComponent {
   }
 
   saveServer(s: ServerSettings): void {
-    const body = { backup_enabled: s.backup_enabled, backup_keep_days: Number(s.backup_keep_days), dns_cache: s.dns_cache };
+    const body = { backup_enabled: s.backup_enabled, backup_keep_days: Number(s.backup_keep_days), dns_cache: s.dns_cache,
+      allow_private_targets: s.allow_private_targets, allowed_cidrs: s.allowed_cidrs };
     this.api.saveServer(body).subscribe({
       next: (r) => { this.server.set(r); this.serverNotice.set('Saved.'); },
       error: (e) => this.serverNotice.set(errorText(e)),

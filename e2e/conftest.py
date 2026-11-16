@@ -57,6 +57,11 @@ def server():
     token = call(base, "POST", "/api/auth/login", {"username": "admin", "password": "admin"})["token"]
     call(base, "POST", "/api/auth/password", {"current": "admin", "new": PASSWORD}, token)
     token = call(base, "POST", "/api/auth/login", {"username": "admin", "password": PASSWORD})["token"]
+    # Tests monitor the local test server, which the SSRF guard blocks by default
+    server = call(base, "GET", "/api/settings/server", token=token)
+    call(base, "PUT", "/api/settings/server", {"backup_enabled": server["backup_enabled"],
+         "backup_keep_days": server["backup_keep_days"], "dns_cache": server["dns_cache"],
+         "allow_private_targets": True, "allowed_cidrs": []}, token)
     yield base, token
     proc.terminate()
     proc.wait(10)

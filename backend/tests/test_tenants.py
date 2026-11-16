@@ -12,7 +12,7 @@ def test_tenant_lifecycle(client, su, data_dir):
 
     token = client.post("/api/auth/login", json={"username": "acme-admin", "password": "Acme12345"}).json()["token"]
     client.post("/api/auth/password", json={"current": "Acme12345", "new": "Acme123456"}, headers=auth(token))
-    r = client.post("/api/monitors", json={"name": "acme", "type": "http", "target": "http://127.0.0.1:9"},
+    r = client.post("/api/monitors", json={"name": "acme", "type": "http", "target": "http://203.0.113.9:9"},
                     headers=auth(token))
     assert r.status_code == 201
     assert len(client.get("/api/monitors", headers=auth(token)).json()) == 1

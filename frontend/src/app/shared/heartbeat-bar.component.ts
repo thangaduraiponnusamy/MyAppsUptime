@@ -1,8 +1,10 @@
 import { formatDate } from '@angular/common';
 import { Component, computed, input, signal } from '@angular/core';
+import { Timings } from '../core/models';
 import { short } from './time';
+import { timingText } from './timing-bar.component';
 
-export interface BeatDetail { time: string; message?: string | null; latency?: number | null; }
+export interface BeatDetail { time: string; message?: string | null; latency?: number | null; timings?: Timings | null; }
 
 @Component({
   selector: 'app-heartbeat-bar',
@@ -20,6 +22,7 @@ export interface BeatDetail { time: string; message?: string | null; latency?: n
           <b [class]="t.status">{{ t.status.toUpperCase() }}</b> <span>{{ t.time }}</span>
           @if (t.latency != null) { <span class="muted">{{ t.latency }} ms</span> }
           @if (t.message) { <div class="muted">{{ t.message }}</div> }
+          @if (t.timings) { <div class="muted">{{ t.timings }}</div> }
         </div>
       }
       @if (labels() && since(); as s) {
@@ -52,7 +55,7 @@ export class HeartbeatBarComponent {
     const left = Math.min(85, Math.max(15, ((this.hover() + 0.5) / this.max()) * 100));
     return {
       left, status: this.padded()[this.hover()], time: formatDate(d.time, 'yyyy-MM-dd HH:mm:ss', 'en-US'),
-      latency: d.latency == null ? null : Math.round(d.latency), message: d.message,
+      latency: d.latency == null ? null : Math.round(d.latency), message: d.message, timings: timingText(d.timings),
     };
   });
 

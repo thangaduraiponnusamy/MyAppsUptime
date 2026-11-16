@@ -18,7 +18,7 @@ const EMAIL = -1;  // "Email to members" in the alerts dropdown
 
     <section class="s-section">
       <div class="s-head">
-        <h3>All projects</h3>
+        <h3>All projects <span class="count-badge">{{ shown().length }}</span></h3>
         @if (!editing()) { <button class="btn primary sm" (click)="edit(null)">Add project</button> }
       </div>
 
@@ -51,9 +51,9 @@ const EMAIL = -1;  // "Email to members" in the alerts dropdown
         </form>
       }
 
-      @if (projects().length > 8) {
+      <div class="toolbar">
         <input class="search" [value]="query()" (input)="query.set($any($event.target).value)" placeholder="Search project, service or member..." />
-      }
+      </div>
       <table>
         <thead><tr><th>Project</th><th>Services</th><th class="hide-sm">Members</th><th class="hide-sm">Email</th><th class="hide-sm">Alerts</th><th></th></tr></thead>
         <tbody>

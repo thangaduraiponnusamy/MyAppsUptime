@@ -33,11 +33,15 @@ import { MultiSelectComponent } from '../shared/multi-select.component';
       </form>
     </section>
 
-    <section class="card">
+    <section class="card panel">
+      <div class="toolbar">
+        <h2>All windows <span class="count-badge">{{ shown().length }}</span></h2>
+        <input class="search" placeholder="Search title..." [value]="query()" (input)="query.set($any($event.target).value)" />
+      </div>
       <table>
         <thead><tr><th>Title</th><th>Start</th><th>End</th><th>Scope</th><th></th></tr></thead>
         <tbody>
-          @for (w of windows(); track w.id) {
+          @for (w of shown(); track w.id) {
             <tr>
               <td>{{ w.title }}</td>
               <td>{{ w.starts_at | date: 'MMM d, HH:mm' }}</td>
@@ -58,6 +62,11 @@ export class MaintenanceComponent {
   store = inject(MonitorStore);
   private confirm = inject(ConfirmService);
   windows = signal<Maintenance[]>([]);
+  query = signal('');
+  shown = computed(() => {
+    const q = this.query().trim().toLowerCase();
+    return q ? this.windows().filter((w) => w.title.toLowerCase().includes(q)) : this.windows();
+  });
   selected = signal(new Set<number>());
   monitorOptions = computed(() => this.store.monitors().map((m) => ({ id: m.id, label: m.name })));
   error = signal('');

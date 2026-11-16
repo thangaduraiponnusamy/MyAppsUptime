@@ -11,6 +11,7 @@ export const SETTINGS_SECTIONS = [
   { path: 'tenants', label: 'Tenants', icon: 'globe', admin: true, super: true },
   { path: 'locations', label: 'Private locations', icon: 'network', admin: true },
   { path: 'security', label: 'Security', icon: 'shield', admin: false },
+  { path: 'audit', label: 'Audit log', icon: 'history', admin: true },
   { path: 'backup', label: 'Backup', icon: 'database', admin: true },
   { path: 'about', label: 'About', icon: 'info', admin: false },
 ];

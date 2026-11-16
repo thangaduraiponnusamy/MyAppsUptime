@@ -8,7 +8,8 @@ import { MonitorStore } from '../core/monitor-store.service';
 import { Option } from '../shared/multi-select.component';
 import { SelectComponent } from '../shared/select.component';
 
-const URL_TYPES: MonitorType[] = ['http', 'keyword', 'json'];
+const HTTP_TYPES: MonitorType[] = ['http', 'keyword', 'json'];
+const URL_TYPES: MonitorType[] = [...HTTP_TYPES, 'security'];
 
 @Component({
   selector: 'app-monitor-form',
@@ -60,13 +61,19 @@ const URL_TYPES: MonitorType[] = ['http', 'keyword', 'json'];
           <label>JSON path <input formControlName="json_path" placeholder="data.status or items.0.state" /></label>
           <label>Expected value (optional) <input formControlName="json_expected" placeholder="ok" /></label>
         }
-        @if (isUrl()) {
+        @if (isHttp()) {
           <label>Method
             <select formControlName="method"><option>GET</option><option>HEAD</option><option>POST</option></select>
           </label>
           <label>Accepted status codes <input formControlName="expected_status" placeholder="200-399" /></label>
         }
-        @if (type() === 'ssl') {
+        @if (type() === 'security') {
+          <label>Minimum grade
+            <select formControlName="min_grade"><option>A</option><option>B</option><option>C</option><option>D</option></select>
+          </label>
+          <p class="muted full">Checks HTTPS, TLS version, HSTS, CSP and other security headers. A lower grade marks the monitor as degraded.</p>
+        }
+        @if (type() === 'ssl' || type() === 'security') {
           <label>Warn when expiring within (days) <input type="number" formControlName="ssl_expiry_warn_days" /></label>
         }
 
@@ -83,6 +90,8 @@ const URL_TYPES: MonitorType[] = ['http', 'keyword', 'json'];
         <label>Slow response threshold (ms, optional) <input type="number" formControlName="latency_threshold_ms" /></label>
         <label class="inline full"><input type="checkbox" formControlName="anomaly_detection" />
           Smart latency anomaly detection (flags DEGRADED when response time stays far above the normal baseline for 3 checks in a row)</label>
+        <label class="inline full"><input type="checkbox" formControlName="badge_enabled" />
+          Enable badge (public SVG images anyone with the link can see; turning it off breaks old links)</label>
 
         <div class="section-title">Alerting</div>
         <label>Project (required)
@@ -135,15 +144,18 @@ export class MonitorFormComponent {
     ssl_expiry_warn_days: [14],
     sla_target: [99.9, [Validators.min(50), Validators.max(100)]],
     anomaly_detection: [true],
+    badge_enabled: [false],
     notify_repeat_min: [null as number | null, [Validators.min(5)]],
     parent_id: [null as number | null],
     project_id: [(Number(this.route.snapshot.queryParamMap.get('project')) || null) as number | null],
     probe_id: [null as number | null],
+    min_grade: ['B' as MonitorInput['min_grade']],
     tags: [''],
   });
 
   type = toSignal(this.form.controls.type.valueChanges, { initialValue: 'http' as MonitorType });
   isUrl = computed(() => URL_TYPES.includes(this.type()));
+  isHttp = computed(() => HTTP_TYPES.includes(this.type()));
   parents = computed(() => this.store.monitors().filter((m) => m.id !== this.id));
   probes = signal<Probe[]>([]);
   parentOptions = computed<Option<number | null>[]>(() => [{ id: null, label: 'None' },
@@ -162,6 +174,7 @@ export class MonitorFormComponent {
           json_path: m.json_path ?? '',
           json_expected: m.json_expected ?? '',
           tags: m.tags.join(', '),
+          badge_enabled: !!m.badge_enabled,
         }),
       );
     }

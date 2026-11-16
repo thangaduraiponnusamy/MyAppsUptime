@@ -4,28 +4,29 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from . import notifier, probes, tenancy
+from . import audit, notifier, probes, tenancy
 from .auth import Principal, get_db, require_admin, require_user, visible_monitor_ids
-from .checks import CheckResult
+from .checks import Blocked, CheckResult, guard_host, target_host
 from .models import (AlertEvent, Heartbeat, Incident, IncidentAck, MaintenanceWindow, Monitor, NotificationChannel,
                      Probe, Project, StatusPage, aware, utcnow)
-from .scheduler import record_result, scheduler, tenant_config
+from .scheduler import record_result, scheduler, target_policy, tenant_config
 from .schemas import (AckIn, AlertEventOut, ChannelIn, ChannelOut, DashboardOut, DashboardPoint, ExportData,
                       HeartbeatOut,
                       IncidentOut, MaintenanceIn, MaintenanceOut, MonitorCreate, MonitorExport, MonitorOut,
-                      ProjectExport, PublicIncident, PublicMonitor, PublicStatusOut,
+                      ProjectExport, PublicIncident, PublicMonitor, PublicStatusOut, SnoozeIn,
                       StatsOut, StatusPageIn, StatusPageOut, SummaryOut)
 
 MONTH_MIN = 30 * 24 * 60
 
 router = APIRouter(prefix="/api", dependencies=[Depends(require_user)])
 public = APIRouter(prefix="/api/public")
+badges = APIRouter(prefix="/api/badge")
 
 
 # ---------- helpers ----------
@@ -87,6 +88,7 @@ def _status_since(db: Session, m: Monitor) -> datetime | None:
 
 def _monitor_out(db: Session, m: Monitor, uptime: float | None) -> MonitorOut:
     out = MonitorOut.model_validate(m)
+    out.badge_enabled = bool(m.badge_token)
     out.uptime_24h = uptime
     out.status_since = _status_since(db, m)
     recent = _recent(db, m.id, 30)
@@ -145,6 +147,16 @@ def _get_monitor(db: Session, user: Principal, monitor_id: int) -> Monitor:
     if ids is not None and monitor_id not in ids:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"Monitor {monitor_id} not found")
     return _get(db, Monitor, monitor_id)
+
+
+def _set_badge(db: Session, request: Request, user: Principal, m: Monitor, enabled: bool | None) -> None:
+    """Turn badges on (new unguessable token) or off (token cleared, old URLs stop working)."""
+    if enabled is None or enabled == bool(m.badge_token):
+        return
+    # The tenant slug in front lets the public endpoint find the right database
+    m.badge_token = f"{tenancy.tenant_of(db)}.{secrets.token_urlsafe(18)}" if enabled else None
+    audit.record(db, request, user.username, "enabled badge" if enabled else "disabled badge", "monitor",
+                 m.name, object_id=m.id)
 
 
 def _monitor_is_public(db: Session, monitor_id: int) -> bool:
@@ -220,15 +232,34 @@ def bulk_monitors(body: BulkIn, db: Session = Depends(get_db)):
     return {"updated": len(monitors)}
 
 
+def _check_target(body: MonitorCreate) -> None:
+    """Checks run by this server may not reach private or local addresses (probes are not restricted)."""
+    host = target_host(body) if body.probe_id is None else None
+    if host is None:
+        return
+    try:
+        guard_host(*host, target_policy())
+    except Blocked as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            f"Blocked by SSRF guard: {exc}. Run this monitor from a private location, "
+                            "or allow private targets in Settings > General > Server.") from None
+    except (OSError, UnicodeError):
+        pass  # does not resolve now; the check itself reports it
+
+
 @router.post("/monitors", response_model=MonitorOut, status_code=status.HTTP_201_CREATED)
-def create_monitor(body: MonitorCreate, db: Session = Depends(get_db)):
+def create_monitor(body: MonitorCreate, request: Request, db: Session = Depends(get_db),
+                   user: Principal = Depends(require_user)):
     _check_parent(db, body.parent_id, None)
     project_id = _project_for(db, body.project_id)
     probes.check_probe(db, body.probe_id)
-    m = Monitor(**body.model_dump(exclude={"project_id"}), project_id=project_id)
+    _check_target(body)
+    m = Monitor(**body.model_dump(exclude={"project_id", "badge_enabled"}), project_id=project_id)
     if m.type == "push":
         m.push_token = secrets.token_urlsafe(16)
     db.add(m)
+    db.flush()
+    _set_badge(db, request, user, m, body.badge_enabled)
     db.commit()
     return _monitor_out(db, m, None)
 
@@ -240,13 +271,16 @@ def get_monitor(monitor_id: int, db: Session = Depends(get_db), user: Principal 
 
 
 @router.put("/monitors/{monitor_id}", response_model=MonitorOut)
-def update_monitor(monitor_id: int, body: MonitorCreate, db: Session = Depends(get_db)):
+def update_monitor(monitor_id: int, body: MonitorCreate, request: Request, db: Session = Depends(get_db),
+                   user: Principal = Depends(require_user)):
     m = _get(db, Monitor, monitor_id)
     _check_parent(db, body.parent_id, m.id)
     body.project_id = _project_for(db, body.project_id)
     probes.check_probe(db, body.probe_id)
-    for key, value in body.model_dump().items():
+    _check_target(body)
+    for key, value in body.model_dump(exclude={"badge_enabled"}).items():
         setattr(m, key, value)
+    _set_badge(db, request, user, m, body.badge_enabled)
     if m.type == "push" and not m.push_token:
         m.push_token = secrets.token_urlsafe(16)
     m.last_checked = None  # re-check right away with the new settings
@@ -285,6 +319,15 @@ async def check_now(monitor_id: int, db: Session = Depends(get_db), user: Princi
         probes.run_now(db, m)
         return {"queued": True}
     return {"queued": scheduler.trigger(tenancy.tenant_of(db), m)}
+
+
+@router.post("/monitors/{monitor_id}/snooze", response_model=MonitorOut)
+def snooze(monitor_id: int, body: SnoozeIn, db: Session = Depends(get_db), user: Principal = Depends(require_user)):
+    """Pause alerts (not checks) for some minutes; 0 ends the snooze."""
+    m = _get_monitor(db, user, monitor_id)
+    m.snoozed_until = utcnow() + timedelta(minutes=body.minutes) if body.minutes else None
+    db.commit()
+    return _monitor_out(db, m, None)
 
 
 @router.get("/monitors/{monitor_id}/heartbeats", response_model=list[HeartbeatOut])
@@ -678,7 +721,7 @@ def import_config(body: ExportData, db: Session = Depends(get_db)):
         project_map[item.id] = project.id
     id_map: dict[int, Monitor] = {}
     for item in body.monitors:
-        data = item.model_dump(exclude={"id", "parent_id", "project_id", "probe_id"})
+        data = item.model_dump(exclude={"id", "parent_id", "project_id", "probe_id", "badge_enabled"})
         m = Monitor(**data, project_id=project_map.get(item.project_id) or default_project(db),
                     push_token=secrets.token_urlsafe(16) if item.type == "push" else None)
         db.add(m)
@@ -754,41 +797,48 @@ def _public_status(db: Session, page: StatusPage) -> PublicStatusOut:
                            monitors=items, incidents=incidents)
 
 
-BADGE_COLORS = {"up": "#16a34a", "down": "#dc2626", "degraded": "#d97706", "maintenance": "#2563eb"}
+GREEN, RED, AMBER, GREY = "#16a34a", "#dc2626", "#d97706", "#64748b"
+BADGE_COLORS = {"up": GREEN, "down": RED, "degraded": AMBER, "pending": AMBER, "paused": GREY, "maintenance": GREY}
+BADGE_RANGES = {"24h": timedelta(hours=24), "7d": timedelta(days=7), "30d": timedelta(days=30)}
+BADGE_HEADERS = {"Cache-Control": "public, max-age=60", "X-Content-Type-Options": "nosniff",
+                 "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'"}
 
 
 def _badge_svg(label: str, value: str, color: str) -> str:
-    lw, vw = 6 * len(label) + 12, 6 * len(value) + 12
+    lw, vw = 7 * len(label) + 10, 7 * len(value) + 10
     label, value = html.escape(label), html.escape(value)
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{lw + vw}" height="20" role="img" '
-        f'aria-label="{label}: {value}"><rect width="{lw}" height="20" rx="3" fill="#475569"/>'
-        f'<rect x="{lw}" width="{vw}" height="20" rx="3" fill="{color}"/>'
-        f'<g fill="#fff" font-family="Verdana,Geneva,sans-serif" font-size="11" text-anchor="middle">'
+        f'aria-label="{label}: {value}"><title>{label}: {value}</title>'
+        f'<rect width="{lw}" height="20" fill="#555"/><rect x="{lw}" width="{vw}" height="20" fill="{color}"/>'
+        f'<g fill="#fff" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" font-size="11" text-anchor="middle">'
         f'<text x="{lw / 2}" y="14">{label}</text><text x="{lw + vw / 2}" y="14">{value}</text></g></svg>'
     )
 
 
-@public.get("/badge/{monitor_id}/{kind}.svg")
-def badge(monitor_id: int, kind: Literal["status", "uptime", "latency"],
-          t: str = Query(tenancy.DEFAULT, max_length=30)):
-    if not tenancy.is_active(t):
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Badge not found")
-    with tenancy.session_for(t) as db:
-        return _badge(db, monitor_id, kind)
-
-
-def _badge(db: Session, monitor_id: int, kind: str) -> Response:
-    m = db.get(Monitor, monitor_id)
-    # Only monitors shown on a public status page expose badges
-    if m is None or not _monitor_is_public(db, monitor_id):
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Badge not found")
-    if kind == "status":
-        svg = _badge_svg(m.name[:30], m.status, BADGE_COLORS.get(m.status, "#64748b"))
-    elif kind == "uptime":
-        value = _uptime_by_monitor(db, utcnow() - timedelta(days=30), [m.id]).get(m.id)
-        svg = _badge_svg("uptime 30d", "--" if value is None else f"{value}%", "#7c3aed")
-    else:
-        value = m.last_latency_ms
-        svg = _badge_svg("latency", "--" if value is None else f"{round(value)} ms", "#0891b2")
-    return Response(svg, media_type="image/svg+xml", headers={"Cache-Control": "no-cache"})
+@badges.get("/{token}/{kind}.svg")
+def badge(token: str, kind: Literal["status", "uptime", "latency"],
+          period: Literal["24h", "7d", "30d"] = Query("30d", alias="range"),
+          label: str | None = Query(None, max_length=200)):
+    not_found = PlainTextResponse("Badge not found", status.HTTP_404_NOT_FOUND,
+                                  headers={"X-Content-Type-Options": "nosniff", "Cache-Control": "no-store"})
+    tenant = token.rpartition(".")[0]
+    if not tenant or not tenancy.is_active(tenant):
+        return not_found
+    with tenancy.session_for(tenant) as db:
+        m = db.scalar(select(Monitor).where(Monitor.badge_token == token))
+        if m is None:
+            return not_found
+        if kind == "status":
+            state = m.status if m.active else "paused"
+            text, value, color = m.name, state, BADGE_COLORS.get(state, GREY)
+        elif kind == "uptime":
+            up = _uptime_by_monitor(db, utcnow() - BADGE_RANGES[period], [m.id]).get(m.id)
+            text, value = f"uptime {period}", "--" if up is None else f"{up}%"
+            color = GREY if up is None else GREEN if up >= m.sla_target else AMBER if up >= 95 else RED
+        else:
+            avg = db.scalar(select(func.avg(Heartbeat.latency_ms)).where(
+                Heartbeat.monitor_id == m.id, Heartbeat.created_at >= utcnow() - timedelta(hours=24)))
+            text, value, color = "latency 24h", "--" if avg is None else f"{round(avg)} ms", GREY if avg is None else GREEN
+    svg = _badge_svg((label or text)[:30], value, color)
+    return Response(svg, media_type="image/svg+xml", headers=BADGE_HEADERS)

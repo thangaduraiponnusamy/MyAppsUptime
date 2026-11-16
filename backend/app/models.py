@@ -13,7 +13,7 @@ class Monitor(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(120))
-    type: Mapped[str] = mapped_column(String(20))  # http | keyword | json | tcp | ping | dns | ssl | push | docker
+    type: Mapped[str] = mapped_column(String(20))  # http | keyword | json | security | tcp | ping | dns | ssl | push | docker
     target: Mapped[str] = mapped_column(String(500), default="")
     port: Mapped[int | None]
     keyword: Mapped[str | None] = mapped_column(String(200))
@@ -35,6 +35,7 @@ class Monitor(Base):
     push_token: Mapped[str | None] = mapped_column(String(64), unique=True)
     down_after: Mapped[int | None]  # failed checks in a row before DOWN; empty = General default
     probe_id: Mapped[int | None] = mapped_column(index=True)  # private location; empty = this server
+    min_grade: Mapped[str] = mapped_column(String(1), default="B")  # security monitors
 
     active: Mapped[bool] = mapped_column(default=True)
     status: Mapped[str] = mapped_column(String(12), default="pending")
@@ -49,6 +50,10 @@ class Monitor(Base):
     expiry_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     ssl_warned_days: Mapped[int | None]  # last expiry warning level sent
     domain_warned_days: Mapped[int | None]
+    last_timings: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # ms per phase of the last check
+    security_findings: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # last security grade
+    snoozed_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # no alerts until then
+    badge_token: Mapped[str | None] = mapped_column(String(80), unique=True)  # "<tenant>.<random>"; empty = no badges
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     heartbeats: Mapped[list["Heartbeat"]] = relationship(back_populates="monitor", cascade="all, delete-orphan")
@@ -77,6 +82,7 @@ class Heartbeat(Base):
     status: Mapped[str] = mapped_column(String(12))
     latency_ms: Mapped[float | None]
     message: Mapped[str | None] = mapped_column(String(300))
+    timings: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # only for failed or slow checks
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
 
     monitor: Mapped[Monitor] = relationship(back_populates="heartbeats")
@@ -137,6 +143,19 @@ class NotificationChannel(Base):
     active: Mapped[bool] = mapped_column(default=True)
 
 
+class PushSubscription(Base):
+    """Browser push on one device of one user."""
+    __tablename__ = "push_subscriptions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    endpoint_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    endpoint: Mapped[str] = mapped_column(EncryptedText)
+    keys: Mapped[str] = mapped_column(EncryptedText)  # JSON {p256dh, auth}
+    device: Mapped[str] = mapped_column(String(80), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class MaintenanceWindow(Base):
     __tablename__ = "maintenance_windows"
 
@@ -184,11 +203,13 @@ class User(Base):
     must_change_password: Mapped[bool] = mapped_column(default=False)
     active: Mapped[bool] = mapped_column(default=True)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    failed_logins: Mapped[int] = mapped_column(default=0)  # wrong passwords in a row
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class AuditEvent(Base):
-    """Who changed what."""
+    """Who changed what. Append-only: there is no API to edit or delete rows."""
     __tablename__ = "audit_events"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -198,6 +219,10 @@ class AuditEvent(Base):
     target: Mapped[str] = mapped_column(String(200), default="")
     detail: Mapped[str] = mapped_column(String(300), default="")
     ip: Mapped[str] = mapped_column(String(64), default="")
+    tenant: Mapped[str] = mapped_column(String(30), default="")
+    user_agent: Mapped[str] = mapped_column(String(200), default="")
+    object_id: Mapped[str] = mapped_column(String(40), default="")
+    changes: Mapped[str] = mapped_column(Text, default="")  # JSON {field: [old, new]}, secrets masked
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
 
 
@@ -220,6 +245,10 @@ class AuthToken(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     kind: Mapped[str] = mapped_column(String(10), default="session")  # session | reset
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    ip: Mapped[str] = mapped_column(String(64), default="")
+    device: Mapped[str] = mapped_column(String(80), default="")
 
 
 class AppSetting(Base):

@@ -16,7 +16,7 @@ def host_port(monitor) -> tuple[str, int] | None:
     if monitor.type == "ssl":
         parsed = urlparse(monitor.target if "://" in monitor.target else f"https://{monitor.target}")
         return (parsed.hostname, monitor.port or parsed.port or 443) if parsed.hostname else None
-    if monitor.type in ("http", "keyword", "json"):
+    if monitor.type in ("http", "keyword", "json", "security"):
         parsed = urlparse(monitor.target)
         if parsed.scheme == "https" and parsed.hostname:
             return parsed.hostname, parsed.port or 443

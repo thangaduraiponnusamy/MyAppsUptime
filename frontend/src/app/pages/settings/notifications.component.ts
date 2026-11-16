@@ -1,5 +1,6 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { firstValueFrom } from 'rxjs';
 import { ApiService, errorText } from '../../core/api.service';
 import { ConfirmService } from '../../core/confirm.service';
 import { Channel, ChannelType, Project, SmtpSettings } from '../../core/models';
@@ -24,6 +25,13 @@ const URL_HELP: Partial<Record<ChannelType, [string, string, string]>> = {
 
 const TG_PREFIX = 'https://api.telegram.org/bot';
 
+type PushState = 'unsupported' | 'blocked' | 'off' | 'on' | 'busy';
+
+function b64ToBytes(value: string): Uint8Array {
+  const raw = atob(value.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (value.length % 4)) % 4));
+  return Uint8Array.from(raw, (c) => c.charCodeAt(0));
+}
+
 const emptyChannel = (): Channel => ({
   name: '', type: 'teams', url: '', recipients: [], tags: [], project_ids: [], active: true,
 });
@@ -39,7 +47,7 @@ const emptyChannel = (): Channel => ({
 
     <section class="s-section">
       <div class="s-head">
-        <h3>Alert channels</h3>
+        <h3>Alert channels <span class="count-badge">{{ channels().length }}</span></h3>
         @if (!editing()) { <button class="btn primary sm" (click)="edit(null)">Add channel</button> }
       </div>
 
@@ -117,6 +125,21 @@ const emptyChannel = (): Channel => ({
     </section>
 
     <section class="s-section">
+      <h3>Push on this device</h3>
+      <p class="muted">Get down, up and warning alerts for your services as browser notifications on this device.
+        Needs HTTPS (or localhost).</p>
+      <p>Status: <b>{{ pushLabels[pushState()] }}</b></p>
+      <div class="row">
+        @if (pushState() === 'off') { <button class="btn primary" (click)="enablePush()">Enable</button> }
+        @if (pushState() === 'on') {
+          <button class="btn" (click)="testPush()">Send test</button>
+          <button class="btn danger" (click)="disablePush()">Disable</button>
+        }
+      </div>
+      @if (pushNotice()) { <p class="muted">{{ pushNotice() }}</p> }
+    </section>
+
+    <section class="s-section">
       <h3>Email server (SMTP)</h3>
       <p class="muted">Needed for email alerts and password reset emails. Office 365: smtp.office365.com, 587, STARTTLS.
         Gmail: smtp.gmail.com, 465, SSL/TLS, with an app password (Google account > Security > App passwords).
@@ -170,11 +193,70 @@ export class NotificationSettingsComponent {
   adminSmtp = signal(false);
   private projectById = computed(() => new Map(this.projects().map((p) => [p.id!, p.name])));
 
+  readonly pushLabels: Record<PushState, string> = {
+    unsupported: 'Not available in this browser (or no HTTPS)', blocked: 'Blocked in the browser settings',
+    off: 'Off', on: 'On', busy: 'Working...',
+  };
+  pushState = signal<PushState>('unsupported');
+  pushNotice = signal('');
+
   constructor() {
     this.load();
+    this.refreshPush();
     this.api.projects().subscribe((p) => this.projects.set(p));
     this.api.smtp().subscribe((s) => (this.smtp = s));
     this.api.adminDefaults().subscribe((d) => this.adminSmtp.set(d.smtp));
+  }
+
+  private async registration(): Promise<ServiceWorkerRegistration | undefined> {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window) || !window.isSecureContext) return undefined;
+    return navigator.serviceWorker.getRegistration('/');
+  }
+
+  async refreshPush(): Promise<void> {
+    const reg = await this.registration();
+    if (!reg) return this.pushState.set('unsupported');
+    if (Notification.permission === 'denied') return this.pushState.set('blocked');
+    this.pushState.set((await reg.pushManager.getSubscription()) ? 'on' : 'off');
+  }
+
+  async enablePush(): Promise<void> {
+    const reg = await this.registration();
+    if (!reg) return;
+    this.pushState.set('busy');
+    this.pushNotice.set('');
+    try {
+      if ((await Notification.requestPermission()) !== 'granted') return void this.refreshPush();
+      const { public_key } = await firstValueFrom(this.api.pushKey());
+      const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(public_key) });
+      await firstValueFrom(this.api.pushSubscribe(sub.toJSON()));
+      this.pushNotice.set('Push is on for this device.');
+    } catch (e: any) {
+      this.pushNotice.set(errorText(e));
+    }
+    this.refreshPush();
+  }
+
+  async disablePush(): Promise<void> {
+    const sub = await (await this.registration())?.pushManager.getSubscription();
+    if (!sub) return void this.refreshPush();
+    this.pushState.set('busy');
+    try {
+      await firstValueFrom(this.api.pushUnsubscribe(sub.endpoint));
+      await sub.unsubscribe();
+      this.pushNotice.set('Push is off for this device.');
+    } catch (e: any) {
+      this.pushNotice.set(errorText(e));
+    }
+    this.refreshPush();
+  }
+
+  testPush(): void {
+    this.pushNotice.set('Sending test...');
+    this.api.pushTest().subscribe({
+      next: (r) => this.pushNotice.set(r.sent ? 'Test sent.' : `Not sent: ${r.errors.join(', ')}`),
+      error: (e) => this.pushNotice.set(errorText(e)),
+    });
   }
 
   load(): void {

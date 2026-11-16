@@ -29,11 +29,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/app ./app
 COPY --from=ui /ui/dist/myappsuptime-ui/browser ./static
 
-RUN useradd --system --uid 10001 appuser \
+# Runs as non-root; only /data (and /tmp) need to be writable, so the root file system can be read-only
+RUN groupadd --system --gid 10001 appuser \
+    && useradd --system --uid 10001 --gid 10001 --no-create-home appuser \
     && mkdir /data \
-    && chown appuser /data \
+    && chown 10001:10001 /data \
     && chmod 700 /data
-USER appuser
+USER 10001:10001
 
 VOLUME /data
 EXPOSE 8000

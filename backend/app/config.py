@@ -6,10 +6,11 @@ from .timeutil import APP_VERSION  # noqa: F401  (re-exported)
 
 DEFAULTS = {
     "general": {"app_url": "", "timezone": "", "refresh_sec": 5, "retention_value": 1, "retention_unit": "years",
-                "down_after_checks": 3, "expiry_warn_days": [30, 14, 7], "domain_expiry": True},
+                "down_after_checks": 3, "expiry_warn_days": [30, 14, 7], "domain_expiry": True, "audit_keep_days": 365},
     "smtp": {"host": "", "port": 587, "security": "starttls", "username": "", "password": "", "from_addr": ""},
     # whole server; stored in the admin tenant only
-    "server": {"backup_enabled": True, "backup_keep_days": 7, "dns_cache": True},
+    "server": {"backup_enabled": True, "backup_keep_days": 7, "dns_cache": True,
+               "allow_private_targets": False, "allowed_cidrs": []},
 }
 
 UNIT_DAYS = {"days": 1, "months": 30, "years": 365}

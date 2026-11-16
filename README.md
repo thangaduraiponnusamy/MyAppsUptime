@@ -61,7 +61,8 @@ Data is stored in the `myappsuptime-data` Docker volume.
 | Notifications | Teams, email, Telegram, Discord, Google Chat, ntfy, Slack or webhook channels, and the email (SMTP) server |
 | Projects | Projects, their members and how they send alerts |
 | Users | Add users, set role, projects or single services, how they get alerts, reset a password |
-| Security | Your account, password and how you get alerts (Email, Telegram, ...) |
+| Security | Your account, password, how you get alerts (Email, Telegram, ...), active sessions. Members also see their own sign-ins |
+| Audit log | Admins: every sign-in and every change. Search, filter by type and time, CSV export |
 | Backup | Export and import as JSON |
 | About | Version and GitHub link |
 
@@ -127,7 +128,15 @@ Deleting a project moves its services to General.
 
 **Audit log**
 
-Settings > Security > Audit log (admins): who created, changed, paused or deleted services, projects, channels, users and settings, with time and IP. Only names are stored, never passwords or other values. Kept as long as the log retention in General.
+Settings > Audit log (admins): every sign-in (and failed sign-in) and who created, changed, paused or deleted services, projects, channels, users and settings, with time and IP.
+
+- One place for all sign-ins: pick type "Sign-ins & account". Members see only their own sign-ins in Security.
+- Search, filter by type, pick 24h / 7d / 30d / custom, export CSV.
+- Only names are stored, never passwords or other values. Kept as long as the log retention in General.
+
+**Lists**
+
+All lists look the same: title with count, search box, filters (type, status, time) on the right.
 
 **Project alert channels**
 

@@ -1,8 +1,8 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import {
-  AdminDefaults, AlertEvent, AuditEvent, Channel, DashboardData, DatabaseInfo, ExportData, GeneralSettings, Heartbeat, Incident, LoginEvent, Maintenance, Monitor, MonitorInput,
-  Probe, Project, PublicStatus, ServerSettings, SmtpSettings, Stats, StatusPage, Summary, Tenant, TenantCreate, User,
+  AdminDefaults, AlertEvent, AuditEvent, AuditFilter, Channel, DashboardData, DatabaseInfo, ExportData, GeneralSettings, Heartbeat, Incident, LoginEvent, Maintenance, Monitor, MonitorInput,
+  Probe, Project, PublicStatus, ServerSettings, SessionInfo, SmtpSettings, Stats, StatusPage, Summary, Tenant, TenantCreate, User,
 } from './models';
 
 type Range = { hours?: number; start?: string; end?: string; project_id?: number[] };
@@ -26,6 +26,7 @@ export class ApiService {
   pause(id: number) { return this.http.post<Monitor>(`${this.base}/monitors/${id}/pause`, {}); }
   resume(id: number) { return this.http.post<Monitor>(`${this.base}/monitors/${id}/resume`, {}); }
   checkNow(id: number) { return this.http.post<{ queued: boolean }>(`${this.base}/monitors/${id}/check`, {}); }
+  snooze(id: number, minutes: number) { return this.http.post<Monitor>(`${this.base}/monitors/${id}/snooze`, { minutes }); }
   heartbeats(id: number, range: Range) {
     const params = Object.fromEntries(Object.entries(range).filter(([, v]) => v !== undefined)) as Record<string, string | number>;
     return this.http.get<Heartbeat[]>(`${this.base}/monitors/${id}/heartbeats`, { params });
@@ -54,6 +55,10 @@ export class ApiService {
   updateChannel(id: number, body: Channel) { return this.http.put<Channel>(`${this.base}/notifications/${id}`, body); }
   deleteChannel(id: number) { return this.http.delete<void>(`${this.base}/notifications/${id}`); }
   testChannel(id: number) { return this.http.post<{ sent: boolean }>(`${this.base}/notifications/${id}/test`, {}); }
+  pushKey() { return this.http.get<{ public_key: string }>(`${this.base}/push/key`); }
+  pushSubscribe(body: PushSubscriptionJSON) { return this.http.post<void>(`${this.base}/push/subscribe`, body); }
+  pushUnsubscribe(endpoint: string) { return this.http.delete<void>(`${this.base}/push/subscribe`, { body: { endpoint } }); }
+  pushTest() { return this.http.post<{ sent: number; errors: string[] }>(`${this.base}/push/test`, {}); }
 
   projects() { return this.http.get<Project[]>(`${this.base}/projects`); }
   createProject(body: Project) { return this.http.post<Project>(`${this.base}/projects`, body); }
@@ -74,7 +79,15 @@ export class ApiService {
   updateUser(id: number, body: User) { return this.http.put<User>(`${this.base}/users/${id}`, body); }
   deleteUser(id: number) { return this.http.delete<void>(`${this.base}/users/${id}`); }
   logins(limit: number) { return this.http.get<LoginEvent[]>(`${this.base}/logins`, { params: { limit } }); }
-  audit(limit: number, q = '') { return this.http.get<AuditEvent[]>(`${this.base}/audit`, { params: { limit, q } }); }
+  audit(filter: AuditFilter, limit: number, offset: number) {
+    return this.http.get<AuditEvent[]>(`${this.base}/audit`, { params: { ...cleanFilter(filter), limit, offset } });
+  }
+  auditCsv(filter: AuditFilter) {
+    return this.http.get(`${this.base}/audit/export`, { params: cleanFilter(filter), responseType: 'blob' });
+  }
+  sessions() { return this.http.get<SessionInfo[]>(`${this.base}/auth/sessions`); }
+  revokeSession(id: string) { return this.http.delete<void>(`${this.base}/auth/sessions/${id}`); }
+  revokeOtherSessions() { return this.http.post<{ revoked: number }>(`${this.base}/auth/sessions/others`, {}); }
 
   tenants() { return this.http.get<Tenant[]>(`${this.base}/tenants`); }
   createTenant(body: TenantCreate) { return this.http.post<Tenant>(`${this.base}/tenants`, body); }
@@ -114,6 +127,10 @@ export class ApiService {
   }
 
   publicStatus(slug: string) { return this.http.get<PublicStatus>(`${this.base}/public/status/${encodeURIComponent(slug)}`); }
+}
+
+function cleanFilter(filter: AuditFilter): Record<string, string> {
+  return Object.fromEntries(Object.entries(filter).filter(([, v]) => v && String(v).trim())) as Record<string, string>;
 }
 
 export function errorText(err: { error?: { detail?: unknown }; message?: string }): string {

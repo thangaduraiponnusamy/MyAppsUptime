@@ -6,6 +6,8 @@ from pathlib import Path
 DATA = Path(tempfile.mkdtemp(prefix="mau-tests-"))
 os.environ["DATABASE_URL"] = f"sqlite:///{(DATA / 'main.db').as_posix()}"
 os.environ["BACKUP_DIR"] = str(DATA / "backups")
+# All test logins come from one address
+os.environ["LOGIN_IP_PER_MIN"] = os.environ["LOGIN_USER_PER_MIN"] = "1000"
 for name in ("SECRET_KEY", "DB_PASSWORD", "DB_PASSWORD_FILE", "API_TOKEN", "APP_URL", "TENANT_DATA_DIR"):
     os.environ.pop(name, None)
 

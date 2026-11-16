@@ -1,11 +1,12 @@
 export type MonitorStatus = 'up' | 'down' | 'degraded' | 'maintenance' | 'paused' | 'pending';
-export type MonitorType = 'http' | 'keyword' | 'json' | 'tcp' | 'ping' | 'dns' | 'ssl' | 'push' | 'docker';
+export type MonitorType = 'http' | 'keyword' | 'json' | 'security' | 'tcp' | 'ping' | 'dns' | 'ssl' | 'push' | 'docker';
 export type ChannelType = 'webhook' | 'slack' | 'teams' | 'telegram' | 'discord' | 'googlechat' | 'ntfy' | 'email';
 
 export const MONITOR_TYPES: { value: MonitorType; label: string }[] = [
   { value: 'http', label: 'HTTP(S)' },
   { value: 'keyword', label: 'HTTP(S) - Keyword' },
   { value: 'json', label: 'HTTP(S) - JSON assertion' },
+  { value: 'security', label: 'Security headers' },
   { value: 'tcp', label: 'TCP Port' },
   { value: 'ping', label: 'Ping (ICMP)' },
   { value: 'dns', label: 'DNS' },
@@ -36,7 +37,23 @@ export interface MonitorInput {
   parent_id: number | null;
   project_id: number | null;
   probe_id: number | null;
+  min_grade: 'A' | 'B' | 'C' | 'D';
   tags: string[];
+  badge_enabled?: boolean | null;
+}
+export interface Timings {
+  dns?: number;
+  connect?: number;
+  tls?: number;
+  ttfb?: number;
+  download?: number;
+  total: number;
+}
+
+export interface SecurityFindings {
+  grade: string;
+  tls: { version: string; cipher: string; days_left: number | null } | null;
+  checks: { name: string; ok: boolean; detail: string; critical: boolean }[];
 }
 
 export interface Monitor extends MonitorInput {
@@ -44,6 +61,8 @@ export interface Monitor extends MonitorInput {
   active: boolean;
   status: MonitorStatus;
   push_token: string | null;
+  badge_token?: string | null;
+  snoozed_until?: string | null;
   last_checked: string | null;
   last_push_at: string | null;
   last_latency_ms: number | null;
@@ -57,6 +76,8 @@ export interface Monitor extends MonitorInput {
   status_since: string | null;
   recent: MonitorStatus[];
   recent_latency: (number | null)[];
+  last_timings: Timings | null;
+  security_findings: SecurityFindings | null;
 }
 
 export interface Probe {
@@ -75,6 +96,7 @@ export interface Heartbeat {
   status: MonitorStatus;
   latency_ms: number | null;
   message: string | null;
+  timings?: Timings | null;
   created_at: string;
 }
 
@@ -197,7 +219,29 @@ export interface AuditEvent {
   target: string;
   detail: string;
   ip: string;
+  tenant?: string;
+  user_agent?: string;
+  object_id?: string;
+  changes?: string;
   created_at: string;
+}
+
+export interface AuditFilter {
+  q?: string;
+  action?: string;
+  kind?: string;
+  username?: string;
+  since?: string;
+  until?: string;
+}
+
+export interface SessionInfo {
+  id: string;
+  device: string;
+  ip: string;
+  created_at: string | null;
+  last_used_at: string | null;
+  current: boolean;
 }
 
 export interface LoginEvent {
@@ -235,6 +279,8 @@ export interface ServerSettings {
   backup_enabled: boolean;
   backup_keep_days: number;
   dns_cache: boolean;
+  allow_private_targets?: boolean;
+  allowed_cidrs?: string[];
   backup_dir?: string;
   backups?: { name: string; size_kb: number }[];
 }

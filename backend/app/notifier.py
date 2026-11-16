@@ -47,6 +47,7 @@ class Alert:
     app_url: str = ""
     tz: str = "UTC"
     headline: str = ""  # replaces the default title, e.g. for expiry warnings
+    actions: list[tuple[str, str]] = field(default_factory=list)  # signed Acknowledge / Snooze links
     at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     @property
@@ -78,6 +79,7 @@ class Alert:
         out = []
         if self.link and self.link != self.app_url:
             out.append(("View monitor", self.link))
+        out += self.actions
         if self.app_url:
             out.append(("Open MyAppsUptime", self.app_url))
         return out
@@ -305,6 +307,8 @@ async def send(channels: list[NotificationChannel], alert: Alert, emails: list[s
     for channel in channels:
         if channel.type == "email":
             recipients += channel.recipients or []
+        elif channel.type == "push":
+            continue  # browser push goes to subscribed devices, see push.py
         else:
             hooks.append(channel)
     if hooks:

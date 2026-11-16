@@ -1,3 +1,5 @@
+import ipaddress
+import json
 import re
 from datetime import datetime, timezone
 from typing import Annotated, Literal
@@ -6,8 +8,10 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator, model_validator
 
-MonitorType = Literal["http", "keyword", "json", "tcp", "ping", "dns", "ssl", "push", "docker"]
-ChannelType = Literal["webhook", "slack", "teams", "telegram", "discord", "googlechat", "ntfy", "email"]
+MonitorType = Literal["http", "keyword", "json", "security", "tcp", "ping", "dns", "ssl", "push", "docker"]
+Grade = Literal["A", "B", "C", "D"]
+Timings = dict[str, float]
+ChannelType = Literal["webhook", "slack", "teams", "telegram", "discord", "googlechat", "ntfy", "email", "push"]
 TELEGRAM_URL = re.compile(r"^https://api\.telegram\.org/bot\d+:[A-Za-z0-9_-]{30,}/sendMessage\?chat_id=(-?\d+|@[A-Za-z0-9_]{5,32})$")
 CHANNEL_URLS = {
     "discord": (re.compile(r"^https://(discord|discordapp)\.com/api/webhooks/\d+/[A-Za-z0-9_-]+(\?[^\s]*)?$"),
@@ -63,11 +67,13 @@ class MonitorBase(BaseModel):
     parent_id: int | None = None
     project_id: int | None = None
     probe_id: int | None = None
+    min_grade: Grade = "B"
     tags: list[str] = Field(default_factory=list, max_length=20)
+    badge_enabled: bool | None = None  # empty = leave as it is
 
     @model_validator(mode="after")
     def check_type_fields(self):
-        if self.type in ("http", "keyword", "json"):
+        if self.type in ("http", "keyword", "json", "security"):
             _require_http_url(self.target)
         elif self.type in ("tcp", "ping", "dns"):
             _require_host(self.target)
@@ -110,6 +116,34 @@ class MonitorOut(MonitorBase):
     status_since: Utc | None = None
     recent: list[str] = Field(default_factory=list)
     recent_latency: list[float | None] = Field(default_factory=list)
+    last_timings: Timings | None = None
+    security_findings: dict | None = None
+    badge_enabled: bool = False
+    badge_token: str | None = None
+    snoozed_until: Utc | None = None
+
+
+class SnoozeIn(BaseModel):
+    minutes: int = Field(ge=0, le=7 * 24 * 60)  # 0 = unsnooze
+
+
+class PushKeys(BaseModel):
+    p256dh: str = Field(min_length=10, max_length=200, pattern=r"^[A-Za-z0-9_=-]+$")
+    auth: str = Field(min_length=8, max_length=100, pattern=r"^[A-Za-z0-9_=-]+$")
+
+
+class PushSubscribeIn(BaseModel):
+    endpoint: str = Field(min_length=10, max_length=1000)
+    keys: PushKeys | None = None
+    device: str = Field(default="", max_length=80)
+
+    @field_validator("endpoint")
+    @classmethod
+    def https_only(cls, value: str) -> str:
+        url = urlparse(value)
+        if url.scheme != "https" or not url.hostname:
+            raise ValueError("push endpoint must be an https URL")
+        return value
 
 
 class HeartbeatOut(BaseModel):
@@ -118,6 +152,7 @@ class HeartbeatOut(BaseModel):
     status: str
     latency_ms: float | None
     message: str | None
+    timings: Timings | None = None
     created_at: Utc
 
 
@@ -192,6 +227,8 @@ class ChannelIn(BaseModel):
             if not self.recipients:
                 raise ValueError("add at least one email address")
             self.url = ""
+        elif self.type == "push":
+            self.url, self.recipients = "", []
         elif self.type == "telegram":
             if not TELEGRAM_URL.match(self.url):
                 raise ValueError("Telegram bot token or chat ID is not valid")
@@ -405,7 +442,20 @@ class AuditEventOut(BaseModel):
     target: str
     detail: str
     ip: str
+    tenant: str = ""
+    user_agent: str = ""
+    object_id: str = ""
+    changes: str = ""
     created_at: Utc
+
+
+class SessionOut(BaseModel):
+    id: str
+    device: str
+    ip: str
+    created_at: Utc | None
+    last_used_at: Utc | None
+    current: bool
 
 
 class LoginEventOut(BaseModel):
@@ -499,6 +549,7 @@ class GeneralSettings(BaseModel):
     down_after_checks: int = Field(default=3, ge=1, le=20)
     expiry_warn_days: list[Annotated[int, Field(ge=1, le=365)]] = Field(default_factory=lambda: [30, 14, 7], max_length=5)
     domain_expiry: bool = True
+    audit_keep_days: int = Field(default=365, ge=30, le=3650)
 
     @field_validator("expiry_warn_days")
     @classmethod
@@ -566,6 +617,20 @@ class ServerSettings(BaseModel):
     backup_enabled: bool = True
     backup_keep_days: int = Field(default=7, ge=1, le=90)
     dns_cache: bool = True
+    allow_private_targets: bool = False
+    allowed_cidrs: list[str] = Field(default_factory=list, max_length=50)
+
+    @field_validator("allowed_cidrs")
+    @classmethod
+    def check_cidrs(cls, value: list[str]) -> list[str]:
+        out = []
+        for item in (v.strip() for v in value):
+            if item:
+                try:
+                    out.append(str(ipaddress.ip_network(item, strict=False)))
+                except ValueError:
+                    raise ValueError(f"Not a network: {item}") from None
+        return out
 
 
 class BackupInfo(BaseModel):
@@ -617,6 +682,15 @@ class ProbeResult(BaseModel):
     latency_ms: float | None = Field(default=None, ge=0)
     message: str = Field(default="", max_length=300)
     ssl_expires_at: Utc | None = None
+    timings: Timings | None = Field(default=None, max_length=10)
+    findings: dict | None = None
+
+    @field_validator("findings")
+    @classmethod
+    def small_findings(cls, value: dict | None) -> dict | None:
+        if value is not None and len(json.dumps(value)) > 5000:
+            raise ValueError("findings too large")
+        return value
 
 
 class ProbeSyncIn(BaseModel):

@@ -11,6 +11,13 @@ services:
       SECRET_KEY: ${SECRET_KEY:-}
     volumes:
       - myappsuptime-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
 volumes:

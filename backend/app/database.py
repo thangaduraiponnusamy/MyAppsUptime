@@ -133,6 +133,10 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
       "WHERE EXISTS (SELECT 1 FROM monitors WHERE project_id IS NULL) "
       "AND NOT EXISTS (SELECT 1 FROM projects WHERE name = 'General')",
       "UPDATE monitors SET project_id = (SELECT id FROM projects WHERE name = 'General') WHERE project_id IS NULL"]),
+    (4, "unique badge tokens",
+     ["CREATE UNIQUE INDEX IF NOT EXISTS ix_monitors_badge_token ON monitors (badge_token)"]),
+    (5, "remove passwords stored by password-change audit rows",
+     ["UPDATE audit_events SET changes = '' WHERE kind = 'account' AND changes != ''"]),
 ]
 
 

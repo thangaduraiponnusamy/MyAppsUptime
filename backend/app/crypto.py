@@ -1,6 +1,7 @@
 """Encrypt secrets (SMTP password, alert webhook URLs) before they are written to the database."""
 import base64
 import hashlib
+import hmac
 import logging
 import os
 from pathlib import Path
@@ -44,6 +45,17 @@ def _cipher() -> Fernet:
     if _fernet is None:
         _fernet = Fernet(_load_key())
     return _fernet
+
+
+def data_dir() -> Path:
+    """Folder of secret.key; other generated keys are kept next to it."""
+    return _key_file().parent
+
+
+def sign(purpose: str, message: str) -> str:
+    """HMAC-SHA256 of a message with a key derived from the server secret."""
+    key = hmac.new(_load_key(), purpose.encode(), hashlib.sha256).digest()
+    return hmac.new(key, message.encode(), hashlib.sha256).hexdigest()
 
 
 def encrypt(value: str | None) -> str | None:
