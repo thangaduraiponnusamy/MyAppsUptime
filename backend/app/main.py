@@ -7,7 +7,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 
-from . import actions, admin_api, api, dnscache, probes, push, tenancy, tenants_api
+from . import actions, admin_api, api, dnscache, login_guard, probes, push, tenancy, tenants_api
 from .audit import audit
 from .auth import ensure_default_admin
 from .config import APP_VERSION, get_setting
@@ -94,6 +94,8 @@ app.include_router(api.router, dependencies=[Depends(audit)])
 app.include_router(api.public)
 app.include_router(api.badges)
 app.include_router(actions.router)
+app.include_router(login_guard.admin, dependencies=[Depends(audit)])
+app.include_router(login_guard.links)
 app.include_router(push.router)
 
 

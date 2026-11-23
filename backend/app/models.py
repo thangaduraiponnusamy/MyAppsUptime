@@ -238,6 +238,19 @@ class LoginEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
 
 
+class FailedLogin(Base):
+    """Failed sign-ins of all tenants, for the super admin; only used in the default (admin) database."""
+    __tablename__ = "failed_logins"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    username: Mapped[str] = mapped_column(String(60), index=True)  # as typed, lower case
+    tenant: Mapped[str] = mapped_column(String(30), default="")  # empty for unknown user names
+    ip: Mapped[str] = mapped_column(String(64), default="", index=True)
+    device: Mapped[str] = mapped_column(String(80), default="")
+    reason: Mapped[str] = mapped_column(String(20))  # wrong password | locked | disabled | unknown user
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
 class AuthToken(Base):
     __tablename__ = "auth_tokens"
 

@@ -88,7 +88,7 @@ export class LoginComponent {
       error: (e) => {
         this.busy.set(false);
         const msg = errorText(e);
-        this.error.set(e.status === 401 ? `${msg}. After 5 wrong passwords the account is locked for 15 minutes.`
+        this.error.set(e.status === 401 ? `${msg}. After 3 wrong passwords the account is locked for 15 minutes.`
           : e.status === 429 ? `${msg} Wait a minute before trying again.` : msg);
       },
     });

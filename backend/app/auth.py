@@ -25,7 +25,7 @@ RESET_MIN = 30
 MAX_FAILS, LOCK_SEC = 5, 300
 LOGIN_IP_PER_MIN = int(os.getenv("LOGIN_IP_PER_MIN", "10"))
 LOGIN_USER_PER_MIN = int(os.getenv("LOGIN_USER_PER_MIN", "10"))
-ACCOUNT_LOCK_AFTER, ACCOUNT_LOCK_MIN = 5, 15  # wrong passwords in a row, minutes locked
+ACCOUNT_LOCK_AFTER, ACCOUNT_LOCK_MIN = 3, 15  # wrong passwords in a row, minutes locked
 SESSION_TOUCH = timedelta(seconds=60)  # how often "last used" is written
 
 # Published at https://www.cloudflare.com/ips/

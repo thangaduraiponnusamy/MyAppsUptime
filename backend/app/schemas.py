@@ -468,6 +468,36 @@ class LoginEventOut(BaseModel):
     created_at: Utc
 
 
+class FailedLoginOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    username: str
+    tenant: str
+    tenant_name: str = ""
+    ip: str
+    device: str = ""
+    reason: str
+    created_at: Utc
+
+
+class LockedAccountOut(BaseModel):
+    username: str
+    tenant: str
+    tenant_name: str
+    locked_until: Utc
+    reported: bool  # locked by the owner's "This wasn't me" link, stays locked until unlocked
+
+
+class FailedLoginsOut(BaseModel):
+    events: list[FailedLoginOut]
+    locked: list[LockedAccountOut]
+
+
+class UnlockIn(BaseModel):
+    tenant: str = Field(min_length=1, max_length=30)
+    username: str = Field(min_length=1, max_length=60)
+
+
 class LoginIn(BaseModel):
     username: str = Field(min_length=1, max_length=60)
     password: str = Field(min_length=1, max_length=200)

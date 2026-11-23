@@ -4,16 +4,17 @@ import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { ApiService, errorText } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
-import { LoginEvent, ROLE_LABEL, ServerSettings, SessionInfo } from '../../core/models';
+import { LockedAccount, FailedLogin, LoginEvent, ROLE_LABEL, ServerSettings, SessionInfo } from '../../core/models';
 import { ConfirmService } from '../../core/confirm.service';
 import { PrefsService } from '../../core/prefs.service';
 import { IconComponent } from '../../shared/icon.component';
 import { MultiSelectComponent } from '../../shared/multi-select.component';
+import { DayRange, RangePickerComponent, rangeQuery } from '../../shared/range-picker.component';
 
 @Component({
   selector: 'app-settings-security',
   standalone: true,
-  imports: [FormsModule, DatePipe, RouterLink, IconComponent, MultiSelectComponent],
+  imports: [FormsModule, DatePipe, RouterLink, IconComponent, MultiSelectComponent, RangePickerComponent],
   template: `
     <h2 class="s-title">Security</h2>
 
@@ -96,6 +97,55 @@ import { MultiSelectComponent } from '../../shared/multi-select.component';
 
     @if (auth.isSuper()) {
       <section class="s-section">
+        <div class="s-head">
+          <h3>Failed sign-ins <span class="count-badge">{{ shownFails().length }}</span></h3>
+        </div>
+        <p class="muted">All teams. Accounts lock for 15 minutes after 3 wrong passwords (super admins never lock).
+          Super admins with an email get a mail when an account locks or after 5 failed sign-ins in an hour.</p>
+        @if (locked().length) {
+          <div class="table-wrap"><table>
+            <thead><tr><th>Locked account</th><th>Team</th><th>Until</th><th></th></tr></thead>
+            <tbody>
+              @for (a of locked(); track a.tenant + a.username) {
+                <tr>
+                  <td><b>{{ a.username }}</b></td>
+                  <td>{{ a.tenant_name }}</td>
+                  <td class="nowrap">@if (a.reported) { <span class="pill down">Reported by user</span> }
+                    @else { {{ a.locked_until | date: 'MMM d, HH:mm' }} }</td>
+                  <td><button class="btn sm" (click)="unlock(a)">Unlock</button></td>
+                </tr>
+              }
+            </tbody>
+          </table></div>
+        }
+        <div class="toolbar">
+          <input class="search" placeholder="Search user, team or IP..." [value]="failQ()" (input)="failQ.set($any($event.target).value)" />
+          <span class="spacer"></span>
+          <app-range-picker [hours]="failHours()" [custom]="failCustom()" (pick)="failHours.set($event); failCustom.set(null); loadFails()" (range)="failCustom.set($event); loadFails()" />
+        </div>
+        @if (failNotice()) { <p class="muted small">{{ failNotice() }}</p> }
+        @if (shownFails().length) {
+          <div class="table-wrap"><table>
+            <thead><tr><th>Time</th><th>User</th><th class="hide-sm">Team</th><th>IP address</th><th class="hide-sm">Device</th><th>Reason</th></tr></thead>
+            <tbody>
+              @for (f of shownFails(); track f.id) {
+                <tr>
+                  <td class="nowrap">{{ f.created_at | date: 'MMM d, y, HH:mm:ss' }}</td>
+                  <td>{{ f.username }}</td>
+                  <td class="hide-sm">{{ f.tenant_name || '-' }}</td>
+                  <td class="mono">{{ f.ip || '-' }}</td>
+                  <td class="hide-sm">{{ f.device || '-' }}</td>
+                  <td><span class="pill" [class.down]="f.reason !== 'unknown user'">{{ f.reason }}</span></td>
+                </tr>
+              }
+            </tbody>
+          </table></div>
+        } @else {
+          <p class="muted">No failed sign-ins.</p>
+        }
+      </section>
+
+      <section class="s-section">
         <h3>Monitor targets</h3>
         <p class="muted">Checks run by this server cannot reach private, local or cloud metadata addresses.
           Private locations are not limited.</p>
@@ -167,6 +217,16 @@ export class SecuritySettingsComponent {
   alertOptions = computed(() => (this.auth.user()?.alert_options ?? []).map((o) => ({ id: o.id, label: o.name })));
   myAlerts = computed(() => new Set<number>(this.auth.user()?.alert_channels ?? this.alertOptions().map((o) => o.id)));
   alertsNotice = signal('');
+  fails = signal<FailedLogin[]>([]);
+  locked = signal<LockedAccount[]>([]);
+  failQ = signal('');
+  failHours = signal(24);
+  failCustom = signal<DayRange | null>(null);
+  failNotice = signal('');
+  shownFails = computed(() => {
+    const q = this.failQ().trim().toLowerCase();
+    return q ? this.fails().filter((f) => `${f.username} ${f.tenant_name} ${f.ip}`.toLowerCase().includes(q)) : this.fails();
+  });
 
   constructor() {
     effect(() => {
@@ -175,6 +235,7 @@ export class SecuritySettingsComponent {
     });
     this.loadSessions();
     if (this.auth.isSuper()) {
+      this.loadFails();
       this.api.server().subscribe((s) => {
         this.server = s;
         this.allowPrivate = !!s.allow_private_targets;
@@ -185,6 +246,22 @@ export class SecuritySettingsComponent {
 
   loadSessions(): void {
     this.api.sessions().subscribe((s) => this.sessions.set(s));
+  }
+
+  loadFails(): void {
+    this.api.failedLogins(rangeQuery(this.failHours(), this.failCustom())).subscribe({
+      next: (r) => { this.fails.set(r.events); this.locked.set(r.locked); },
+      error: (e) => this.failNotice.set(errorText(e)),
+    });
+  }
+
+  async unlock(a: LockedAccount): Promise<void> {
+    const ok = await this.confirm.ask({ title: 'Unlock account', message: `Unlock ${a.username} (${a.tenant_name})?`, action: 'Unlock' });
+    if (!ok) return;
+    this.api.unlockAccount(a.tenant, a.username).subscribe({
+      next: () => { this.failNotice.set(`${a.username} unlocked.`); this.loadFails(); },
+      error: (e) => this.failNotice.set(errorText(e)),
+    });
   }
 
   async revoke(s: SessionInfo): Promise<void> {

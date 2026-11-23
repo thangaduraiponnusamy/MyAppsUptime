@@ -11,7 +11,7 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
 from . import audit as audit_log
-from . import backup, dnscache, notifier, tenancy
+from . import backup, dnscache, login_guard, notifier, tenancy
 from .api import DEFAULT_PROJECT, default_project
 from .auth import (ACCOUNT_LOCK_AFTER, ACCOUNT_LOCK_MIN, LOGIN_IP_PER_MIN, LOGIN_USER_PER_MIN, RESET_MIN, Principal,
                    bearer, check_lock, client_ip, create_reset_token, create_session, current_user,
@@ -89,41 +89,52 @@ def login(body: LoginIn, request: Request):
     name = body.username.strip().lower()
     device = describe_agent(request.headers.get("user-agent", ""))[:80]
     rate_limit(f"ip|{ip}", LOGIN_IP_PER_MIN)
-    rate_limit(f"user|{name}", LOGIN_USER_PER_MIN)
     # User names are unique across tenants, so the first match is the account
     for slug in tenancy.slugs(active_only=False):
         with tenancy.session_for(slug) as db:
             user = db.scalar(select(User).where(func.lower(User.username) == name))
             if user is None:
                 continue
+            exempt = login_guard.lock_exempt(slug, user)
+            # Per address for super admins, so an attacker cannot keep them out
+            rate_limit(f"user|{name}|{ip}" if exempt else f"user|{name}", LOGIN_USER_PER_MIN)
             now = utcnow()
-            locked = user.locked_until is not None and aware(user.locked_until) > now
+            locked = not exempt and user.locked_until is not None and aware(user.locked_until) > now
             # A locked account gets the same answer as a wrong password
             if locked or not user.active or not verify_password(body.password, user.password_hash):
+                reason = "locked" if locked else "disabled" if not user.active else "wrong password"
                 db.add(LoginEvent(user_id=user.id, username=user.username, ip=ip, device=device, success=False))
                 audit_log.record(db, request, user.username, "sign-in failed", "account", user.username,
                                  "account is locked" if locked else "", user.id)
-                if not locked and user.active:
+                locked_now = False
+                if not locked and user.active and not exempt:
                     user.failed_logins = (user.failed_logins or 0) + 1
                     if user.failed_logins >= ACCOUNT_LOCK_AFTER:
                         user.failed_logins, user.locked_until = 0, now + timedelta(minutes=ACCOUNT_LOCK_MIN)
+                        locked_now = True
                         audit_log.record(db, request, user.username, "locked out", "account", user.username,
                                          f"{ACCOUNT_LOCK_MIN} min after {ACCOUNT_LOCK_AFTER} failed sign-ins", user.id)
                 db.commit()
+                login_guard.record_failure(user.username, slug, ip, device, reason, locked_now)
                 break
             if not tenancy.is_active(slug):
                 raise HTTPException(status.HTTP_403_FORBIDDEN, "Your organization is disabled. Contact the administrator.")
+            new_place = login_guard.is_new_place(db, user, ip, device)
             user.last_login_at = now
             user.failed_logins, user.locked_until = 0, None
             db.add(LoginEvent(user_id=user.id, username=user.username, ip=ip, device=device, success=True))
             audit_log.record(db, request, user.username, "signed in", "account", user.username, device, user.id)
             token = create_session(db, user, ip, device)
+            if new_place:
+                login_guard.new_place_email(slug, user, ip, device)
             me = _me(db, Principal(user.id, user.username, user.role, user.must_change_password, slug, slug))
             return LoginOut(**me.model_dump(), token=token)
     else:
+        rate_limit(f"user|{name}", LOGIN_USER_PER_MIN)
         with tenancy.session_for(tenancy.DEFAULT) as db:
             audit_log.record(db, request, body.username, "sign-in failed", "account", body.username, "unknown user")
             db.commit()
+        login_guard.record_failure(name, "", ip, device, "unknown user")
     raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Wrong user name or password")
 
 
@@ -248,6 +259,7 @@ def reset_password(body: ResetIn):
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "This link is invalid or has expired")
         user.password_hash = hash_password(body.new)
         user.must_change_password = False
+        user.failed_logins, user.locked_until = 0, None
         end_all_sessions(db, user.id)
         db.commit()
     return {"ok": True}

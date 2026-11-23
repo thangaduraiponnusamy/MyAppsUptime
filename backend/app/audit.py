@@ -24,7 +24,7 @@ KINDS = {
     "probes": ("private location", Probe, "name"), "incidents": ("incident", Incident, None),
 }
 VERBS = {"pause": "paused", "resume": "resumed", "ack": "acknowledged", "snooze": "snoozed", "test": "sent test", "token": "new token",
-         "reset-admin": "reset admin", "shrink": "shrank", "clear-stats": "cleared stats", "backup": "backed up"}
+         "reset-admin": "reset admin", "unlock": "unlocked", "shrink": "shrank", "clear-stats": "cleared stats", "backup": "backed up"}
 METHODS = {"POST": "created", "PUT": "updated", "DELETE": "deleted"}
 
 

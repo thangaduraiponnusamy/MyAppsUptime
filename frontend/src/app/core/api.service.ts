@@ -1,7 +1,7 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import {
-  AdminDefaults, AlertEvent, AuditEvent, AuditFilter, Channel, DashboardData, DatabaseInfo, ExportData, GeneralSettings, Heartbeat, Incident, LoginEvent, Maintenance, Monitor, MonitorInput,
+  AdminDefaults, AlertEvent, AuditEvent, AuditFilter, Channel, DashboardData, DatabaseInfo, ExportData, FailedLogin, GeneralSettings, Heartbeat, Incident, LockedAccount, LoginEvent, Maintenance, Monitor, MonitorInput,
   Probe, Project, PublicStatus, ServerSettings, SessionInfo, SmtpSettings, Stats, StatusPage, Summary, Tenant, TenantCreate, User,
 } from './models';
 
@@ -88,6 +88,13 @@ export class ApiService {
   sessions() { return this.http.get<SessionInfo[]>(`${this.base}/auth/sessions`); }
   revokeSession(id: string) { return this.http.delete<void>(`${this.base}/auth/sessions/${id}`); }
   revokeOtherSessions() { return this.http.post<{ revoked: number }>(`${this.base}/auth/sessions/others`, {}); }
+  failedLogins(range: Range) {
+    const params = Object.fromEntries(Object.entries(range).filter(([, v]) => v !== undefined)) as Record<string, string | number>;
+    return this.http.get<{ events: FailedLogin[]; locked: LockedAccount[] }>(`${this.base}/security/failed-logins`, { params });
+  }
+  unlockAccount(tenant: string, username: string) {
+    return this.http.post<void>(`${this.base}/security/accounts/unlock`, { tenant, username });
+  }
 
   tenants() { return this.http.get<Tenant[]>(`${this.base}/tenants`); }
   createTenant(body: TenantCreate) { return this.http.post<Tenant>(`${this.base}/tenants`, body); }

@@ -6,10 +6,11 @@ from datetime import timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from types import SimpleNamespace
 
-from conftest import auth
+from conftest import PASSWORD, auth
+import pytest
 from sqlalchemy import select
 
-from app import admin_api, auth as auth_mod, checks, tenancy
+from app import admin_api, auth as auth_mod, checks, login_guard, tenancy
 from app.checks import TargetPolicy
 from app.models import User, utcnow
 
@@ -107,7 +108,7 @@ def test_lockout_after_failed_logins(client, su):
     body = {"username": "lock-user", "password": "Lock12345", "role": "member"}
     assert client.post("/api/users", json=body, headers=su).status_code == 201
     wrong = {"username": "lock-user", "password": "nope-nope"}
-    for _ in range(5):
+    for _ in range(3):
         r = client.post("/api/auth/login", json=wrong)
         assert r.status_code == 401
     # Right password, but locked: same generic answer
@@ -120,6 +121,89 @@ def test_lockout_after_failed_logins(client, su):
         user.locked_until = utcnow() - timedelta(seconds=1)
         db.commit()
     assert client.post("/api/auth/login", json={"username": "lock-user", "password": "Lock12345"}).status_code == 200
+
+
+@pytest.fixture
+def mails(monkeypatch):
+    """Security emails as (recipients, subject, body), with a mail server and app address set up."""
+    sent = []
+    monkeypatch.setattr(login_guard, "_mail_config", lambda slug: ({"host": "smtp.test", "from_addr": "up@test"},
+                                                                   {"app_url": "https://up.example.com"}))
+    monkeypatch.setattr(login_guard, "deliver", lambda smtp, to, subject, body: sent.append((to, subject, body)))
+    login_guard._sent.clear()
+    with tenancy.session_for(tenancy.DEFAULT) as db:
+        db.scalar(select(User).where(User.username == "admin")).email = "boss@example.com"
+        db.commit()
+    yield sent
+    with tenancy.session_for(tenancy.DEFAULT) as db:
+        db.scalar(select(User).where(User.username == "admin")).email = None
+        db.commit()
+
+
+def test_super_admin_is_never_locked(client):
+    for _ in range(4):
+        assert client.post("/api/auth/login", json={"username": "admin", "password": "wrong-one"}).status_code == 401
+    assert client.post("/api/auth/login", json={"username": "admin", "password": PASSWORD}).status_code == 200
+
+
+def test_failed_logins_page_alerts_and_unlock(client, su, mails):
+    body = {"username": "guard-user", "password": "Guard12345", "role": "member"}
+    assert client.post("/api/users", json=body, headers=su).status_code == 201
+    for _ in range(5):
+        client.post("/api/auth/login", json={"username": "guard-user", "password": "bad-bad-bad"})
+    mine = [s for to, s, _ in mails if "guard-user" in s]
+    # Lock email at the 3rd, the 5-in-an-hour email is held back (one per hour per account)
+    assert mine == ["MyAppsUptime security: account guard-user locked"] and mails[0][0] == ["boss@example.com"]
+    assert "bad-bad-bad" not in str(mails)
+
+    data = client.get("/api/security/failed-logins", headers=su).json()
+    rows = [e for e in data["events"] if e["username"] == "guard-user"]
+    assert [e["reason"] for e in rows] == ["locked", "locked", "wrong password", "wrong password", "wrong password"]
+    assert rows[0]["tenant"] == tenancy.DEFAULT and rows[0]["tenant_name"]
+    assert any(a["username"] == "guard-user" and not a["reported"] for a in data["locked"])
+    assert not any(a["username"] == "admin" for a in data["locked"])
+
+    client.post("/api/auth/login", json={"username": "no-such-person", "password": "x"})
+    events = client.get("/api/security/failed-logins", headers=su).json()["events"]
+    assert events[0]["username"] == "no-such-person" and events[0]["reason"] == "unknown user"
+
+    plain = {"username": "guard-member", "password": "Member1234", "role": "member"}
+    assert client.post("/api/users", json=plain, headers=su).status_code == 201
+    member = client.post("/api/auth/login", json={"username": "guard-member", "password": "Member1234"}).json()["token"]
+    assert client.get("/api/security/failed-logins", headers=auth(member)).status_code == 403
+    unlock = {"tenant": tenancy.DEFAULT, "username": "guard-user"}
+    assert client.post("/api/security/accounts/unlock", json=unlock, headers=auth(member)).status_code == 403
+    assert client.post("/api/security/accounts/unlock", json=unlock, headers=su).status_code == 200
+    assert client.post("/api/auth/login", json={"username": "guard-user", "password": "Guard12345"}).status_code == 200
+    rows = client.get("/api/audit", params={"q": "guard-user", "kind": "security"}, headers=su).json()
+    assert rows[0]["action"] == "unlocked"
+
+
+def test_new_device_email_and_not_me_link(client, su, mails):
+    body = {"username": "travel-user", "password": "Travel1234", "role": "member", "email": "t@example.com"}
+    assert client.post("/api/users", json=body, headers=su).status_code == 201
+    login = {"username": "travel-user", "password": "Travel1234"}
+    assert client.post("/api/auth/login", json=login).status_code == 200
+    assert client.post("/api/auth/login", json=login).status_code == 200
+    assert not [m for m in mails if m[0] == ["t@example.com"]]  # first sign-in and same place: no email
+    token = client.post("/api/auth/login", json=login,
+                        headers={"User-Agent": "Mozilla/5.0 (Windows) Firefox/130"}).json()["token"]
+    to, subject, text = next(m for m in mails if m[0] == ["t@example.com"])
+    assert "Firefox on Windows" in text and "Travel1234" not in text
+    link = next(line for line in text.splitlines() if "/api/account/not-me/" in line)
+    path = link.removeprefix("https://up.example.com")
+
+    assert client.get(path + "x").status_code == 400
+    page = client.get(path)
+    assert page.status_code == 200 and "Secure my account" in page.text
+    assert client.post(path).status_code == 200
+    assert client.get("/api/auth/me", headers=auth(token)).status_code == 401
+    assert client.post("/api/auth/login", json=login).status_code == 401
+    assert any("travel-user reported" in s for _, s, _ in mails)
+    locked = client.get("/api/security/failed-logins", headers=su).json()["locked"]
+    assert any(a["username"] == "travel-user" and a["reported"] for a in locked)
+    client.post("/api/security/accounts/unlock", json={"tenant": tenancy.DEFAULT, "username": "travel-user"}, headers=su)
+    assert client.post("/api/auth/login", json=login).status_code == 200
 
 
 def test_login_rate_limit(client, monkeypatch):

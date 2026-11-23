@@ -253,6 +253,25 @@ export interface LoginEvent {
   created_at: string;
 }
 
+export interface FailedLogin {
+  id: number;
+  username: string;
+  tenant: string;
+  tenant_name: string;
+  ip: string;
+  device: string;
+  reason: string;
+  created_at: string;
+}
+
+export interface LockedAccount {
+  username: string;
+  tenant: string;
+  tenant_name: string;
+  locked_until: string;
+  reported: boolean;
+}
+
 export interface Project {
   id?: number;
   name: string;
