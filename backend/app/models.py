@@ -70,6 +70,7 @@ class Probe(Base):
     version: Mapped[str | None] = mapped_column(String(20))
     last_ip: Mapped[str | None] = mapped_column(String(64))
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    online_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     offline_notified: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 

@@ -101,7 +101,8 @@ import { DayRange, RangePickerComponent, rangeQuery } from '../../shared/range-p
           <h3>Failed sign-ins <span class="count-badge">{{ shownFails().length }}</span></h3>
         </div>
         <p class="muted">All teams. Accounts lock for 15 minutes after 3 wrong passwords (super admins never lock).
-          Super admins with an email get a mail when an account locks or after 5 failed sign-ins in an hour.</p>
+          Super admins with an email get a mail when an account locks, after 3 tries with an unknown user name,
+          or after 5 failed sign-ins in an hour.</p>
         @if (locked().length) {
           <div class="table-wrap"><table>
             <thead><tr><th>Locked account</th><th>Team</th><th>Until</th><th></th></tr></thead>

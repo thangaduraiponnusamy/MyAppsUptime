@@ -8,7 +8,7 @@ import httpx
 
 from app import checks, notifier, scheduler, tenancy
 from app.main import app
-from app.models import Probe, utcnow
+from app.models import Probe, aware, utcnow
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # repository root, for the probe package
 from probe.__main__ import Probe as ProbeProgram  # noqa: E402
@@ -52,11 +52,15 @@ def test_probe_sync_and_results(client, su):
     listed = {x["name"]: x for x in client.get("/api/probes", headers=su).json()}
     assert listed["home-a"]["online"] and listed["home-a"]["monitors"] == 1 and listed["home-a"]["version"] == "test"
     assert listed["home-a"]["last_ip"] == "testclient"
+    first_since = listed["home-a"]["online_since"]
+    assert first_since
 
     # Check now is handed to the probe on its next sync
     assert client.post(f"/api/monitors/{mine['id']}/check", headers=su).status_code == 202
     assert sync(client, p["token"]).json()["run_now"] == [mine["id"]]
     assert sync(client, p["token"]).json()["run_now"] == []
+    again = {x["name"]: x for x in client.get("/api/probes", headers=su).json()}
+    assert again["home-a"]["online_since"] == first_since
 
     # A new token replaces the old one
     fresh = client.post(f"/api/probes/{p['id']}/token", headers=su).json()["token"]
@@ -88,7 +92,8 @@ def test_probe_offline_alert_once(client, su, monkeypatch):
     sync(client, p["token"], [{"monitor_id": m["id"], "status": "up", "latency_ms": 1}])
 
     with tenancy.session_for(tenancy.DEFAULT) as db:
-        db.get(Probe, p["id"]).last_seen_at = utcnow() - timedelta(minutes=5)
+        row = db.get(Probe, p["id"])
+        row.last_seen_at, row.online_since = utcnow() - timedelta(minutes=5), utcnow() - timedelta(hours=1)
         db.commit()
     asyncio.run(scheduler.check_probes(tenancy.DEFAULT))
     asyncio.run(scheduler.check_probes(tenancy.DEFAULT))
@@ -98,6 +103,9 @@ def test_probe_offline_alert_once(client, su, monkeypatch):
 
     sync(client, p["token"], [{"monitor_id": m["id"], "status": "up", "latency_ms": 1}])
     assert [(a.monitor, a.status) for a in sent][-1] == ("Private location home-b", "up")
+    with tenancy.session_for(tenancy.DEFAULT) as db:
+        # Back online after the gap: the online timer restarts
+        assert utcnow() - aware(db.get(Probe, p["id"]).online_since) < timedelta(minutes=1)
     assert client.get(f"/api/monitors/{m['id']}", headers=su).json()["status"] == "up"
 
 

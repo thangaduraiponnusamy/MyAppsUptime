@@ -166,6 +166,10 @@ def test_failed_logins_page_alerts_and_unlock(client, su, mails):
     client.post("/api/auth/login", json={"username": "no-such-person", "password": "x"})
     events = client.get("/api/security/failed-logins", headers=su).json()["events"]
     assert events[0]["username"] == "no-such-person" and events[0]["reason"] == "unknown user"
+    assert not [s for _, s, _ in mails if "no-such-person" in s]
+    for _ in range(2):
+        client.post("/api/auth/login", json={"username": "no-such-person", "password": "x"})
+    assert [s for _, s, _ in mails if "no-such-person" in s] == ["MyAppsUptime security: 3 failed sign-ins for no-such-person"]
 
     plain = {"username": "guard-member", "password": "Member1234", "role": "member"}
     assert client.post("/api/users", json=plain, headers=su).status_code == 201

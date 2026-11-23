@@ -7,6 +7,7 @@ import { ConfirmService } from '../../core/confirm.service';
 import { Probe } from '../../core/models';
 import { MonitorStore } from '../../core/monitor-store.service';
 import { IconComponent } from '../../shared/icon.component';
+import { short } from '../../shared/time';
 
 const IMAGE = 'ghcr.io/thangaduraiponnusamy/myappsuptime-probe:latest';
 
@@ -56,13 +57,14 @@ const IMAGE = 'ghcr.io/thangaduraiponnusamy/myappsuptime-probe:latest';
       }
 
       <table>
-        <thead><tr><th>Location</th><th>Status</th><th>Monitors</th><th class="hide-sm">Last contact</th><th class="hide-sm">IP address</th><th class="hide-sm">Version</th><th></th></tr></thead>
+        <thead><tr><th>Location</th><th>Status</th><th>For</th><th>Monitors</th><th class="hide-sm">Last contact</th><th class="hide-sm">IP address</th><th class="hide-sm">Version</th><th></th></tr></thead>
         <tbody>
           @for (p of probes(); track p.id) {
             <tr>
               <td><b>{{ p.name }}</b></td>
               <td><span [class]="'pill ' + (p.online ? 'up' : p.last_seen_at ? 'down' : 'pending')">
                 {{ p.online ? 'online' : p.last_seen_at ? 'offline' : 'waiting' }}</span></td>
+              <td class="num" [title]="sinceTitle(p)">{{ since(p) }}</td>
               <td>{{ p.monitors }}</td>
               <td class="hide-sm">{{ p.last_seen_at ? (p.last_seen_at | date: 'MMM d, HH:mm:ss') : 'never' }}</td>
               <td class="hide-sm mono">{{ p.last_ip || '-' }}</td>
@@ -74,7 +76,7 @@ const IMAGE = 'ghcr.io/thangaduraiponnusamy/myappsuptime-probe:latest';
               </td>
             </tr>
           } @empty {
-            <tr><td colspan="7" class="empty">No private locations yet.</td></tr>
+            <tr><td colspan="8" class="empty">No private locations yet.</td></tr>
           }
         </tbody>
       </table>
@@ -107,6 +109,21 @@ export class LocationSettingsComponent {
       if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) < (b[i] || 0);
     }
     return false;
+  }
+
+  private sinceIso(p: Probe): string | null {
+    return p.online ? p.online_since : p.last_seen_at;
+  }
+
+  since(p: Probe): string {
+    const iso = this.sinceIso(p);
+    return iso ? short(iso) : '-';
+  }
+
+  sinceTitle(p: Probe): string {
+    const iso = this.sinceIso(p);
+    if (!iso) return '';
+    return `${p.online ? 'Online' : 'Offline'} since ${new Date(iso).toLocaleString()}`;
   }
 
   load(): void {

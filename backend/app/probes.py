@@ -41,7 +41,8 @@ def is_online(p: Probe) -> bool:
 def _out(db: Session, p: Probe) -> ProbeOut:
     count = db.scalar(select(func.count()).select_from(Monitor).where(Monitor.probe_id == p.id)) or 0
     return ProbeOut(id=p.id, name=p.name, online=is_online(p), version=p.version, last_ip=p.last_ip,
-                    last_seen_at=p.last_seen_at, created_at=p.created_at, monitors=count)
+                    last_seen_at=p.last_seen_at, online_since=p.online_since, created_at=p.created_at,
+                    monitors=count)
 
 
 def _get(db: Session, probe_id: int) -> Probe:
@@ -125,6 +126,8 @@ async def sync(body: ProbeSyncIn, request: Request, authorization: str | None = 
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid probe token")
         if p.offline_notified:
             back_online = probe_alert(db, tenant, p, "up", "Private location is reporting again")
+        if not is_online(p) or p.online_since is None:
+            p.online_since = utcnow()
         p.last_seen_at, p.version, p.offline_notified = utcnow(), body.version or None, False
         p.last_ip = client_ip(request) or None
         monitors = db.scalars(select(Monitor).where(Monitor.probe_id == p.id, Monitor.active.is_(True))).all()

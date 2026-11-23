@@ -116,7 +116,8 @@ def record_failure(username: str, tenant: str, ip: str, device: str, reason: str
         notify_super_admins(f"user|{name}", f"account {name} locked",
                             [f"The account was locked for {ACCOUNT_LOCK_MIN} minutes after "
                              f"{ACCOUNT_LOCK_AFTER} wrong passwords in a row.", ""] + where)
-    elif by_user >= ALERT_FAILS:
+    # Unknown user names cannot lock, so alert as early as a real account would lock
+    elif by_user >= (ALERT_FAILS if tenant else ACCOUNT_LOCK_AFTER):
         notify_super_admins(f"user|{name}", f"{by_user} failed sign-ins for {name}",
                             [f"{by_user} failed sign-ins for this user name in the last hour.",
                              f"Last reason: {reason}.", ""] + where)

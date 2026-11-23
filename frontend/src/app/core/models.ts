@@ -87,6 +87,7 @@ export interface Probe {
   version: string | null;
   last_ip: string | null;
   last_seen_at: string | null;
+  online_since: string | null;
   created_at: string;
   monitors: number;
   token?: string;

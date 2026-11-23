@@ -698,6 +698,7 @@ class ProbeOut(BaseModel):
     version: str | None
     last_ip: str | None = None
     last_seen_at: Utc | None
+    online_since: Utc | None = None
     created_at: Utc
     monitors: int
 
