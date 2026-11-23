@@ -2,8 +2,10 @@
 import asyncio
 import base64
 import hmac
+import ipaddress
 import json
 import logging
+import os
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -18,8 +20,8 @@ from . import audit, crypto, notifier, tenancy
 from .actions import _page
 from .auth import ACCOUNT_LOCK_AFTER, ACCOUNT_LOCK_MIN, end_all_sessions, require_super
 from .config import get_setting
-from .models import FailedLogin, LoginEvent, User, aware, utcnow
-from .schemas import FailedLoginOut, FailedLoginsOut, LockedAccountOut, UnlockIn
+from .models import BlockedIp, FailedLogin, LoginEvent, User, aware, utcnow
+from .schemas import BlockedIpOut, FailedLoginOut, FailedLoginsOut, IpBlockIn, LockedAccountOut, UnlockIn
 
 log = logging.getLogger(__name__)
 
@@ -28,6 +30,9 @@ MAIL_EVERY = 3600  # seconds between emails about the same account or address
 KEEP = timedelta(days=90)
 LINK_DAYS = 7
 REPORTED_LOCK = timedelta(days=3650)  # "This wasn't me": locked until a super admin unlocks or the password is reset
+BLOCK_FAILS = int(os.getenv("LOGIN_BLOCK_FAILS", "10"))
+BLOCK_WINDOW = timedelta(minutes=15)
+BLOCK_FOR = timedelta(minutes=int(os.getenv("LOGIN_BLOCK_MIN", "60")))
 
 admin = APIRouter(prefix="/api/security")
 links = APIRouter(prefix="/api/account")
@@ -98,10 +103,19 @@ def notify_super_admins(key: str, subject: str, lines: list[str]) -> None:
 
 # ---------- failed sign-ins ----------
 
+def ip_blocked(ip: str) -> bool:
+    if not ip:
+        return False
+    with tenancy.session_for(tenancy.DEFAULT) as db:
+        row = db.get(BlockedIp, ip)
+        return row is not None and aware(row.until) > utcnow()
+
+
 def record_failure(username: str, tenant: str, ip: str, device: str, reason: str, locked_now: bool = False) -> None:
-    """Log one failed sign-in and email the super admins when it looks like an attack."""
+    """Log one failed sign-in, block the address after too many, and email the super admins when it looks like an attack."""
     now, name = utcnow(), username.strip().lower()[:60]
     since = now - ALERT_WINDOW
+    blocked_now = 0
     with tenancy.session_for(tenancy.DEFAULT) as db:
         db.execute(delete(FailedLogin).where(FailedLogin.created_at < now - KEEP))
         db.add(FailedLogin(username=name, tenant=tenant, ip=ip[:64], device=device[:80], reason=reason))
@@ -110,6 +124,19 @@ def record_failure(username: str, tenant: str, ip: str, device: str, reason: str
             FailedLogin.created_at >= since, FailedLogin.username == name))
         by_ip, users = db.execute(select(func.count(FailedLogin.id), func.count(func.distinct(FailedLogin.username))).where(
             FailedLogin.created_at >= since, FailedLogin.ip == ip)).one() if ip else (0, 0)
+        if ip and reason != "blocked IP":
+            row = db.get(BlockedIp, ip[:64])
+            # Count again from the end of the last block, so an unblocked address gets a fresh start
+            start = now - BLOCK_WINDOW
+            if row is not None and aware(row.until) > start:
+                start = aware(row.until)
+            recent = db.scalar(select(func.count(FailedLogin.id)).where(
+                FailedLogin.created_at >= start, FailedLogin.ip == ip))
+            if recent >= BLOCK_FAILS and (row is None or aware(row.until) <= now):
+                db.merge(BlockedIp(ip=ip[:64], until=now + BLOCK_FOR, created_at=now,
+                                   reason=f"{recent} failed sign-ins in {int(BLOCK_WINDOW.total_seconds() // 60)} minutes"))
+                db.commit()
+                blocked_now = recent
     team = f"team {tenancy.name(tenant)}" if tenant else "no such user"
     where = [f"User name: {name} ({team})", f"IP address: {ip or '-'}", f"Device: {device or '-'}"]
     if locked_now:
@@ -122,7 +149,14 @@ def record_failure(username: str, tenant: str, ip: str, device: str, reason: str
                             [f"{by_user} failed sign-ins for this user name in the last hour.",
                              f"Last reason: {reason}.", ""] + where)
     # One address trying several user names
-    if by_ip >= ALERT_FAILS and users > 1:
+    if blocked_now:
+        minutes = int(BLOCK_FOR.total_seconds() // 60)
+        notify_super_admins(f"block|{ip}", f"address {ip} blocked",
+                            [f"{blocked_now} failed sign-ins in the last {int(BLOCK_WINDOW.total_seconds() // 60)} minutes, "
+                             f"so this address may not sign in for {minutes} minutes (super admins still can).",
+                             "Unblock it in Settings > Security if it is yours.", "",
+                             f"IP address: {ip}", f"Device: {device or '-'}", f"Last user name: {name}"])
+    elif by_ip >= ALERT_FAILS and users > 1:
         notify_super_admins(f"ip|{ip}", f"{by_ip} failed sign-ins from {ip}",
                             [f"{by_ip} failed sign-ins for {users} user names from one address in the last hour.", "",
                              f"IP address: {ip}", f"Device: {device or '-'}"])
@@ -150,7 +184,35 @@ def failed_logins(hours: int = 24, start: datetime | None = None, end: datetime 
                 until = aware(user.locked_until)
                 locked.append(LockedAccountOut(username=user.username, tenant=slug, tenant_name=team,
                                                locked_until=until, reported=until - now > timedelta(days=1)))
-    return FailedLoginsOut(events=events, locked=locked)
+    with tenancy.session_for(tenancy.DEFAULT) as db:
+        db.execute(delete(BlockedIp).where(BlockedIp.until <= now - BLOCK_WINDOW))
+        db.commit()
+        blocked = [BlockedIpOut.model_validate(r) for r in db.scalars(
+            select(BlockedIp).where(BlockedIp.until > now).order_by(BlockedIp.ip))]
+    return FailedLoginsOut(events=events, locked=locked, blocked=blocked)
+
+
+@admin.post("/ips/block", dependencies=[Depends(require_super)])
+def block_ip(body: IpBlockIn):
+    try:
+        ip = str(ipaddress.ip_address(body.ip.strip()))
+    except ValueError:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Not a valid IP address")
+    with tenancy.session_for(tenancy.DEFAULT) as db:
+        db.merge(BlockedIp(ip=ip, until=utcnow() + timedelta(hours=body.hours), created_at=utcnow(),
+                           reason="blocked by a super admin"))
+        db.commit()
+    return {"ok": True}
+
+
+@admin.post("/ips/unblock", dependencies=[Depends(require_super)])
+def unblock_ip(body: IpBlockIn):
+    with tenancy.session_for(tenancy.DEFAULT) as db:
+        row = db.get(BlockedIp, body.ip.strip())
+        if row is not None:
+            row.until = utcnow()
+            db.commit()
+    return {"ok": True}
 
 
 @admin.post("/accounts/unlock", dependencies=[Depends(require_super)])

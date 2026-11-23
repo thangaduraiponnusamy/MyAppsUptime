@@ -89,6 +89,7 @@ def login(body: LoginIn, request: Request):
     name = body.username.strip().lower()
     device = describe_agent(request.headers.get("user-agent", ""))[:80]
     rate_limit(f"ip|{ip}", LOGIN_IP_PER_MIN)
+    blocked = login_guard.ip_blocked(ip)
     # User names are unique across tenants, so the first match is the account
     for slug in tenancy.slugs(active_only=False):
         with tenancy.session_for(slug) as db:
@@ -96,6 +97,10 @@ def login(body: LoginIn, request: Request):
             if user is None:
                 continue
             exempt = login_guard.lock_exempt(slug, user)
+            if blocked and not exempt:
+                # Blocked address: no password check and no count against the account
+                login_guard.record_failure(user.username, slug, ip, device, "blocked IP")
+                break
             # Per address for super admins, so an attacker cannot keep them out
             rate_limit(f"user|{name}|{ip}" if exempt else f"user|{name}", LOGIN_USER_PER_MIN)
             now = utcnow()
@@ -131,10 +136,17 @@ def login(body: LoginIn, request: Request):
             return LoginOut(**me.model_dump(), token=token)
     else:
         rate_limit(f"user|{name}", LOGIN_USER_PER_MIN)
-        with tenancy.session_for(tenancy.DEFAULT) as db:
-            audit_log.record(db, request, body.username, "sign-in failed", "account", body.username, "unknown user")
-            db.commit()
-        login_guard.record_failure(name, "", ip, device, "unknown user")
+        if blocked:
+            login_guard.record_failure(name, "", ip, device, "blocked IP")
+        else:
+            with tenancy.session_for(tenancy.DEFAULT) as db:
+                audit_log.record(db, request, body.username, "sign-in failed", "account", body.username, "unknown user")
+                db.commit()
+            login_guard.record_failure(name, "", ip, device, "unknown user")
+    if blocked:
+        # Same answer for every user name, so a blocked address learns nothing
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS,
+                            "Too many failed sign-ins from your network. Try again later.")
     raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Wrong user name or password")
 
 

@@ -273,6 +273,12 @@ export interface LockedAccount {
   reported: boolean;
 }
 
+export interface BlockedIp {
+  ip: string;
+  until: string;
+  reason: string;
+}
+
 export interface Project {
   id?: number;
   name: string;

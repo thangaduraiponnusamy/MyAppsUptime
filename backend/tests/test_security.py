@@ -210,6 +210,41 @@ def test_new_device_email_and_not_me_link(client, su, mails):
     assert client.post("/api/auth/login", json=login).status_code == 200
 
 
+def test_ip_block(client, su, mails, monkeypatch):
+    monkeypatch.setattr(login_guard, "BLOCK_FAILS", 3)
+    body = {"username": "block-member", "password": "Block12345", "role": "member"}
+    assert client.post("/api/users", json=body, headers=su).status_code == 201
+    try:
+        for _ in range(3):
+            client.post("/api/auth/login", json={"username": "spray-x", "password": "x"})
+        data = client.get("/api/security/failed-logins", headers=su).json()
+        assert [b["ip"] for b in data["blocked"]] == ["testclient"]
+        assert any("testclient blocked" in s for _, s, _ in mails)
+        # Blocked: same answer for everyone, even with the right password
+        for login in ({"username": "block-member", "password": "Block12345"}, {"username": "nobody-y", "password": "x"},
+                      {"username": "admin", "password": "wrong-one"}):
+            r = client.post("/api/auth/login", json=login)
+            assert r.status_code == 429 and "network" in r.json()["detail"]
+        # Super admin with the right password still gets in
+        assert client.post("/api/auth/login", json={"username": "admin", "password": PASSWORD}).status_code == 200
+        reasons = [e["reason"] for e in client.get("/api/security/failed-logins", headers=su).json()["events"][:3]]
+        assert reasons == ["wrong password", "blocked IP", "blocked IP"]
+
+        member = {"username": "block-member", "password": "Block12345"}
+        assert client.post("/api/security/ips/unblock", json={"ip": "testclient"}, headers=su).status_code == 200
+        assert client.get("/api/security/failed-logins", headers=su).json()["blocked"] == []
+        token = client.post("/api/auth/login", json=member).json()["token"]
+        assert client.post("/api/security/ips/block", json={"ip": "1.2.3.4"}, headers=auth(token)).status_code == 403
+        assert client.post("/api/security/ips/unblock", json={"ip": "1.2.3.4"}, headers=auth(token)).status_code == 403
+        assert client.post("/api/security/ips/block", json={"ip": "not-an-ip"}, headers=su).status_code == 422
+        assert client.post("/api/security/ips/block", json={"ip": "203.0.113.5", "hours": 2}, headers=su).status_code == 200
+        blocked = client.get("/api/security/failed-logins", headers=su).json()["blocked"]
+        assert [b["ip"] for b in blocked] == ["203.0.113.5"] and blocked[0]["reason"] == "blocked by a super admin"
+        client.post("/api/security/ips/unblock", json={"ip": "203.0.113.5"}, headers=su)
+    finally:
+        client.post("/api/security/ips/unblock", json={"ip": "testclient"}, headers=su)
+
+
 def test_login_rate_limit(client, monkeypatch):
     monkeypatch.setattr(admin_api, "LOGIN_USER_PER_MIN", 3)
     codes = [client.post("/api/auth/login", json={"username": "rate-x", "password": "x"}).status_code

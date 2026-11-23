@@ -287,6 +287,7 @@ What is stored and how:
 | Sign-in limit | `LOGIN_IP_PER_MIN`, `LOGIN_USER_PER_MIN` (default 10) | Too many sign-ins per minute get "Too many attempts" |
 | Account lock | fixed | 3 wrong passwords in a row lock the account for 15 minutes. Super admins are never locked |
 | Failed sign-ins | Settings > Security (super admin) | All teams: time, user, team, IP, device, reason. Unlock button for locked accounts. Kept 90 days |
+| IP block | `LOGIN_BLOCK_FAILS` (default 10), `LOGIN_BLOCK_MIN` (default 60) | An IP with 10 failed sign-ins in 15 minutes is blocked for 60 minutes and super admins get a mail. Block button on each failed sign-in (24 hours), Unblock button in the blocked list. Super admins can still sign in from a blocked IP |
 | Security emails | Super admins with an email | Mail when an account locks, after 3 tries with an unknown user name, after 5 failed sign-ins in an hour (per user, or one IP trying several users). Max 1 mail per user / IP per hour |
 | New sign-in email | Users with an email | Mail on sign-in from a new device or IP. "This wasn't me" link signs out all sessions and locks the account (super admin: sign out only). Unlock in Settings > Security or reset the password |
 | Active sessions | Settings > Security | See where you are signed in, revoke one or sign out all others |

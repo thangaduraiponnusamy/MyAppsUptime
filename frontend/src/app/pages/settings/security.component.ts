@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { ApiService, errorText } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
-import { LockedAccount, FailedLogin, LoginEvent, ROLE_LABEL, ServerSettings, SessionInfo } from '../../core/models';
+import { BlockedIp, LockedAccount, FailedLogin, LoginEvent, ROLE_LABEL, ServerSettings, SessionInfo } from '../../core/models';
 import { ConfirmService } from '../../core/confirm.service';
 import { PrefsService } from '../../core/prefs.service';
 import { IconComponent } from '../../shared/icon.component';
@@ -102,7 +102,23 @@ import { DayRange, RangePickerComponent, rangeQuery } from '../../shared/range-p
         </div>
         <p class="muted">All teams. Accounts lock for 15 minutes after 3 wrong passwords (super admins never lock).
           Super admins with an email get a mail when an account locks, after 3 tries with an unknown user name,
-          or after 5 failed sign-ins in an hour.</p>
+          or after 5 failed sign-ins in an hour.
+          An address with 10 failed sign-ins in 15 minutes is blocked for 1 hour (super admins can still sign in from it).</p>
+        @if (blocked().length) {
+          <div class="table-wrap"><table>
+            <thead><tr><th>Blocked address</th><th>Until</th><th class="hide-sm">Reason</th><th></th></tr></thead>
+            <tbody>
+              @for (b of blocked(); track b.ip) {
+                <tr>
+                  <td class="mono"><b>{{ b.ip }}</b></td>
+                  <td class="nowrap">{{ b.until | date: 'MMM d, HH:mm' }}</td>
+                  <td class="hide-sm">{{ b.reason }}</td>
+                  <td><button class="btn sm" (click)="unblockIp(b)">Unblock</button></td>
+                </tr>
+              }
+            </tbody>
+          </table></div>
+        }
         @if (locked().length) {
           <div class="table-wrap"><table>
             <thead><tr><th>Locked account</th><th>Team</th><th>Until</th><th></th></tr></thead>
@@ -127,7 +143,7 @@ import { DayRange, RangePickerComponent, rangeQuery } from '../../shared/range-p
         @if (failNotice()) { <p class="muted small">{{ failNotice() }}</p> }
         @if (shownFails().length) {
           <div class="table-wrap"><table>
-            <thead><tr><th>Time</th><th>User</th><th class="hide-sm">Team</th><th>IP address</th><th class="hide-sm">Device</th><th>Reason</th></tr></thead>
+            <thead><tr><th>Time</th><th>User</th><th class="hide-sm">Team</th><th>IP address</th><th class="hide-sm">Device</th><th>Reason</th><th></th></tr></thead>
             <tbody>
               @for (f of shownFails(); track f.id) {
                 <tr>
@@ -137,6 +153,7 @@ import { DayRange, RangePickerComponent, rangeQuery } from '../../shared/range-p
                   <td class="mono">{{ f.ip || '-' }}</td>
                   <td class="hide-sm">{{ f.device || '-' }}</td>
                   <td><span class="pill" [class.down]="f.reason !== 'unknown user'">{{ f.reason }}</span></td>
+                  <td>@if (f.ip && !blockedIps().has(f.ip)) { <button class="btn sm" (click)="blockIp(f.ip)">Block</button> }</td>
                 </tr>
               }
             </tbody>
@@ -220,6 +237,8 @@ export class SecuritySettingsComponent {
   alertsNotice = signal('');
   fails = signal<FailedLogin[]>([]);
   locked = signal<LockedAccount[]>([]);
+  blocked = signal<BlockedIp[]>([]);
+  blockedIps = computed(() => new Set(this.blocked().map((b) => b.ip)));
   failQ = signal('');
   failHours = signal(24);
   failCustom = signal<DayRange | null>(null);
@@ -251,7 +270,26 @@ export class SecuritySettingsComponent {
 
   loadFails(): void {
     this.api.failedLogins(rangeQuery(this.failHours(), this.failCustom())).subscribe({
-      next: (r) => { this.fails.set(r.events); this.locked.set(r.locked); },
+      next: (r) => { this.fails.set(r.events); this.locked.set(r.locked); this.blocked.set(r.blocked ?? []); },
+      error: (e) => this.failNotice.set(errorText(e)),
+    });
+  }
+
+  async blockIp(ip: string): Promise<void> {
+    const ok = await this.confirm.ask({ title: 'Block address',
+      message: `Block sign-ins from ${ip} for 24 hours? Super admins can still sign in from it.`, action: 'Block' });
+    if (!ok) return;
+    this.api.blockIp(ip, 24).subscribe({
+      next: () => { this.failNotice.set(`${ip} blocked.`); this.loadFails(); },
+      error: (e) => this.failNotice.set(errorText(e)),
+    });
+  }
+
+  async unblockIp(b: BlockedIp): Promise<void> {
+    const ok = await this.confirm.ask({ title: 'Unblock address', message: `Unblock ${b.ip}?`, action: 'Unblock' });
+    if (!ok) return;
+    this.api.unblockIp(b.ip).subscribe({
+      next: () => { this.failNotice.set(`${b.ip} unblocked.`); this.loadFails(); },
       error: (e) => this.failNotice.set(errorText(e)),
     });
   }

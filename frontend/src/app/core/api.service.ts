@@ -1,7 +1,7 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import {
-  AdminDefaults, AlertEvent, AuditEvent, AuditFilter, Channel, DashboardData, DatabaseInfo, ExportData, FailedLogin, GeneralSettings, Heartbeat, Incident, LockedAccount, LoginEvent, Maintenance, Monitor, MonitorInput,
+  AdminDefaults, AlertEvent, AuditEvent, AuditFilter, BlockedIp, Channel, DashboardData, DatabaseInfo, ExportData, FailedLogin, GeneralSettings, Heartbeat, Incident, LockedAccount, LoginEvent, Maintenance, Monitor, MonitorInput,
   Probe, Project, PublicStatus, ServerSettings, SessionInfo, SmtpSettings, Stats, StatusPage, Summary, Tenant, TenantCreate, User,
 } from './models';
 
@@ -90,7 +90,13 @@ export class ApiService {
   revokeOtherSessions() { return this.http.post<{ revoked: number }>(`${this.base}/auth/sessions/others`, {}); }
   failedLogins(range: Range) {
     const params = Object.fromEntries(Object.entries(range).filter(([, v]) => v !== undefined)) as Record<string, string | number>;
-    return this.http.get<{ events: FailedLogin[]; locked: LockedAccount[] }>(`${this.base}/security/failed-logins`, { params });
+    return this.http.get<{ events: FailedLogin[]; locked: LockedAccount[]; blocked: BlockedIp[] }>(`${this.base}/security/failed-logins`, { params });
+  }
+  blockIp(ip: string, hours: number) {
+    return this.http.post<void>(`${this.base}/security/ips/block`, { ip, hours });
+  }
+  unblockIp(ip: string) {
+    return this.http.post<void>(`${this.base}/security/ips/unblock`, { ip });
   }
   unlockAccount(tenant: string, username: string) {
     return this.http.post<void>(`${this.base}/security/accounts/unlock`, { tenant, username });

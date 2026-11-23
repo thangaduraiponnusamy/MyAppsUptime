@@ -248,8 +248,18 @@ class FailedLogin(Base):
     tenant: Mapped[str] = mapped_column(String(30), default="")  # empty for unknown user names
     ip: Mapped[str] = mapped_column(String(64), default="", index=True)
     device: Mapped[str] = mapped_column(String(80), default="")
-    reason: Mapped[str] = mapped_column(String(20))  # wrong password | locked | disabled | unknown user
+    reason: Mapped[str] = mapped_column(String(20))  # wrong password | locked | disabled | unknown user | blocked IP
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
+class BlockedIp(Base):
+    """Addresses that may not sign in (except super admins) until `until`; only in the default (admin) database."""
+    __tablename__ = "blocked_ips"
+
+    ip: Mapped[str] = mapped_column(String(64), primary_key=True)
+    until: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    reason: Mapped[str] = mapped_column(String(120), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class AuthToken(Base):

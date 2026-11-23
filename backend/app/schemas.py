@@ -488,9 +488,22 @@ class LockedAccountOut(BaseModel):
     reported: bool  # locked by the owner's "This wasn't me" link, stays locked until unlocked
 
 
+class BlockedIpOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    ip: str
+    until: Utc
+    reason: str
+
+
 class FailedLoginsOut(BaseModel):
     events: list[FailedLoginOut]
     locked: list[LockedAccountOut]
+    blocked: list[BlockedIpOut] = []
+
+
+class IpBlockIn(BaseModel):
+    ip: str = Field(min_length=2, max_length=64)
+    hours: int = Field(24, ge=1, le=24 * 365)
 
 
 class UnlockIn(BaseModel):
